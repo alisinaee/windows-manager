@@ -139,7 +139,9 @@
       "name": "Full-screen order engine",
       "layer": "core",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Spaces/FullScreenProbe.swift"
+      ],
       "notes": "Rebuilds the saved order of full-screen Spaces by exiting and re-entering full screen from the first wrong slot.",
       "tasks": [
         "P1.4",
@@ -173,7 +175,9 @@
       "name": "Binding repair",
       "layer": "core",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Spaces/SpaceOrderFile.swift"
+      ],
       "notes": "Backs up Apple app-bindings and Space order; re-applies them at login (macOS 27 cold-boot bug).",
       "tasks": [
         "P1.7",
@@ -196,7 +200,10 @@
       "name": "Virtual workspaces",
       "layer": "core",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Virtual/*.swift",
+        "Sources/WMCore/Spaces/SpaceSwitcher.swift"
+      ],
       "notes": "Own workspaces: hide whole apps, park split apps' windows in a corner, crash-safe unhide.",
       "tasks": [
         "P5.1",
@@ -210,7 +217,9 @@
       "name": "Gesture reader",
       "layer": "core",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Gestures/*.swift"
+      ],
       "notes": "Three-finger swipe from raw trackpad data to switch virtual workspaces.",
       "tasks": [
         "P5.4"
@@ -232,7 +241,9 @@
       "name": "Accessibility bridge",
       "layer": "platform",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Accessibility/*.swift"
+      ],
       "notes": "AXUIElement wrapper: windows, frame set (pos, size, pos), AXFullScreen, observers, _AXUIElementGetWindow.",
       "tasks": [
         "P2.2"
@@ -254,7 +265,9 @@
       "name": "SkyLight bridge",
       "layer": "platform",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/SkyLight/*.swift"
+      ],
       "notes": "All private SLS calls (spaces per display, window to space, bridged move, switch). dlsym, launch self-test, fallback flags.",
       "tasks": [
         "P1.2",
@@ -269,7 +282,9 @@
       "name": "Mission Control driver",
       "layer": "platform",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/MissionControl/*.swift"
+      ],
       "notes": "Adds or removes Desktops by driving Dock's Mission Control through Accessibility.",
       "tasks": [
         "P1.6"
@@ -314,7 +329,11 @@
       "name": "Spaces Lab test tool",
       "layer": "tooling",
       "kind": "tool",
-      "files": [],
+      "files": [
+        "Sources/spaceslab/**",
+        "scripts/*.sh",
+        "docs/LAB.md"
+      ],
       "notes": "Phase 1 tool: runs the Space experiments on the user's macOS and writes a results file.",
       "tasks": [
         "P1.1",
@@ -329,7 +348,10 @@
       "kind": "tool",
       "files": [
         ".gitignore",
-        "docs/system.json"
+        "docs/system.json",
+        "Package.swift",
+        "Sources/WMCore/Lab/*.swift",
+        "Tests/**"
       ],
       "notes": "Git ignore rules and this map.",
       "tasks": [

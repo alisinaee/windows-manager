@@ -1,91 +1,651 @@
 {
   "version": 1,
-  "layers": ["external", "ui", "api", "core", "platform", "data", "tooling", "docs"],
+  "layers": [
+    "external",
+    "ui",
+    "api",
+    "core",
+    "platform",
+    "data",
+    "tooling",
+    "docs"
+  ],
   "components": [
-    {"id": "menubar-ui", "name": "Menu bar UI", "layer": "ui", "kind": "module", "files": [], "notes": "MenuBarExtra: profile list, Run, Capture, drift warnings, mode switch.", "tasks": []},
-    {"id": "settings-ui", "name": "Settings and profile editor", "layer": "ui", "kind": "module", "files": [], "notes": "SwiftUI window: profiles, per-window rules, monitor map, Space mode, permissions.", "tasks": []},
-    {"id": "layout-editor", "name": "Layout and zone editor", "layer": "ui", "kind": "module", "files": [], "notes": "Mini map of the monitors; draw zones, drag apps into zones; snap overlay while dragging.", "tasks": []},
-    {"id": "onboarding", "name": "Permission onboarding", "layer": "ui", "kind": "module", "files": [], "notes": "Accessibility check and prompt; optional Screen Recording; Spaces settings advice.", "tasks": []},
-    {"id": "cli", "name": "wmctl CLI", "layer": "api", "kind": "tool", "files": [], "notes": "Run, capture, list, status as JSON for scripts and agents; talks to the app over XPC or a socket.", "tasks": []},
-    {"id": "intents", "name": "App Intents (Shortcuts, Focus)", "layer": "api", "kind": "module", "files": [], "notes": "Run profile / capture as Shortcuts actions so Focus modes can trigger profiles.", "tasks": []},
-    {"id": "hotkeys", "name": "Hotkey manager", "layer": "api", "kind": "module", "files": [], "notes": "Global shortcuts per profile, per zone and per virtual workspace.", "tasks": []},
-    {"id": "profile-engine", "name": "Profile engine", "layer": "core", "kind": "module", "files": [], "notes": "Capture and restore orchestration; one restore = a list of steps with retries and timeouts.", "tasks": []},
-    {"id": "restore-planner", "name": "Restore planner", "layer": "core", "kind": "module", "files": [], "notes": "Diffs live state against the saved profile: launch, move, resize, full screen, Space, order rebuild.", "tasks": []},
-    {"id": "window-matcher", "name": "Window matcher", "layer": "core", "kind": "module", "files": [], "notes": "Matches saved windows to live ones by bundle id, title pattern, document, index.", "tasks": []},
-    {"id": "display-map", "name": "Display map", "layer": "core", "kind": "module", "files": [], "notes": "Display UUIDs, monitor sets, fallback mapping when a monitor is missing; auto-profile on monitor change.", "tasks": []},
-    {"id": "fullscreen-order", "name": "Full-screen order engine", "layer": "core", "kind": "module", "files": [], "notes": "Rebuilds the saved order of full-screen Spaces by exiting and re-entering full screen from the first wrong slot.", "tasks": []},
-    {"id": "space-guard", "name": "Space guard", "layer": "core", "kind": "service", "files": [], "notes": "Watches Space changes, sleep, display changes; detects drift; offers or applies a fix; checks mru-spaces.", "tasks": []},
-    {"id": "pin-rules", "name": "Pin rules", "layer": "core", "kind": "module", "files": [], "notes": "Own app/window to Desktop rules applied on window creation; replaces Apple bindings.", "tasks": []},
-    {"id": "binding-repair", "name": "Binding repair", "layer": "core", "kind": "module", "files": [], "notes": "Backs up Apple app-bindings and Space order; re-applies them at login (macOS 27 cold-boot bug).", "tasks": []},
-    {"id": "layout-engine", "name": "Layout engine", "layer": "core", "kind": "module", "files": [], "notes": "Grid templates and custom zones; frames per display; split layouts.", "tasks": []},
-    {"id": "virtual-ws", "name": "Virtual workspaces", "layer": "core", "kind": "module", "files": [], "notes": "Own workspaces: hide whole apps, park split apps' windows in a corner, crash-safe unhide.", "tasks": []},
-    {"id": "gestures", "name": "Gesture reader", "layer": "core", "kind": "module", "files": [], "notes": "Three-finger swipe from raw trackpad data to switch virtual workspaces.", "tasks": []},
-    {"id": "content-restore", "name": "Content restorers", "layer": "core", "kind": "module", "files": [], "notes": "Per-app plugins: browser tabs, documents, VS Code folders, Terminal tabs.", "tasks": []},
-    {"id": "ax-bridge", "name": "Accessibility bridge", "layer": "platform", "kind": "module", "files": [], "notes": "AXUIElement wrapper: windows, frame set (pos, size, pos), AXFullScreen, observers, _AXUIElementGetWindow.", "tasks": []},
-    {"id": "window-list", "name": "Window list", "layer": "platform", "kind": "module", "files": [], "notes": "CGWindowList and SLS window queries, including windows on other Spaces.", "tasks": []},
-    {"id": "skylight-bridge", "name": "SkyLight bridge", "layer": "platform", "kind": "module", "files": [], "notes": "All private SLS calls (spaces per display, window to space, bridged move, switch). dlsym, launch self-test, fallback flags.", "tasks": []},
-    {"id": "mission-control", "name": "Mission Control driver", "layer": "platform", "kind": "module", "files": [], "notes": "Adds or removes Desktops by driving Dock's Mission Control through Accessibility.", "tasks": []},
-    {"id": "app-launcher", "name": "App launcher", "layer": "platform", "kind": "module", "files": [], "notes": "NSWorkspace open by bundle id, wait for first window via AX observer, timeouts.", "tasks": []},
-    {"id": "profile-store", "name": "Profile store", "layer": "data", "kind": "store", "files": [], "notes": "Versioned JSON profiles in Application Support; import and export.", "tasks": []},
-    {"id": "backup-store", "name": "Backup store", "layer": "data", "kind": "store", "files": [], "notes": "Timestamped copies of com.apple.spaces before any write; restore button.", "tasks": []},
-    {"id": "spaces-lab", "name": "Spaces Lab test tool", "layer": "tooling", "kind": "tool", "files": [], "notes": "Phase 1 tool: runs the Space experiments on the user's macOS and writes a results file.", "tasks": []},
-    {"id": "repo-config", "name": "Repo config and architecture map", "layer": "tooling", "kind": "tool", "files": [".gitignore", "docs/system.json"], "notes": "Git ignore rules and this map.", "tasks": []},
-    {"id": "research", "name": "Research notes", "layer": "docs", "kind": "store", "files": ["docs/research/*.md"], "notes": "Brief, landscape, risks, plan.", "tasks": ["P0.1"]}
+    {
+      "id": "menubar-ui",
+      "name": "Menu bar UI",
+      "layer": "ui",
+      "kind": "module",
+      "files": [],
+      "notes": "MenuBarExtra: profile list, Run, Capture, drift warnings, mode switch.",
+      "tasks": [
+        "P2.9"
+      ]
+    },
+    {
+      "id": "settings-ui",
+      "name": "Settings and profile editor",
+      "layer": "ui",
+      "kind": "module",
+      "files": [],
+      "notes": "SwiftUI window: profiles, per-window rules, monitor map, Space mode, permissions.",
+      "tasks": [
+        "P6.1"
+      ]
+    },
+    {
+      "id": "layout-editor",
+      "name": "Layout and zone editor",
+      "layer": "ui",
+      "kind": "module",
+      "files": [],
+      "notes": "Mini map of the monitors; draw zones, drag apps into zones; snap overlay while dragging.",
+      "tasks": [
+        "P4.2",
+        "P4.3"
+      ]
+    },
+    {
+      "id": "onboarding",
+      "name": "Permission onboarding",
+      "layer": "ui",
+      "kind": "module",
+      "files": [],
+      "notes": "Accessibility check and prompt; optional Screen Recording; Spaces settings advice.",
+      "tasks": [
+        "P2.10"
+      ]
+    },
+    {
+      "id": "cli",
+      "name": "wmctl CLI",
+      "layer": "api",
+      "kind": "tool",
+      "files": [],
+      "notes": "Run, capture, list, status as JSON for scripts and agents; talks to the app over XPC or a socket.",
+      "tasks": [
+        "P6.3"
+      ]
+    },
+    {
+      "id": "intents",
+      "name": "App Intents (Shortcuts, Focus)",
+      "layer": "api",
+      "kind": "module",
+      "files": [],
+      "notes": "Run profile / capture as Shortcuts actions so Focus modes can trigger profiles.",
+      "tasks": [
+        "P6.4"
+      ]
+    },
+    {
+      "id": "hotkeys",
+      "name": "Hotkey manager",
+      "layer": "api",
+      "kind": "module",
+      "files": [],
+      "notes": "Global shortcuts per profile, per zone and per virtual workspace.",
+      "tasks": [
+        "P4.4"
+      ]
+    },
+    {
+      "id": "profile-engine",
+      "name": "Profile engine",
+      "layer": "core",
+      "kind": "module",
+      "files": [],
+      "notes": "Capture and restore orchestration; one restore = a list of steps with retries and timeouts.",
+      "tasks": [
+        "P2.8"
+      ]
+    },
+    {
+      "id": "restore-planner",
+      "name": "Restore planner",
+      "layer": "core",
+      "kind": "module",
+      "files": [],
+      "notes": "Diffs live state against the saved profile: launch, move, resize, full screen, Space, order rebuild.",
+      "tasks": [
+        "P2.8"
+      ]
+    },
+    {
+      "id": "window-matcher",
+      "name": "Window matcher",
+      "layer": "core",
+      "kind": "module",
+      "files": [],
+      "notes": "Matches saved windows to live ones by bundle id, title pattern, document, index.",
+      "tasks": [
+        "P2.6"
+      ]
+    },
+    {
+      "id": "display-map",
+      "name": "Display map",
+      "layer": "core",
+      "kind": "module",
+      "files": [],
+      "notes": "Display UUIDs, monitor sets, fallback mapping when a monitor is missing; auto-profile on monitor change.",
+      "tasks": [
+        "P2.3",
+        "P3.7"
+      ]
+    },
+    {
+      "id": "fullscreen-order",
+      "name": "Full-screen order engine",
+      "layer": "core",
+      "kind": "module",
+      "files": [],
+      "notes": "Rebuilds the saved order of full-screen Spaces by exiting and re-entering full screen from the first wrong slot.",
+      "tasks": [
+        "P1.4",
+        "P3.3"
+      ]
+    },
+    {
+      "id": "space-guard",
+      "name": "Space guard",
+      "layer": "core",
+      "kind": "service",
+      "files": [],
+      "notes": "Watches Space changes, sleep, display changes; detects drift; offers or applies a fix; checks mru-spaces.",
+      "tasks": [
+        "P3.4"
+      ]
+    },
+    {
+      "id": "pin-rules",
+      "name": "Pin rules",
+      "layer": "core",
+      "kind": "module",
+      "files": [],
+      "notes": "Own app/window to Desktop rules applied on window creation; replaces Apple bindings.",
+      "tasks": [
+        "P3.5"
+      ]
+    },
+    {
+      "id": "binding-repair",
+      "name": "Binding repair",
+      "layer": "core",
+      "kind": "module",
+      "files": [],
+      "notes": "Backs up Apple app-bindings and Space order; re-applies them at login (macOS 27 cold-boot bug).",
+      "tasks": [
+        "P1.7",
+        "P3.6"
+      ]
+    },
+    {
+      "id": "layout-engine",
+      "name": "Layout engine",
+      "layer": "core",
+      "kind": "module",
+      "files": [],
+      "notes": "Grid templates and custom zones; frames per display; split layouts.",
+      "tasks": [
+        "P4.1"
+      ]
+    },
+    {
+      "id": "virtual-ws",
+      "name": "Virtual workspaces",
+      "layer": "core",
+      "kind": "module",
+      "files": [],
+      "notes": "Own workspaces: hide whole apps, park split apps' windows in a corner, crash-safe unhide.",
+      "tasks": [
+        "P5.1",
+        "P5.2",
+        "P5.3",
+        "P5.5"
+      ]
+    },
+    {
+      "id": "gestures",
+      "name": "Gesture reader",
+      "layer": "core",
+      "kind": "module",
+      "files": [],
+      "notes": "Three-finger swipe from raw trackpad data to switch virtual workspaces.",
+      "tasks": [
+        "P5.4"
+      ]
+    },
+    {
+      "id": "content-restore",
+      "name": "Content restorers",
+      "layer": "core",
+      "kind": "module",
+      "files": [],
+      "notes": "Per-app plugins: browser tabs, documents, VS Code folders, Terminal tabs.",
+      "tasks": [
+        "P6.2"
+      ]
+    },
+    {
+      "id": "ax-bridge",
+      "name": "Accessibility bridge",
+      "layer": "platform",
+      "kind": "module",
+      "files": [],
+      "notes": "AXUIElement wrapper: windows, frame set (pos, size, pos), AXFullScreen, observers, _AXUIElementGetWindow.",
+      "tasks": [
+        "P2.2"
+      ]
+    },
+    {
+      "id": "window-list",
+      "name": "Window list",
+      "layer": "platform",
+      "kind": "module",
+      "files": [],
+      "notes": "CGWindowList and SLS window queries, including windows on other Spaces.",
+      "tasks": [
+        "P2.5"
+      ]
+    },
+    {
+      "id": "skylight-bridge",
+      "name": "SkyLight bridge",
+      "layer": "platform",
+      "kind": "module",
+      "files": [],
+      "notes": "All private SLS calls (spaces per display, window to space, bridged move, switch). dlsym, launch self-test, fallback flags.",
+      "tasks": [
+        "P1.2",
+        "P1.3",
+        "P1.5",
+        "P3.1",
+        "P3.2"
+      ]
+    },
+    {
+      "id": "mission-control",
+      "name": "Mission Control driver",
+      "layer": "platform",
+      "kind": "module",
+      "files": [],
+      "notes": "Adds or removes Desktops by driving Dock's Mission Control through Accessibility.",
+      "tasks": [
+        "P1.6"
+      ]
+    },
+    {
+      "id": "app-launcher",
+      "name": "App launcher",
+      "layer": "platform",
+      "kind": "module",
+      "files": [],
+      "notes": "NSWorkspace open by bundle id, wait for first window via AX observer, timeouts.",
+      "tasks": [
+        "P2.7"
+      ]
+    },
+    {
+      "id": "profile-store",
+      "name": "Profile store",
+      "layer": "data",
+      "kind": "store",
+      "files": [],
+      "notes": "Versioned JSON profiles in Application Support; import and export.",
+      "tasks": [
+        "P2.4",
+        "P6.5"
+      ]
+    },
+    {
+      "id": "backup-store",
+      "name": "Backup store",
+      "layer": "data",
+      "kind": "store",
+      "files": [],
+      "notes": "Timestamped copies of com.apple.spaces before any write; restore button.",
+      "tasks": [
+        "P3.6"
+      ]
+    },
+    {
+      "id": "spaces-lab",
+      "name": "Spaces Lab test tool",
+      "layer": "tooling",
+      "kind": "tool",
+      "files": [],
+      "notes": "Phase 1 tool: runs the Space experiments on the user's macOS and writes a results file.",
+      "tasks": [
+        "P1.1",
+        "P1.8",
+        "P1.9"
+      ]
+    },
+    {
+      "id": "repo-config",
+      "name": "Repo config and architecture map",
+      "layer": "tooling",
+      "kind": "tool",
+      "files": [
+        ".gitignore",
+        "docs/system.json"
+      ],
+      "notes": "Git ignore rules and this map.",
+      "tasks": [
+        "P0.7"
+      ]
+    },
+    {
+      "id": "research",
+      "name": "Research notes",
+      "layer": "docs",
+      "kind": "store",
+      "files": [
+        "docs/research/*.md"
+      ],
+      "notes": "Brief, landscape, risks, plan.",
+      "tasks": [
+        "P0.1",
+        "P0.6",
+        "P0.7"
+      ]
+    }
   ],
   "edges": [
-    {"from": "menubar-ui", "to": "profile-engine", "label": "run / capture profile", "kind": "call"},
-    {"from": "settings-ui", "to": "profile-store", "label": "edit profiles", "kind": "data"},
-    {"from": "layout-editor", "to": "layout-engine", "label": "zones", "kind": "call"},
-    {"from": "cli", "to": "profile-engine", "label": "run / capture / status", "kind": "call"},
-    {"from": "intents", "to": "profile-engine", "label": "Shortcuts action", "kind": "call"},
-    {"from": "hotkeys", "to": "profile-engine", "label": "profile hotkey", "kind": "event"},
-    {"from": "profile-engine", "to": "restore-planner", "label": "plan steps", "kind": "call"},
-    {"from": "restore-planner", "to": "window-matcher", "label": "match windows", "kind": "call"},
-    {"from": "restore-planner", "to": "display-map", "label": "map monitors", "kind": "call"},
-    {"from": "profile-engine", "to": "app-launcher", "label": "open closed apps", "kind": "call"},
-    {"from": "profile-engine", "to": "ax-bridge", "label": "move, resize, full screen", "kind": "call"},
-    {"from": "profile-engine", "to": "fullscreen-order", "label": "rebuild order", "kind": "call"},
-    {"from": "profile-engine", "to": "content-restore", "label": "tabs, documents", "kind": "call"},
-    {"from": "profile-engine", "to": "profile-store", "label": "save capture", "kind": "data"},
-    {"from": "fullscreen-order", "to": "ax-bridge", "label": "AXFullScreen", "kind": "call"},
-    {"from": "fullscreen-order", "to": "skylight-bridge", "label": "read Space order", "kind": "call"},
-    {"from": "space-guard", "to": "skylight-bridge", "label": "watch Spaces", "kind": "event"},
-    {"from": "space-guard", "to": "fullscreen-order", "label": "fix drift", "kind": "call"},
-    {"from": "pin-rules", "to": "skylight-bridge", "label": "move window to Desktop", "kind": "call"},
-    {"from": "binding-repair", "to": "backup-store", "label": "backup then write", "kind": "data"},
-    {"from": "restore-planner", "to": "mission-control", "label": "add missing Desktops", "kind": "call"},
-    {"from": "virtual-ws", "to": "ax-bridge", "label": "park and restore windows", "kind": "call"},
-    {"from": "gestures", "to": "virtual-ws", "label": "swipe switch", "kind": "event"},
-    {"from": "display-map", "to": "profile-engine", "label": "monitor set changed", "kind": "event"},
-    {"from": "spaces-lab", "to": "skylight-bridge", "label": "experiments", "kind": "call"}
+    {
+      "from": "menubar-ui",
+      "to": "profile-engine",
+      "label": "run / capture profile",
+      "kind": "call"
+    },
+    {
+      "from": "settings-ui",
+      "to": "profile-store",
+      "label": "edit profiles",
+      "kind": "data"
+    },
+    {
+      "from": "layout-editor",
+      "to": "layout-engine",
+      "label": "zones",
+      "kind": "call"
+    },
+    {
+      "from": "cli",
+      "to": "profile-engine",
+      "label": "run / capture / status",
+      "kind": "call"
+    },
+    {
+      "from": "intents",
+      "to": "profile-engine",
+      "label": "Shortcuts action",
+      "kind": "call"
+    },
+    {
+      "from": "hotkeys",
+      "to": "profile-engine",
+      "label": "profile hotkey",
+      "kind": "event"
+    },
+    {
+      "from": "profile-engine",
+      "to": "restore-planner",
+      "label": "plan steps",
+      "kind": "call"
+    },
+    {
+      "from": "restore-planner",
+      "to": "window-matcher",
+      "label": "match windows",
+      "kind": "call"
+    },
+    {
+      "from": "restore-planner",
+      "to": "display-map",
+      "label": "map monitors",
+      "kind": "call"
+    },
+    {
+      "from": "profile-engine",
+      "to": "app-launcher",
+      "label": "open closed apps",
+      "kind": "call"
+    },
+    {
+      "from": "profile-engine",
+      "to": "ax-bridge",
+      "label": "move, resize, full screen",
+      "kind": "call"
+    },
+    {
+      "from": "profile-engine",
+      "to": "fullscreen-order",
+      "label": "rebuild order",
+      "kind": "call"
+    },
+    {
+      "from": "profile-engine",
+      "to": "content-restore",
+      "label": "tabs, documents",
+      "kind": "call"
+    },
+    {
+      "from": "profile-engine",
+      "to": "profile-store",
+      "label": "save capture",
+      "kind": "data"
+    },
+    {
+      "from": "fullscreen-order",
+      "to": "ax-bridge",
+      "label": "AXFullScreen",
+      "kind": "call"
+    },
+    {
+      "from": "fullscreen-order",
+      "to": "skylight-bridge",
+      "label": "read Space order",
+      "kind": "call"
+    },
+    {
+      "from": "space-guard",
+      "to": "skylight-bridge",
+      "label": "watch Spaces",
+      "kind": "event"
+    },
+    {
+      "from": "space-guard",
+      "to": "fullscreen-order",
+      "label": "fix drift",
+      "kind": "call"
+    },
+    {
+      "from": "pin-rules",
+      "to": "skylight-bridge",
+      "label": "move window to Desktop",
+      "kind": "call"
+    },
+    {
+      "from": "binding-repair",
+      "to": "backup-store",
+      "label": "backup then write",
+      "kind": "data"
+    },
+    {
+      "from": "restore-planner",
+      "to": "mission-control",
+      "label": "add missing Desktops",
+      "kind": "call"
+    },
+    {
+      "from": "virtual-ws",
+      "to": "ax-bridge",
+      "label": "park and restore windows",
+      "kind": "call"
+    },
+    {
+      "from": "gestures",
+      "to": "virtual-ws",
+      "label": "swipe switch",
+      "kind": "event"
+    },
+    {
+      "from": "display-map",
+      "to": "profile-engine",
+      "label": "monitor set changed",
+      "kind": "event"
+    },
+    {
+      "from": "spaces-lab",
+      "to": "skylight-bridge",
+      "label": "experiments",
+      "kind": "call"
+    }
   ],
   "external": [
-    {"id": "windowserver", "name": "macOS WindowServer / SkyLight"},
-    {"id": "dock", "name": "Dock.app (Mission Control, Spaces)"},
-    {"id": "target-apps", "name": "User apps (Chrome, Telegram, VS Code, ...)"}
+    {
+      "id": "windowserver",
+      "name": "macOS WindowServer / SkyLight"
+    },
+    {
+      "id": "dock",
+      "name": "Dock.app (Mission Control, Spaces)"
+    },
+    {
+      "id": "target-apps",
+      "name": "User apps (Chrome, Telegram, VS Code, ...)"
+    }
   ],
-  "deployment": {"nodes": [
-    {"id": "mac", "label": "User's Mac", "sub": "Menu bar app, Developer ID signed and notarized, macOS 26+", "kind": "device", "group": "dev"}
-  ]},
+  "deployment": {
+    "nodes": [
+      {
+        "id": "mac",
+        "label": "User's Mac",
+        "sub": "Menu bar app, Developer ID signed and notarized, macOS 26+",
+        "kind": "device",
+        "group": "dev"
+      }
+    ]
+  },
   "containers": [
-    {"id": "app", "name": "Windows Manager.app", "tech": "Swift 6, SwiftUI + AppKit, menu bar app", "components": ["menubar-ui", "settings-ui", "layout-editor", "onboarding", "intents", "hotkeys", "profile-engine", "restore-planner", "window-matcher", "display-map", "fullscreen-order", "space-guard", "pin-rules", "binding-repair", "layout-engine", "virtual-ws", "gestures", "content-restore", "ax-bridge", "window-list", "skylight-bridge", "mission-control", "app-launcher", "profile-store", "backup-store"], "notes": "One process; private calls isolated in skylight-bridge."},
-    {"id": "cli-bin", "name": "wmctl", "tech": "Swift command-line tool", "components": ["cli"], "notes": "Talks to the running app."},
-    {"id": "lab", "name": "SpacesLab", "tech": "Swift command-line tool", "components": ["spaces-lab"], "notes": "Phase 1 experiments; results to docs/research."}
+    {
+      "id": "app",
+      "name": "Windows Manager.app",
+      "tech": "Swift 6, SwiftUI + AppKit, menu bar app",
+      "components": [
+        "menubar-ui",
+        "settings-ui",
+        "layout-editor",
+        "onboarding",
+        "intents",
+        "hotkeys",
+        "profile-engine",
+        "restore-planner",
+        "window-matcher",
+        "display-map",
+        "fullscreen-order",
+        "space-guard",
+        "pin-rules",
+        "binding-repair",
+        "layout-engine",
+        "virtual-ws",
+        "gestures",
+        "content-restore",
+        "ax-bridge",
+        "window-list",
+        "skylight-bridge",
+        "mission-control",
+        "app-launcher",
+        "profile-store",
+        "backup-store"
+      ],
+      "notes": "One process; private calls isolated in skylight-bridge."
+    },
+    {
+      "id": "cli-bin",
+      "name": "wmctl",
+      "tech": "Swift command-line tool",
+      "components": [
+        "cli"
+      ],
+      "notes": "Talks to the running app."
+    },
+    {
+      "id": "lab",
+      "name": "SpacesLab",
+      "tech": "Swift command-line tool",
+      "components": [
+        "spaces-lab"
+      ],
+      "notes": "Phase 1 experiments; results to docs/research."
+    }
   ],
   "flows": [
-    {"id": "one-click-restore", "name": "One-click restore", "notes": "Run a profile from the menu bar.", "steps": [
-      {"from": "user", "to": "menubar-ui", "label": "Run Work"},
-      {"from": "menubar-ui", "to": "profile-engine", "label": "run(profile)"},
-      {"from": "profile-engine", "to": "restore-planner", "label": "diff live vs saved"},
-      {"from": "profile-engine", "to": "app-launcher", "label": "open closed apps"},
-      {"from": "profile-engine", "to": "ax-bridge", "label": "place windows"},
-      {"from": "profile-engine", "to": "skylight-bridge", "label": "move to Desktops"},
-      {"from": "profile-engine", "to": "fullscreen-order", "label": "full screen in saved order"}
-    ]},
-    {"id": "drift-fix", "name": "Space drift fix", "notes": "macOS reorders Spaces after sleep or a monitor change.", "steps": [
-      {"from": "space-guard", "to": "skylight-bridge", "label": "read order"},
-      {"from": "space-guard", "to": "menubar-ui", "label": "Order changed: Fix"},
-      {"from": "space-guard", "to": "fullscreen-order", "label": "rebuild from first wrong slot"}
-    ]}
+    {
+      "id": "one-click-restore",
+      "name": "One-click restore",
+      "notes": "Run a profile from the menu bar.",
+      "steps": [
+        {
+          "from": "user",
+          "to": "menubar-ui",
+          "label": "Run Work"
+        },
+        {
+          "from": "menubar-ui",
+          "to": "profile-engine",
+          "label": "run(profile)"
+        },
+        {
+          "from": "profile-engine",
+          "to": "restore-planner",
+          "label": "diff live vs saved"
+        },
+        {
+          "from": "profile-engine",
+          "to": "app-launcher",
+          "label": "open closed apps"
+        },
+        {
+          "from": "profile-engine",
+          "to": "ax-bridge",
+          "label": "place windows"
+        },
+        {
+          "from": "profile-engine",
+          "to": "skylight-bridge",
+          "label": "move to Desktops"
+        },
+        {
+          "from": "profile-engine",
+          "to": "fullscreen-order",
+          "label": "full screen in saved order"
+        }
+      ]
+    },
+    {
+      "id": "drift-fix",
+      "name": "Space drift fix",
+      "notes": "macOS reorders Spaces after sleep or a monitor change.",
+      "steps": [
+        {
+          "from": "space-guard",
+          "to": "skylight-bridge",
+          "label": "read order"
+        },
+        {
+          "from": "space-guard",
+          "to": "menubar-ui",
+          "label": "Order changed: Fix"
+        },
+        {
+          "from": "space-guard",
+          "to": "fullscreen-order",
+          "label": "rebuild from first wrong slot"
+        }
+      ]
+    }
   ]
 }

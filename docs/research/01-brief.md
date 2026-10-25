@@ -12,7 +12,8 @@ What is Windows Manager, who is it for, and what must the first version do?
 - Must support split layouts and custom zones on one screen.
 - Must stop macOS from reordering Desktops and full-screen Spaces (user pain: A, Desktop, B, C, D becomes B, C, Desktop, A, D).
 - User machine (2026-10-25): macOS 27.0.1 (26A434), Apple M5 Pro, MacBook screen 3024x1964 + Samsung U32R59x.
-- Current layout, MacBook: [Chrome FS] [Telegram FS] [Desktop 1] [Arc FS] [Claude FS]; Samsung: [VS Code FS] [Desktop].
+- Current layout, Samsung (main display): [Chrome FS] [Telegram FS] [Desktop 1] [Arc FS] [Claude FS]; MacBook: [VS Code FS] [VS Code FS] [Desktop] (spaceslab spaces, P1.2).
+- Stage Manager is ON (com.apple.WindowManager GloballyEnabled = 1).
 - "Automatically rearrange Spaces based on most recent use" is ON (com.apple.dock mru-spaces = 1): the direct cause of the reordering.
 - "Displays have separate Spaces" is ON (com.apple.spaces spans-displays = 0).
 - com.apple.spaces keeps per-display Space order (SpaceAssignments > ManagedSpaceOrdering) and, per full-screen Space, the owner pid and window id (fs_wid).

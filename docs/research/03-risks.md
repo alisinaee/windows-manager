@@ -18,6 +18,7 @@ What can break this app, and what does each risk turn into in the plan?
 - R10 Gestures: the system three-finger swipe fights ours.
 - R11 License: copying GPL code would force GPL on the app.
 - R12 Writing com.apple.spaces can corrupt the user's Spaces.
+- R13 Stage Manager (ON here) groups and moves windows itself and adds overlay windows; restores and hiding may fight it.
 
 ## Decisions
 
@@ -31,6 +32,7 @@ What can break this app, and what does each risk turn into in the plan?
 - R9: assignments saved to disk; on quit, crash or relaunch all windows are shown again (P5.1).
 - R10: offer four fingers for macOS, or an event-tap mode that takes the swipe (P5.4).
 - R11: credits file for MIT code; GPL and unlicensed code read only (P7.4).
+- R13: Spaces Lab records Stage Manager state in every test; the app detects it, ignores its overlay windows and offers to turn it off per profile.
 - R12: timestamped backup before every write, one-click restore, experiments run by the user (P1.7, P3.6).
 
 ## Sources

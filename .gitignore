@@ -24,3 +24,6 @@ docs/roadmap.config.json
 docs/tasks.json
 docs/undo.jsonl
 docs/work.json
+
+# Spaces Lab output
+lab-results/

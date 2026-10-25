@@ -207,7 +207,7 @@ enum MoveCommand {
         print("Move methods (tried in this order):")
         let availability = SpaceMover.availability()
         for method in MoveMethod.allCases {
-            let entry = availability[method] ?? MethodAvailability(available: false, reason: "unknown")
+            let entry = availability[method] ?? MoveMethodAvailability(available: false, reason: "unknown")
             print("  \(pad(method.rawValue, 15)) \(entry.available ? "available    " : "NOT available")  \(entry.reason)")
             result.observe("method-\(method.rawValue)", (entry.available ? "available: " : "not available: ") + entry.reason)
         }

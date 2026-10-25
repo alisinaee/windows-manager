@@ -35,7 +35,7 @@ public enum MoveMethod: String, CaseIterable, Codable {
 }
 
 /// Whether one method can be tried on this Mac, with the reason.
-public struct MethodAvailability: Codable, Equatable {
+public struct MoveMethodAvailability: Codable, Equatable {
     public var available: Bool
     public var reason: String
 
@@ -268,11 +268,11 @@ public enum SpaceMover {
     }
 
     /// Per method: can it be tried on this Mac, and why.
-    public static func availability() -> [MoveMethod: MethodAvailability] {
-        var result: [MoveMethod: MethodAvailability] = [:]
+    public static func availability() -> [MoveMethod: MoveMethodAvailability] {
+        var result: [MoveMethod: MoveMethodAvailability] = [:]
         for method in MoveMethod.allCases {
             let resolved = resolve(method)
-            result[method] = MethodAvailability(available: resolved.run != nil, reason: resolved.reason)
+            result[method] = MoveMethodAvailability(available: resolved.run != nil, reason: resolved.reason)
         }
         return result
     }

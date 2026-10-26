@@ -7,6 +7,7 @@ final class SpacesServices {
 
     let spaceGuard = SpaceGuardController()
     let pins = PinWatcher()
+    let backups = BackupController()
     private var started = false
 
     func start() {
@@ -23,7 +24,7 @@ struct SpacesSettingsTab: View {
         Form {
             SkyLightHealthView()
             SpaceGuardView(controller: SpacesServices.shared.spaceGuard)
-            BackupSection()
+            BackupSection(controller: SpacesServices.shared.backups)
             PinRulesSection(onChange: { SpacesServices.shared.pins.reload() })
         }
         .formStyle(.grouped)

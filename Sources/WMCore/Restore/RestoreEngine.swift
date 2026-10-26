@@ -99,7 +99,7 @@ public protocol RestoreEnvironment: AnyObject {
     /// Opens apps and waits until they have their windows. Results are in the order of `requests`.
     func launchAll(_ requests: [LaunchRequest]) async -> [LaunchResult]
     /// The Accessibility element of a window, also for windows on other Spaces. Nil when it cannot be reached.
-    func element(for target: RestoreTarget) -> WindowHandle?
+    func element(for target: RestoreTarget) async -> WindowHandle?
     /// Places the window and reads the result back.
     func setFrame(_ handle: WindowHandle, to frame: CGRect) async -> RestoreActionResult
     /// Turns full screen on or off and waits until the window has arrived (or `timeout` seconds pass).
@@ -111,7 +111,7 @@ public protocol RestoreEnvironment: AnyObject {
     func moveToDesktop(windowID: UInt32, spaceID: UInt64) async -> RestoreActionResult
     func hideApp(pid: Int32, app: AppRef) async -> RestoreActionResult
     /// The frame now, for the settle check. Nil when unreadable.
-    func frameOf(_ handle: WindowHandle) -> CGRect?
+    func frameOf(_ handle: WindowHandle) async -> CGRect?
     /// Waits. The engine uses it for the settle delay; fakes return at once.
     func sleep(_ seconds: TimeInterval) async
 }
@@ -450,7 +450,13 @@ public final class RestoreEngine {
     /// Runs `action` on the window's Accessibility element, within the timeout.
     private func onWindow(_ target: RestoreTarget, state: RunState, timeout: TimeInterval,
                           _ action: @escaping @MainActor (WindowHandle) async -> RestoreActionResult) async -> Outcome {
-        guard let handle = handle(for: target, state: state) else {
+        // The lookup can take a while (it may search element ids), so it is raced against the timeout too.
+        guard let lookup = await StepRace<WindowHandle?>().run(timeout: timeout, { [self] in
+            await handle(for: target, state: state)
+        }) else {
+            return Outcome(status: .failed("looking up the window timed out after \(Self.format(timeout)) s"))
+        }
+        guard let handle = lookup else {
             return Outcome(status: .failed("window not reachable by Accessibility"))
         }
         var outcome = await limited(timeout: timeout) { await action(handle) }
@@ -469,10 +475,10 @@ public final class RestoreEngine {
         return Outcome(status: .failed(result.detail ?? "refused"), frame: result.frame)
     }
 
-    private func handle(for target: RestoreTarget, state: RunState) -> WindowHandle? {
+    private func handle(for target: RestoreTarget, state: RunState) async -> WindowHandle? {
         if let known = state.handles[target.windowID] { return known }
         if state.unreachable.contains(target.windowID) { return nil }
-        guard let found = environment.element(for: target) else {
+        guard let found = await environment.element(for: target) else {
             state.unreachable.insert(target.windowID)
             return nil
         }
@@ -494,7 +500,7 @@ public final class RestoreEngine {
                 return
             }
             guard let placed = state.placed[id] else { continue }
-            guard let actual = environment.frameOf(placed.handle),
+            guard let actual = await environment.frameOf(placed.handle),
                   !WindowMover.frameMatches(actual, placed.frame, tolerance: config.frameTolerance) else { continue }
 
             let description = "set frame \(RestoreFormat.rect(placed.frame)) again (window drifted to "
@@ -634,8 +640,28 @@ public final class LiveRestoreEnvironment: RestoreEnvironment {
         self.scanOptions = scanOptions
     }
 
+    /// Serial queue for the blocking Accessibility and window-server work of this environment. The main actor is
+    /// never held by it, so the menu keeps animating and the engine's step timeout can fire. Work that outlives
+    /// its caller (after a timeout) keeps running; later work waits behind it.
+    private static let workQueue = DispatchQueue(label: "WMCore.RestoreEnvironment.work")
+
+    static func runOffMain<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            workQueue.async { continuation.resume(returning: work()) }
+        }
+    }
+
+    private static func readBool(_ element: AXElement, _ attribute: String) async -> Bool? {
+        await runOffMain { element.bool(attribute) }
+    }
+
+    private static func writeBool(_ element: AXElement, _ attribute: String, _ value: Bool) async -> Bool {
+        await runOffMain { element.set(attribute, value).isSuccess }
+    }
+
     public func scan() async -> WorkspaceScan {
-        WorkspaceScanner.scan(options: scanOptions)
+        let options = scanOptions
+        return await Self.runOffMain { WorkspaceScanner.scan(options: options) }
     }
 
     public func launchAll(_ requests: [LaunchRequest]) async -> [LaunchResult] {
@@ -647,15 +673,19 @@ public final class LiveRestoreEnvironment: RestoreEnvironment {
         })
     }
 
-    public func element(for target: RestoreTarget) -> WindowHandle? {
-        AXRemoteWindows.element(forWindowID: target.windowID, pid: target.pid).map {
-            WindowHandle(windowID: target.windowID, pid: target.pid, element: $0)
+    public func element(for target: RestoreTarget) async -> WindowHandle? {
+        let windowID = target.windowID
+        let pid = target.pid
+        return await Self.runOffMain {
+            AXRemoteWindows.element(forWindowID: windowID, pid: pid).map {
+                WindowHandle(windowID: windowID, pid: pid, element: $0)
+            }
         }
     }
 
     public func setFrame(_ handle: WindowHandle, to frame: CGRect) async -> RestoreActionResult {
         guard let element = handle.element else { return .failure("no Accessibility element") }
-        let result = WindowMover.setFrame(element, to: frame)
+        let result = await Self.runOffMain { WindowMover.setFrame(element, to: frame) }
         if result.matched { return .ok(frame: result.actual) }
         let now = result.actual.map { RestoreFormat.rect($0) } ?? "unreadable"
         if result.minSizeHit && !result.refused {
@@ -667,14 +697,14 @@ public final class LiveRestoreEnvironment: RestoreEnvironment {
     public func setFullScreen(_ handle: WindowHandle, _ on: Bool, timeout: TimeInterval) async -> RestoreActionResult {
         guard let element = handle.element else { return .failure("no Accessibility element") }
         let attribute = AXElement.fullScreenAttribute
-        if element.bool(attribute) == on { return .ok("already \(on ? "in" : "out of") full screen") }
-        guard element.set(attribute, on).isSuccess else {
+        if await Self.readBool(element, attribute) == on { return .ok("already \(on ? "in" : "out of") full screen") }
+        guard await Self.writeBool(element, attribute, on) else {
             return .failure("the app refused to \(on ? "enter" : "leave") full screen")
         }
 
         // 1. The attribute flips.
         let deadline = RestoreEngine.uptime() + timeout
-        while element.bool(attribute) != on {
+        while await Self.readBool(element, attribute) != on {
             if Task.isCancelled || RestoreEngine.uptime() >= deadline {
                 return .failure("the window did not \(on ? "enter" : "leave") full screen in time")
             }
@@ -700,12 +730,12 @@ public final class LiveRestoreEnvironment: RestoreEnvironment {
 
     private func setMinimized(_ handle: WindowHandle, _ on: Bool) async -> RestoreActionResult {
         guard let element = handle.element else { return .failure("no Accessibility element") }
-        if element.bool(kAXMinimizedAttribute) == on { return .ok() }
-        guard element.set(kAXMinimizedAttribute, on).isSuccess else {
+        if await Self.readBool(element, kAXMinimizedAttribute) == on { return .ok() }
+        guard await Self.writeBool(element, kAXMinimizedAttribute, on) else {
             return .failure("the app refused to \(on ? "minimize" : "unminimize") the window")
         }
         let deadline = RestoreEngine.uptime() + 1.5
-        while element.bool(kAXMinimizedAttribute) != on {
+        while await Self.readBool(element, kAXMinimizedAttribute) != on {
             if Task.isCancelled || RestoreEngine.uptime() >= deadline {
                 return .failure("the window did not \(on ? "minimize" : "unminimize") in time")
             }
@@ -717,7 +747,7 @@ public final class LiveRestoreEnvironment: RestoreEnvironment {
 
     public func raise(_ handle: WindowHandle, app: AppRef) async -> RestoreActionResult {
         guard let element = handle.element else { return .failure("no Accessibility element") }
-        guard WindowMover.raise(element) else { return .failure("the window did not accept AXRaise") }
+        guard await Self.runOffMain({ WindowMover.raise(element) }) else { return .failure("the window did not accept AXRaise") }
         // AXRaise only orders the windows of one app; the app has to come forward too for the saved
         // stacking across apps. Failing to do so is not an error.
         let application = AXElement.application(pid: handle.pid)
@@ -749,8 +779,9 @@ public final class LiveRestoreEnvironment: RestoreEnvironment {
         return .ok()
     }
 
-    public func frameOf(_ handle: WindowHandle) -> CGRect? {
-        handle.element?.frame
+    public func frameOf(_ handle: WindowHandle) async -> CGRect? {
+        guard let element = handle.element else { return nil }
+        return await Self.runOffMain { element.frame }
     }
 
     public func sleep(_ seconds: TimeInterval) async {

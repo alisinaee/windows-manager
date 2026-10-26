@@ -22,6 +22,21 @@ struct ProfileStudioView: View {
                 } detail: {
                     detail
                 }
+                .sheet(isPresented: $model.isStartSheetPresented) {
+                    StudioStartSheet(profiles: model.rows, onChoose: { model.chooseStart($0) }, onCancel: { model.cancelStart() })
+                }
+                .sheet(isPresented: $model.isSaveSheetPresented) {
+                    if let builder = model.builder {
+                        StudioSaveSheet(builder: builder, onSaved: { model.didSave($0) }, onCancel: { model.cancelSave() })
+                    }
+                }
+                .confirmationDialog("You have unsaved changes", isPresented: $model.isLeaveConfirmPresented, titleVisibility: .visible) {
+                    Button("Save…") { model.saveThen { model.leaveEdit() } }
+                    Button("Discard Changes", role: .destructive) { model.leaveEdit() }
+                    Button("Keep Editing", role: .cancel) {}
+                } message: {
+                    Text("Leaving Edit mode throws away what you changed since the last save.")
+                }
             }
         }
         .frame(minWidth: 900, minHeight: 600)
@@ -46,6 +61,7 @@ struct ProfileStudioView: View {
                 ProfileStudioRowView(row: row).tag(row.id)
             }
             .accessibilityLabel("Profiles")
+            .disabled(model.mode == .edit)
             if !model.skipped.isEmpty {
                 Text("Could not read: \(model.skipped.joined(separator: ", "))")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -55,7 +71,10 @@ struct ProfileStudioView: View {
     }
 
     @ViewBuilder private var detail: some View {
-        if let row = model.selectedRow {
+        if model.mode == .edit, let builder = model.builder {
+            StudioEditDetail(model: model, builder: builder)
+                .id(ObjectIdentifier(builder))
+        } else if let row = model.selectedRow {
             VStack(spacing: 0) {
                 header(row)
                 Divider()
@@ -83,9 +102,11 @@ struct ProfileStudioView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             Spacer()
-            Button { model.mode = .edit } label: { Label("Edit", systemImage: "pencil") }
-                .disabled(true)
-                .help("Editing arrives with the Builder")
+            StudioModePicker(model: model)
+            Button { model.beginNewProfile() } label: { Label("New profile", systemImage: "plus") }
+                .help("Start a new profile from a blank layout, the current workspace or a copy")
+            Button { model.startEditing(row.id) } label: { Label("Edit this profile", systemImage: "pencil") }
+                .help("Open this profile in the Builder")
             Button { NSApp.activate(); openSettings() } label: { Label("Reveal in Settings", systemImage: "gearshape") }
                 .accessibilityHint("Opens Settings, Profiles tab")
         }
@@ -152,6 +173,159 @@ struct StudioMapHost: View {
         .task(id: row) { map.load(try? AppState.current?.store.load(row.id)) }
         .onChange(of: model.liveStatus) { _, newValue in map.status = newValue }
         .onAppear { map.status = model.liveStatus }
+    }
+}
+
+/// View / Edit segmented toggle.
+struct StudioModePicker: View {
+    @ObservedObject var model: ProfileStudioModel
+
+    var body: some View {
+        Picker("Mode", selection: Binding(get: { model.mode }, set: { model.requestMode($0) })) {
+            Text("View").tag(ProfileStudioMode.view)
+            Text("Edit").tag(ProfileStudioMode.edit)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(width: 120)
+        .accessibilityLabel("Mode")
+        .help("Switch between viewing and editing the profile")
+    }
+}
+
+enum StudioInspectorTab: String, CaseIterable, Identifiable {
+    case inspector = "Inspector"
+    case options = "Options"
+    case launchOrder = "Launch order"
+    var id: String { rawValue }
+}
+
+@MainActor
+final class StudioEditLocalState: ObservableObject {
+    @Published var tab: StudioInspectorTab = .inspector
+}
+
+/// Edit mode: header and edit bar, app library, the builder map and the inspector tabs.
+struct StudioEditDetail: View {
+    @ObservedObject var model: ProfileStudioModel
+    @ObservedObject var builder: ProfileBuilderModel
+    @StateObject private var map = ProfileMapModel()
+    @StateObject private var local = StudioEditLocalState()
+
+    var body: some View {
+        switch builder.phase {
+        case .idle:
+            VStack(spacing: 12) {
+                Text("Choose how to start the new profile.").foregroundStyle(.secondary)
+                Button("Choose…") { model.isStartSheetPresented = true }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .starting:
+            ProgressView("Preparing the draft…").frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .failed(let message):
+            VStack(spacing: 12) {
+                Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                Button("Back to View") { model.leaveEdit() }
+            }
+            .padding().frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .ready:
+            VStack(spacing: 0) {
+                header
+                Divider()
+                editBar
+                Divider()
+                HSplitView {
+                    AppLibraryView(builder: builder)
+                        .frame(minWidth: 180, idealWidth: 220, maxWidth: 300)
+                    VStack(spacing: 0) {
+                        BuilderMapCanvas(map: map, builder: builder)
+                        Divider()
+                        MapLegendView(showsStatus: false)
+                    }
+                    .frame(minWidth: 380)
+                    inspector
+                        .frame(minWidth: 300, idealWidth: 320, maxWidth: 440)
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(builder.nameText.isEmpty ? "Untitled profile" : builder.nameText).font(.title2.bold())
+                Text(builder.isNewProfile ? "New profile (not saved yet)" : "Editing a saved profile")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            Spacer()
+            StudioModePicker(model: model)
+        }
+        .padding(16)
+    }
+
+    private var editBar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Button { builder.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
+                    .keyboardShortcut("z", modifiers: .command)
+                    .disabled(!builder.canUndo)
+                    .help("Undo the last change (Cmd+Z)")
+                Button { builder.redo() } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                    .disabled(!builder.canRedo)
+                    .help("Redo (Shift+Cmd+Z)")
+                Spacer()
+                Text(statusText)
+                    .font(.callout)
+                    .foregroundStyle(builder.errorCount > 0 ? Color.red : (builder.warningCount > 0 ? Color.orange : Color.secondary))
+                    .accessibilityLabel("Draft check: \(statusText)")
+                Button { model.saveThen(nil) } label: { Label("Save", systemImage: "square.and.arrow.down") }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut("s", modifiers: .command)
+                    .disabled(builder.blocksSaving)
+                    .help(builder.blocksSaving ? "Fix the problems marked in red first" : "Save the profile (Cmd+S)")
+            }
+            if let message = builder.lastError {
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .font(.callout).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !builder.startNotes.isEmpty {
+                Text(builder.startNotes.joined(separator: " "))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+
+    private var statusText: String {
+        let e = builder.errorCount, w = builder.warningCount
+        var parts: [String] = []
+        if builder.isDirty { parts.append("Unsaved changes") }
+        if e == 0 && w == 0 {
+            parts.append("No problems")
+        } else {
+            if e > 0 { parts.append("\(e) problem\(e == 1 ? "" : "s")") }
+            if w > 0 { parts.append("\(w) warning\(w == 1 ? "" : "s")") }
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var inspector: some View {
+        VStack(spacing: 0) {
+            Picker("Inspector", selection: Binding(get: { local.tab }, set: { local.tab = $0 })) {
+                ForEach(StudioInspectorTab.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            .padding(8)
+            Divider()
+            switch local.tab {
+            case .inspector: MapInspectorView(map: map, plan: nil, isCompareOn: false)
+            case .options: ProfileOptionsPanel(builder: builder)
+            case .launchOrder: LaunchOrderEditor(builder: builder)
+            }
+        }
     }
 }
 

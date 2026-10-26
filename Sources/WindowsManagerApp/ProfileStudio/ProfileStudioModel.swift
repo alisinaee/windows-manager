@@ -14,7 +14,7 @@ struct ProfileStudioRow: Identifiable, Hashable {
 
 enum ProfileStudioMode: Equatable {
     case view
-    case edit   // placeholder until the Builder (UI5+)
+    case edit
 }
 
 enum ProfileStudioLoadState: Equatable {
@@ -46,6 +46,16 @@ final class ProfileStudioModel: ObservableObject {
     @Published private(set) var compareError: String?
     /// The Restore preview sheet is showing.
     @Published var isPreviewPresented = false
+
+    // MARK: Edit mode (UI7)
+
+    /// The Builder session of Edit mode; nil in View mode.
+    @Published private(set) var builder: ProfileBuilderModel?
+    @Published var isStartSheetPresented = false
+    @Published var isSaveSheetPresented = false
+    @Published var isLeaveConfirmPresented = false
+    /// Runs once after the next successful save (leave Edit mode, close the window).
+    private var afterSave: (() -> Void)?
 
     var onTitleChange: ((String) -> Void)?
     private var compareTask: Task<Void, Never>?
@@ -97,9 +107,91 @@ final class ProfileStudioModel: ObservableObject {
 
     /// Selects a profile (reloading first so a just-captured profile is found).
     func open(profileID: UUID) {
-        mode = .view
+        if hasUnsavedChanges {   // never throw a draft away because another window asked for a profile
+            reload()
+            return
+        }
+        leaveEdit()
         reload()
         if rows.contains(where: { $0.id == profileID }) { selectedID = profileID }
+    }
+
+    // MARK: Edit mode
+
+    var hasUnsavedChanges: Bool { mode == .edit && (builder?.isDirty ?? false) }
+
+    /// The View / Edit toggle.
+    func requestMode(_ newMode: ProfileStudioMode) {
+        guard newMode != mode else { return }
+        switch newMode {
+        case .view: requestLeaveEdit()
+        case .edit: if let id = selectedID { startEditing(id) }
+        }
+    }
+
+    /// "Edit this profile": opens the saved profile in place.
+    func startEditing(_ id: UUID) {
+        let b = ProfileBuilderModel()
+        builder = b
+        mode = .edit
+        setCompare(false)
+        Task { await b.start(from: .editExisting(id)) }
+    }
+
+    /// "New profile": shows the start sheet first.
+    func beginNewProfile() {
+        guard mode == .view else { return }
+        builder = ProfileBuilderModel()
+        mode = .edit
+        setCompare(false)
+        isStartSheetPresented = true
+    }
+
+    func chooseStart(_ choice: StudioStartChoice) {
+        isStartSheetPresented = false
+        guard let b = builder else { return }
+        Task { await b.start(from: choice) }
+    }
+
+    func cancelStart() {
+        isStartSheetPresented = false
+        if builder?.phase == .idle { leaveEdit() }
+    }
+
+    /// Leaving Edit mode: asks first when there are unsaved changes.
+    func requestLeaveEdit() {
+        if hasUnsavedChanges { isLeaveConfirmPresented = true } else { leaveEdit() }
+    }
+
+    /// Opens the save sheet and runs `then` after a successful save.
+    func saveThen(_ then: (() -> Void)?) {
+        afterSave = then
+        isSaveSheetPresented = true
+    }
+
+    func cancelSave() {
+        isSaveSheetPresented = false
+        afterSave = nil
+    }
+
+    func didSave(_ profile: Profile) {
+        isSaveSheetPresented = false
+        reload()
+        selectedID = profile.id
+        let next = afterSave
+        afterSave = nil
+        next?()
+    }
+
+    /// Throws the draft away and returns to View mode.
+    func leaveEdit() {
+        builder?.discard()
+        builder = nil
+        isStartSheetPresented = false
+        isSaveSheetPresented = false
+        isLeaveConfirmPresented = false
+        afterSave = nil
+        mode = .view
     }
 
     // MARK: Compare

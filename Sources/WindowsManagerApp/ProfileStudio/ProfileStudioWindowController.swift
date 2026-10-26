@@ -41,6 +41,26 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard model.hasUnsavedChanges else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Save changes to this profile?"
+        alert.informativeText = "Your changes will be lost if you close without saving."
+        alert.addButton(withTitle: "Save…")
+        alert.addButton(withTitle: "Discard Changes")
+        alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            model.saveThen { [weak sender] in sender?.close() }
+            return false
+        case .alertSecondButtonReturn:
+            model.leaveEdit()
+            return true
+        default:
+            return false
+        }
+    }
+
     func windowWillClose(_ notification: Notification) {
         guard let closing = notification.object as? NSWindow, closing === window else { return }
         model.onTitleChange = nil

@@ -29,4 +29,4 @@ Notes:
 
 ## License of Windows Manager
 
-Pending. The license choice is task P7.1 (MIT is suggested in the roadmap). When it is decided, this section and the README will be updated.
+Windows Manager is released under the MIT License. See the LICENSE file in the repository root.

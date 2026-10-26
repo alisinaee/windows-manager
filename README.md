@@ -66,4 +66,4 @@ The test target is `WMCoreTests`.
 
 ## License
 
-Pending. The license choice is task P7.1.
+Windows Manager is released under the MIT License (see [LICENSE](LICENSE)). The name stays "Windows Manager" for now.

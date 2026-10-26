@@ -284,8 +284,8 @@ import Testing
 @Suite("Profile bundle id case")
 struct ProfileBundleIDCaseTests {
     @Test func bundleIDsCompareIgnoringCase() {
-        let a = AppRef(name: "Chrome", bundleID: "com.google.chrome")
-        let b = AppRef(name: "Chrome", bundleID: "com.google.Chrome")
+        let a = AppRef(bundleID: "com.google.chrome", name: "Chrome")
+        let b = AppRef(bundleID: "com.google.Chrome", name: "Chrome")
         #expect(Profile.isSameApp(a, b))
     }
 }

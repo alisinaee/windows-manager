@@ -4,6 +4,7 @@ import SwiftUI
 struct MenuBarContent: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.openSettings) private var openSettings
+    @ObservedObject private var workspaces = WorkspaceController.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -26,6 +27,8 @@ struct MenuBarContent: View {
             captureSection
 
             statusRow
+
+            workspacesSection
 
             Divider().padding(.vertical, 2)
 
@@ -58,6 +61,27 @@ struct MenuBarContent: View {
             ForEach(appState.savedProfiles) { profile in
                 MenuRow(title: "Run \(profile.name)") { appState.run(profile) }
                     .disabled(!appState.canAct)
+            }
+        }
+    }
+
+    @ViewBuilder private var workspacesSection: some View {
+        if workspaces.isEnabled {
+            Divider().padding(.vertical, 2)
+            Text("Workspaces")
+                .font(.footnote).foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+            ForEach(workspaces.workspaces) { ws in
+                MenuRow(title: (ws.id == workspaces.activeID ? "\u{2713} " : "    ") + ws.name) {
+                    workspaces.switchTo(ws.id)
+                }
+            }
+            MenuRow(title: "+ New workspace") { workspaces.createWorkspace() }
+            MenuRow(title: "Add front app to current") { workspaces.addFrontmostAppToActive() }
+                .disabled(workspaces.activeID == nil)
+            if let text = workspaces.statusText {
+                Text(text).font(.footnote).foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
             }
         }
     }

@@ -10,6 +10,8 @@ struct SettingsView: View {
                 .tabItem { Label("Profiles", systemImage: "rectangle.3.group") }
             WindowRulesSettingsTab()
                 .tabItem { Label("Window rules", systemImage: "list.bullet.rectangle") }
+            WorkspacesSettingsTab()
+                .tabItem { Label("Workspaces", systemImage: "square.stack.3d.up") }
             MonitorsSettingsTab()
                 .tabItem { Label("Monitors", systemImage: "display.2") }
             AboutSettingsTab()

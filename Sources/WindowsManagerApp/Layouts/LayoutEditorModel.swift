@@ -138,7 +138,10 @@ final class LayoutEditorModel: ObservableObject {
     }
 
     private func persist(_ layout: WMCore.Layout) {
-        do { try store.upsert(layout); errorText = nil } catch { errorText = error.localizedDescription }
+        do {
+            try store.upsert(layout); errorText = nil
+            NotificationCenter.default.post(name: .layoutsDidChange, object: nil)
+        } catch { errorText = error.localizedDescription }
     }
 
     private func uniqueName(_ base: String) -> String {
@@ -148,4 +151,9 @@ final class LayoutEditorModel: ObservableObject {
         while names.contains("\(base) \(n)") { n += 1 }
         return "\(base) \(n)"
     }
+}
+
+extension Notification.Name {
+    /// Posted after a layout was saved; SnapMonitor can start late when the first layout appears.
+    static let layoutsDidChange = Notification.Name("dev.windowsmanager.layoutsDidChange")
 }

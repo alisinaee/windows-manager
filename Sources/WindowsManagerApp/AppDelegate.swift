@@ -68,7 +68,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Snap overlay (Option-drag): starts only when Accessibility is trusted and a layout exists.
-        if !CommandLine.arguments.contains("--self-check") { SnapMonitor.shared.startIfPossible() }
+        if !CommandLine.arguments.contains("--self-check") {
+            SnapMonitor.shared.startIfPossible()
+            NotificationCenter.default.addObserver(forName: .layoutsDidChange, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { SnapMonitor.shared.startIfPossible() }
+            }
+            // Virtual workspaces: crash recovery now, switching pieces only when the opt-in switch is on.
+            WorkspaceController.shared.startIfPossible()
+        }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

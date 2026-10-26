@@ -44,7 +44,14 @@ final class AppState: ObservableObject {
     /// Re-reads the permissions. Cheap and never shows a dialog.
     func refreshPermissions() {
         let trusted = AXPermission.isTrusted()
-        if trusted != isAccessibilityTrusted { isAccessibilityTrusted = trusted }
+        if trusted != isAccessibilityTrusted {
+            isAccessibilityTrusted = trusted
+            if trusted {
+                // Late grant: start what could not start at launch.
+                SnapMonitor.shared.startIfPossible()
+                WorkspaceController.shared.startIfPossible()
+            }
+        }
     }
 
     /// Shows the system Accessibility dialog, then checks once a second (up to a minute) until the grant lands.

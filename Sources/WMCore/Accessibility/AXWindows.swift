@@ -1,10 +1,6 @@
 import AppKit
 import ApplicationServices
 
-// Private but long-stable call: maps an AX window element to its CGWindowID.
-@_silgen_name("_AXUIElementGetWindow")
-private func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
-
 /// One window as seen through the Accessibility API.
 public struct WindowInfo: Codable, Equatable {
     public var pid: Int32
@@ -117,11 +113,9 @@ public enum AXWindows {
         boolAttribute(window, kAXMinimizedAttribute)
     }
 
-    /// CGWindowID of an AX window (private `_AXUIElementGetWindow`), or nil on failure.
+    /// CGWindowID of an AX window (private `_AXUIElementGetWindow`, see `AXElement.windowID`), or nil on failure.
     public static func windowID(of window: AXUIElement) -> CGWindowID? {
-        var id: CGWindowID = 0
-        guard _AXUIElementGetWindow(window, &id) == .success, id != 0 else { return nil }
-        return id
+        AXElement(window, timeout: nil).windowID
     }
 
     // MARK: Changing windows
@@ -142,6 +136,8 @@ public enum AXWindows {
 
     /// Sets size, then position, then size again. The first size lets the window fit on the target
     /// screen, the last one fixes windows that were clamped while moving between screens.
+    /// Simple unchecked version (no read-back, no retry). The app uses `WindowMover.setFrame`, which also
+    /// verifies the result; this one stays for the Spaces Lab commands.
     @discardableResult
     public static func setFrame(_ frame: CGRect, of window: AXUIElement) -> Bool {
         let first = setSize(frame.size, of: window)
@@ -159,6 +155,66 @@ public enum AXWindows {
     @discardableResult
     public static func raise(_ window: AXUIElement) -> Bool {
         AXUIElementPerformAction(window, kAXRaiseAction as CFString) == .success
+    }
+
+    // MARK: AXElement based API (used by the app)
+
+    private static let documentAttribute = kAXDocumentAttribute
+    private static let standardWindowSubrole = kAXStandardWindowSubrole
+
+    /// Windows of a process that AX lists, as `AXElement`s (1 s messaging timeout).
+    /// Important: AX only lists windows on the Space(s) that are visible right now, plus minimized
+    /// windows. Windows on other Spaces appear after the person switches there. Elements obtained earlier
+    /// stay usable after their Space is left.
+    /// Only elements with role AXWindow are returned: for windows of other Spaces macOS can list
+    /// placeholder entries (role AXApplication, no frame, no title) that cannot be used for anything.
+    public static func windows(ofPID pid: pid_t) -> [AXElement] {
+        AXElement.application(pid: pid).elements(kAXWindowsAttribute).filter { $0.role == kAXWindowRole }
+    }
+
+    /// Only windows with role AXWindow and subrole AXStandardWindow: no dialogs, sheets, palettes or
+    /// system overlays. Most apps' ordinary windows qualify; a few that do not set a subrole are skipped.
+    public static func standardWindows(ofPID pid: pid_t) -> [AXElement] {
+        AXElement.application(pid: pid).elements(kAXWindowsAttribute).filter(isStandardWindow)
+    }
+
+    /// The app's main window (AXMainWindow), if any.
+    public static func mainWindow(ofPID pid: pid_t) -> AXElement? {
+        AXElement.application(pid: pid).element(kAXMainWindowAttribute)
+    }
+
+    /// The app's focused window (AXFocusedWindow), if any.
+    public static func focusedWindow(ofPID pid: pid_t) -> AXElement? {
+        AXElement.application(pid: pid).element(kAXFocusedWindowAttribute)
+    }
+
+    /// The focused window of the frontmost app.
+    public static func focusedWindow() -> AXElement? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        return focusedWindow(ofPID: app.processIdentifier)
+    }
+
+    /// True for a window with role AXWindow and subrole AXStandardWindow.
+    public static func isStandardWindow(_ window: AXElement) -> Bool {
+        window.role == kAXWindowRole && window.subrole == standardWindowSubrole
+    }
+
+    /// File URL of the document shown in the window (AXDocument), nil for windows without a file.
+    public static func documentURL(of window: AXElement) -> URL? {
+        guard let text = window.string(documentAttribute), !text.isEmpty else { return nil }
+        if let url = URL(string: text), url.isFileURL { return url }
+        if text.hasPrefix("/") { return URL(fileURLWithPath: text) }
+        return nil
+    }
+
+    /// Path of the document shown in the window (AXDocument), nil for windows without a file.
+    public static func documentPath(of window: AXElement) -> String? {
+        documentURL(of: window)?.path
+    }
+
+    /// Full description of one window of `app`.
+    public static func info(of window: AXElement, app: NSRunningApplication) -> WindowInfo {
+        info(of: window.raw, app: app)
     }
 
     // MARK: Helpers

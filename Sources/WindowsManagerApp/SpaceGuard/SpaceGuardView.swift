@@ -42,7 +42,7 @@ struct SpaceGuardView: View {
                 get: { controller.settings.watchEnabled },
                 set: { controller.setWatch($0) }
             ))
-            Toggle("Ask to fix when the order drifts", isOn: Binding(
+            Toggle("Show \"Fix available\" when the order drifts", isOn: Binding(
                 get: { controller.settings.autoFix },
                 set: { controller.setAutoFix($0) }
             ))
@@ -61,13 +61,31 @@ struct SpaceGuardView: View {
             }
             .disabled(!controller.settings.hasExpectedOrder)
 
-            Button("Fix") {
-                controller.fix()
+            HStack {
+                Button("Fix") {
+                    controller.prepareFix()
+                }
+                .disabled((controller.report?.drifts.isEmpty ?? true) || controller.isRepairing)
+                if controller.fixAvailable {
+                    Text("Fix available")
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.orange.opacity(0.2), in: Capsule())
+                }
             }
-            .disabled(controller.report?.drifts.isEmpty ?? true)
-            Text("Fix never changes the order by itself. It shows the command to run: spaceslab order-file apply.")
+            Text("Fix asks first, saves a backup, then moves Spaces back to the expected order. It never runs by itself.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+        }
+        .alert("Repair the Space order?", isPresented: Binding(
+            get: { controller.pendingRepair != nil },
+            set: { _ in }   // the buttons below clear the plan; dismissal alone never decides
+        )) {
+            Button("Repair") { controller.confirmFix() }
+            Button("Cancel", role: .cancel) { controller.cancelFix() }
+        } message: {
+            Text(controller.repairSummary)
         }
     }
 

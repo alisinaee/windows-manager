@@ -12,8 +12,15 @@ final class SpaceGuardController: ObservableObject {
     /// One line for the status row: why nothing is watched, what the last check found, or what Fix did.
     @Published private(set) var status: String = ""
 
+    /// The repair waiting for the user's confirmation. Setting it shows the alert in `SpaceGuardView`.
+    @Published var pendingRepair: RepairPlan?
+    /// Text of `pendingRepair` for the alert.
+    @Published private(set) var repairSummary: String = ""
+    @Published private(set) var isRepairing = false
+    /// Set when a drift was reported and auto-fix is on: a fix is available, but never run automatically.
+    @Published private(set) var fixAvailable = false
+
     static let defaultsKey = "spaceGuard.settings"
-    static let fixUnavailableText = "Fix is available from spaceslab order-file apply"
 
     private let defaults: UserDefaults
     private var watcher: DriftWatcher?
@@ -91,15 +98,61 @@ final class SpaceGuardController: ObservableObject {
         refreshStatusText()
     }
 
-    /// Fix button. The existing rebuild (`SpaceOrderFile.reordered` with the apply steps of `spaceslab order-file apply`)
-    /// writes the com.apple.spaces preference and restarts the Dock, and lives in the spaceslab command target. The app
-    /// cannot call it safely yet, so this only says where to run it. The rebuild starts at `report.fixPlan.fromSlot`.
-    func fix() {
-        if let plan = report?.fixPlan {
-            status = "\(Self.fixUnavailableText). \(plan.description)"
-        } else {
-            status = Self.fixUnavailableText
+    /// Fix button, step 1. Read only: reads com.apple.spaces and the live Spaces, builds the repair plan and
+    /// publishes it as `pendingRepair`. Nothing is changed until `confirmFix()`.
+    func prepareFix() {
+        guard let report, !report.drifts.isEmpty else {
+            status = "There is no drift to fix."
+            return
         }
+        do {
+            let config = try SpaceOrderFile.readDomain()
+            let live = try SpaceReader.displays()
+            let plan = SpaceOrderRepair.plan(report: report, expected: settings.expectedOrder ?? [],
+                                             storedConfig: config, liveDisplays: live)
+            guard plan.isRunnable else {
+                status = plan.summary
+                pendingRepair = nil
+                return
+            }
+            repairSummary = plan.summary
+            pendingRepair = plan
+        } catch {
+            status = "Could not prepare the fix: \(error.localizedDescription)"
+        }
+    }
+
+    /// Fix button, step 2: only the confirmation alert calls this. Runs the repair on a background task.
+    func confirmFix() {
+        guard let plan = pendingRepair, !isRepairing else { return }
+        pendingRepair = nil
+        isRepairing = true
+        status = "Repairing the Space order ..."
+        Task { [weak self] in
+            let message: String
+            do {
+                let result = try await Task.detached {
+                    try await SpaceOrderRepair.run(plan, confirmed: true, deps: .live())
+                }.value
+                switch result.outcome {
+                case .repaired:
+                    message = result.message
+                case .needsAttention(_, let instruction):
+                    message = instruction
+                }
+            } catch {
+                message = error.localizedDescription
+            }
+            guard let self else { return }
+            self.isRepairing = false
+            self.status = message
+            self.checkNow()
+            self.status = message
+        }
+    }
+
+    func cancelFix() {
+        pendingRepair = nil
     }
 
     // MARK: Private
@@ -127,14 +180,17 @@ final class SpaceGuardController: ObservableObject {
         }
     }
 
-    /// Called once per new confirmed drift. Auto-fix only asks for the fix, which for now only says where to run it.
+    /// Called once per new confirmed drift. The auto-fix option only badges "Fix available"; the repair always
+    /// needs the user to press Fix and confirm.
     private func handleDrift(_ drift: SpaceGuardReport) {
         report = drift
         lastChecked = watcher?.lastChecked
-        if settings.autoFix { fix() } else { refreshStatusText() }
+        refreshStatusText()
+        if settings.autoFix { fixAvailable = true }
     }
 
     private func refreshStatusText() {
+        if report?.isClean ?? true { fixAvailable = false }
         if !settings.watchEnabled {
             status = "Watching is off."
         } else if !settings.hasExpectedOrder {

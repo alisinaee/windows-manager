@@ -8,6 +8,7 @@ import Foundation
 //  - `restore == false`                  -> notRestored (the planner never looks at it)
 //  - in `plan.unmatched`, app launches   -> willLaunch (a `.launch` step for its app is in the plan)
 //  - in `plan.unmatched`, otherwise      -> notFound(reason:), the planner's own reason
+//  - in `plan.possiblyParked`            -> no entry in `windows`; listed in `parked` (Stage Manager may hold it)
 //  - a step targets it, other than raise -> willMove (placed, resized, moved to a Desktop, minimized, full screen)
 //  - otherwise                           -> inPlace. Restacking alone (`raise`) is not a move.
 //
@@ -60,9 +61,11 @@ public struct ProfileLiveSummary: Equatable, Sendable {
     public var notRestored: Int
     /// Saved Desktops the monitors do not have.
     public var missingDesktops: Int
+    /// Windows that may sit in the Stage Manager strip or another stage (neither found nor missing).
+    public var mayBeParked: Int
 
     public init(inPlace: Int = 0, willMove: Int = 0, willLaunch: Int = 0, appsToLaunch: Int = 0, notFound: Int = 0,
-                notRestored: Int = 0, missingDesktops: Int = 0) {
+                notRestored: Int = 0, missingDesktops: Int = 0, mayBeParked: Int = 0) {
         self.inPlace = inPlace
         self.willMove = willMove
         self.willLaunch = willLaunch
@@ -70,16 +73,20 @@ public struct ProfileLiveSummary: Equatable, Sendable {
         self.notFound = notFound
         self.notRestored = notRestored
         self.missingDesktops = missingDesktops
+        self.mayBeParked = mayBeParked
     }
 
     /// Saved windows counted above.
-    public var windowCount: Int { inPlace + willMove + willLaunch + notFound + notRestored }
+    public var windowCount: Int { inPlace + willMove + willLaunch + notFound + notRestored + mayBeParked }
 }
 
 /// The status of a profile against the present, as the plan of a restore sees it.
 public struct ProfileLiveStatus: Equatable, Sendable {
-    /// Per saved window, by `WindowSnapshot.id`. Every window of the profile has an entry.
+    /// Per saved window, by `WindowSnapshot.id`. Every window of the profile has an entry, except those in `parked`.
     public var windows: [UUID: WindowLiveStatus]
+    /// Saved windows the plan could not match but that may be in the Stage Manager strip (neutral: not a
+    /// problem, not a move). They have no entry in `windows`.
+    public var parked: Set<UUID>
     /// Per saved Desktop that is missing now. Desktops that exist have no entry.
     public var spaces: [SpaceKey: SpaceLiveStatus]
     public var summary: ProfileLiveSummary
@@ -105,6 +112,8 @@ public struct ProfileLiveStatus: Equatable, Sendable {
 
         let unmatched = Dictionary(plan.unmatched.map { ($0.snapshotID, $0) }, uniquingKeysWith: { first, _ in first })
         var windows: [UUID: WindowLiveStatus] = [:]
+        var parked = Set<UUID>()
+        let possiblyParked = Set(plan.possiblyParked)
         for snapshot in profile.windows where windows[snapshot.id] == nil {
             if !snapshot.restore {
                 windows[snapshot.id] = .notRestored
@@ -114,6 +123,8 @@ public struct ProfileLiveStatus: Equatable, Sendable {
                 } else {
                     windows[snapshot.id] = .notFound(reason: missing.reason)
                 }
+            } else if possiblyParked.contains(snapshot.id) {
+                parked.insert(snapshot.id)
             } else {
                 windows[snapshot.id] = movingIDs.contains(snapshot.id) ? .willMove : .inPlace
             }
@@ -145,7 +156,9 @@ public struct ProfileLiveStatus: Equatable, Sendable {
             }
         }
 
+        summary.mayBeParked = parked.count
         self.windows = windows
+        self.parked = parked
         self.spaces = spaces
         self.summary = summary
     }

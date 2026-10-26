@@ -172,4 +172,14 @@ import Testing
         #expect(result.windows == [F.sid(1): .inPlace, F.sid(2): .inPlace])
         #expect(result.summary == ProfileLiveSummary(inPlace: 2))
     }
+
+    @Test func possiblyParkedWindowIsNeutralNotInPlaceOrMissing() {
+        let profile = F.profile([F.snap(1, F.chrome), F.snap(2, F.chrome, index: 1)])
+        let plan = RestorePlan(profileName: profile.name, possiblyParked: [F.sid(2)])
+        let result = ProfileLiveStatus(profile: profile, plan: plan)
+        #expect(result.windows == [F.sid(1): .inPlace])
+        #expect(result.parked == [F.sid(2)])
+        #expect(result.summary == ProfileLiveSummary(inPlace: 1, mayBeParked: 1))
+        #expect(result.summary.windowCount == profile.windows.count)
+    }
 }

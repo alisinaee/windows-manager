@@ -59,7 +59,16 @@ struct ProfileStudioView: View {
             VStack(spacing: 0) {
                 header(row)
                 Divider()
-                ProfileMapHost(row: row)
+                controlBar(row)
+                Divider()
+                StudioMapHost(row: row, model: model)
+            }
+            .sheet(isPresented: $model.isPreviewPresented) {
+                RestorePreviewSheet(profileID: row.id, profileName: row.name) { model.isPreviewPresented = false }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+                // The Studio window coming back to the front: refresh the comparison (never polls).
+                if (note.object as? NSWindow)?.isKeyWindow == true, !model.isPreviewPresented { model.refreshCompare() }
             }
         } else {
             Text("Select a profile").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -79,12 +88,70 @@ struct ProfileStudioView: View {
                 .help("Editing arrives with the Builder")
             Button { NSApp.activate(); openSettings() } label: { Label("Reveal in Settings", systemImage: "gearshape") }
                 .accessibilityHint("Opens Settings, Profiles tab")
-            Button { model.runSelected() } label: { Label("Run", systemImage: "play.fill") }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!(AppState.current?.canAct ?? false))
-                .accessibilityLabel("Run profile \(row.name)")
         }
         .padding(16)
+    }
+
+    /// Compare toggle, Preview restore and Run, with the compare / run status next to them.
+    private func controlBar(_ row: ProfileStudioRow) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Toggle(isOn: Binding(get: { model.isCompareOn }, set: { model.setCompare($0) })) {
+                    Label("Show what is missing now", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .toggleStyle(.button)
+                .keyboardShortcut("l", modifiers: .command)
+                .help("Compare this profile with your Mac (Cmd+L). Only scans: nothing is moved.")
+                if model.isComparing {
+                    ProgressView().controlSize(.small)
+                    Text("Comparing with your Mac…").font(.callout).foregroundStyle(.secondary)
+                } else if model.isCompareOn, model.compareError == nil {
+                    Button { model.refreshCompare() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                        .keyboardShortcut("r", modifiers: .command)
+                        .help("Compare again (Cmd+R)")
+                }
+                Spacer()
+                Button { model.isPreviewPresented = true } label: { Label("Preview restore", systemImage: "list.bullet.rectangle") }
+                    .keyboardShortcut("p", modifiers: [.command, .shift])
+                    .help("See what a restore would do, step by step (Cmd+Shift+P)")
+                if let app = AppState.current {
+                    RunProfileButton(app: app, profileID: row.id, profileName: row.name)
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+            if let error = model.compareError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.callout).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Compare problem: \(error)")
+            }
+            if let app = AppState.current { RunStatusLine(app: app) }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+}
+
+/// The map of one profile with the inspector on its right. Like `ProfileMapHost`, but it owns the
+/// `ProfileMapModel` here so the inspector can follow the map's selection.
+struct StudioMapHost: View {
+    let row: ProfileStudioRow
+    @ObservedObject var model: ProfileStudioModel
+    @StateObject private var map = ProfileMapModel()
+
+    var body: some View {
+        HSplitView {
+            VStack(spacing: 0) {
+                ProfileMapCanvas(model: map)
+                Divider()
+                MapLegendView(showsStatus: map.status != nil)
+            }
+            .frame(minWidth: 420)
+            MapInspectorView(map: map, plan: model.comparePlan, isCompareOn: model.isCompareOn)
+                .frame(minWidth: 220, idealWidth: 270, maxWidth: 420)
+        }
+        .task(id: row) { map.load(try? AppState.current?.store.load(row.id)) }
+        .onChange(of: model.liveStatus) { _, newValue in map.status = newValue }
+        .onAppear { map.status = model.liveStatus }
     }
 }
 

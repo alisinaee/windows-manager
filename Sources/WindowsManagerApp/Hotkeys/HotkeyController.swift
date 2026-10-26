@@ -10,6 +10,7 @@ final class HotkeyController {
     static let shared = HotkeyController()
 
     private var registeredProfiles: Set<UUID> = []
+    private var sweptStaleDefaults = false
     private var started = false
     private var profilesSink: AnyCancellable?
     private let layoutStore = LayoutStore()
@@ -35,6 +36,11 @@ final class HotkeyController {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.syncProfiles() }
             return
         }
+        if !sweptStaleDefaults {
+            // Once per launch: shortcuts of profiles deleted in an earlier session were never registered here.
+            sweptStaleDefaults = true
+            removeStaleProfileDefaults(current: state.savedProfiles.map(\.id))
+        }
         if profilesSink == nil {
             profilesSink = state.$savedProfiles.dropFirst().receive(on: DispatchQueue.main).sink { [weak self] _ in
                 self?.registerProfiles()
@@ -45,6 +51,12 @@ final class HotkeyController {
 
     private func registerProfiles() {
         guard let profiles = AppState.current?.savedProfiles else { return }
+        // Profiles deleted since the last sync: clear their shortcut (this also unregisters it).
+        let stale = HotkeyCleanup.staleProfileIDs(registered: registeredProfiles, current: profiles.map(\.id))
+        for id in stale.sorted(by: { $0.uuidString < $1.uuidString }) {
+            KeyboardShortcuts.reset(.profile(id))
+            registeredProfiles.remove(id)
+        }
         for profile in profiles where !registeredProfiles.contains(profile.id) {
             registeredProfiles.insert(profile.id)
             let id = profile.id
@@ -54,6 +66,21 @@ final class HotkeyController {
                       let current = state.savedProfiles.first(where: { $0.id == id }) else { return }
                 state.handle(.run(profile: current.name))
             }
+        }
+    }
+
+    /// Clears the stored shortcut and UserDefaults entry of each profile hotkey whose profile is gone.
+    private func removeStaleProfileDefaults(current: [UUID]) {
+        let defaults = UserDefaults.standard
+        let keys = HotkeyCleanup.staleDefaultsKeys(in: defaults.dictionaryRepresentation().keys, current: current)
+        for key in keys {
+            if let rawName = HotkeyCleanup.shortcutName(forDefaultsKey: key) {
+                KeyboardShortcuts.reset(KeyboardShortcuts.Name(rawName))
+            }
+            defaults.removeObject(forKey: key)
+        }
+        if !keys.isEmpty {
+            AppInfo.logger.notice("Removed \(keys.count) hotkey(s) of deleted profiles")
         }
     }
 

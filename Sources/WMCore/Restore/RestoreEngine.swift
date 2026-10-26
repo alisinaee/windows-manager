@@ -77,7 +77,8 @@ public struct SystemSpaceMover: SpaceMoving {
     public nonisolated init() {}
 
     public func move(windowID: UInt32, toSpace spaceID: UInt64) async -> RestoreActionResult {
-        let outcome = SpaceMover.move(windowIDs: [windowID], toSpace: spaceID)
+        // Off the main actor: the move polls the window server for seconds, and the engine's step timeout must still fire.
+        let outcome = await SpaceMover.moveAsync(windowIDs: [windowID], toSpace: spaceID)
         if outcome.alreadyOnTarget { return .ok("already on that Desktop") }
         if let method = outcome.succeededWith {
             return .ok("moved (\(method.rawValue)\(outcome.attempts.last?.late == true ? ", late" : ""))")

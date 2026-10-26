@@ -465,10 +465,37 @@ public enum SpaceMover {
     /// 50 ms for up to 1 s; if it still does not match, it is read once more after 2 s (the move may land late).
     /// The main run loop keeps spinning while waiting, because the bridge hands work to it.
     public static func move(windowIDs: [UInt32], toSpace target: UInt64, method: MoveMethod? = nil) -> MoveOutcome {
+        moveCore(windowIDs: windowIDs, toSpace: target, method: method, appKitReady: prepareAppKit())
+    }
+
+    /// `move` for callers on the main actor (the restore engine). AppKit is prepared on the main thread first, then
+    /// the blocking part (up to several seconds of polling) runs on a background queue, so the main actor keeps
+    /// running and a step timeout can fire. A move that outlives its caller keeps running to the end; later moves
+    /// wait for it on the same queue.
+    public static func moveAsync(windowIDs: [UInt32], toSpace target: UInt64, method: MoveMethod? = nil) async -> MoveOutcome {
+        let appKitReady = await MainActor.run { prepareAppKit() }
+        return await runOffCaller {
+            moveCore(windowIDs: windowIDs, toSpace: target, method: method, appKitReady: appKitReady)
+        }
+    }
+
+    /// Serial queue for blocking SpaceMover work started by `runOffCaller`: work items never overlap.
+    private static let moveQueue = DispatchQueue(label: "WMCore.SpaceMover.moves")
+
+    /// Runs blocking `work` on `moveQueue` and resumes the caller with its result. The caller's actor is free
+    /// while the work runs. Work that is still running when its caller gives up keeps the queue busy until it ends.
+    static func runOffCaller<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            moveQueue.async { continuation.resume(returning: work()) }
+        }
+    }
+
+    private static func moveCore(windowIDs: [UInt32], toSpace target: UInt64, method: MoveMethod?,
+                                 appKitReady: Bool) -> MoveOutcome {
         let start = ProcessInfo.processInfo.systemUptime
         var outcome = MoveOutcome(windowIDs: windowIDs, targetSpaceID: target, requestedMethod: method)
 
-        outcome.appKitReady = prepareAppKit()
+        outcome.appKitReady = appKitReady
         let before = snapshot(windowIDs)
         outcome.spacesBefore = keyed(before, windowIDs)
 

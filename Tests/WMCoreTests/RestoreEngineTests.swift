@@ -86,8 +86,13 @@ final class FakeRestoreEnvironment: RestoreEnvironment {
     func unminimize(_ handle: WindowHandle) async -> RestoreActionResult { await act("unminimize:\(handle.windowID)") }
     func raise(_ handle: WindowHandle, app: AppRef) async -> RestoreActionResult { await act("raise:\(handle.windowID)") }
 
+    /// When set, moves go through this mover (the engine's real call path) instead of answering from `failures`.
+    var mover: SpaceMoving?
+
     func moveToDesktop(windowID: UInt32, spaceID: UInt64) async -> RestoreActionResult {
-        await act("moveToDesktop:\(windowID)->\(spaceID)")
+        guard let mover else { return await act("moveToDesktop:\(windowID)->\(spaceID)") }
+        calls.append("moveToDesktop:\(windowID)->\(spaceID)")
+        return await mover.move(windowID: windowID, toSpace: spaceID)
     }
 
     func hideApp(pid: Int32, app: AppRef) async -> RestoreActionResult { await act("hide:\(pid)") }

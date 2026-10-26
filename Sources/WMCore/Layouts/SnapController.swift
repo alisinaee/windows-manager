@@ -181,9 +181,11 @@ public struct SnapController: Sendable {
 
     public mutating func mouseUp(at point: CGPoint, flags: SnapModifierFlags, display: SnapDisplay?) -> Output {
         defer { _ = reset() }
+        // Commit only a zone that is highlighted on this display and still under the pointer.
         guard let window, confirmed, !ignored, settings.enabled,
               flags.contains(settings.modifier.flag), let display,
-              let zone = display.layout.zone(at: point, in: display.frame) else {
+              case .snapping(_, let shown, let highlighted?) = state, shown.id == display.id,
+              let zone = display.layout.zone(at: point, in: display.frame), zone.id == highlighted else {
             return state == .idle ? .none : .cancel
         }
         let frame = LayoutGeometry.frame(of: zone, in: display.frame, gap: CGFloat(settings.gap))

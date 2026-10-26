@@ -59,6 +59,8 @@ final class ProfileStudioModel: ObservableObject {
 
     var onTitleChange: ((String) -> Void)?
     private var compareTask: Task<Void, Never>?
+    private var loadTask: Task<Void, Never>?
+    private var pendingSelectID: UUID?
     private var cancellable: AnyCancellable?
     private var observed: ObjectIdentifier?
 
@@ -82,23 +84,40 @@ final class ProfileStudioModel: ObservableObject {
                 self?.reload()
             }
         }
-        var built: [ProfileStudioRow] = []
-        var failed: [String] = []
-        for summary in app.savedProfiles {
-            if let profile = try? app.store.load(summary.id) {
-                built.append(ProfileStudioRow(id: profile.id, name: profile.name, icon: profile.icon.isEmpty ? Profile.defaultIcon : profile.icon,
-                                              windowCount: profile.windows.count, monitorCount: profile.displays.count,
-                                              capturedAt: profile.createdAt))
-            } else {
-                failed.append(summary.name)
-            }
+        let summaries = app.savedProfiles
+        let store = app.store
+        loadTask?.cancel()
+        loadTask = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) { () -> ([ProfileStudioRow], [String]) in
+                var built: [ProfileStudioRow] = []
+                var failed: [String] = []
+                for summary in summaries {
+                    if let profile = try? store.load(summary.id) {
+                        built.append(ProfileStudioRow(id: profile.id, name: profile.name, icon: profile.icon.isEmpty ? Profile.defaultIcon : profile.icon,
+                                                      windowCount: profile.windows.count, monitorCount: profile.displays.count,
+                                                      capturedAt: profile.createdAt))
+                    } else {
+                        failed.append(summary.name)
+                    }
+                }
+                return (built, failed)
+            }.value
+            guard !Task.isCancelled else { return }
+            self?.apply(rows: result.0, failed: result.1)
         }
+    }
+
+    private func apply(rows built: [ProfileStudioRow], failed: [String]) {
         rows = built
         skipped = failed
         if built.isEmpty && !failed.isEmpty {
             state = .failed("Could not read the saved profiles.")
         } else {
             state = built.isEmpty ? .empty : .loaded
+        }
+        if let pending = pendingSelectID {
+            pendingSelectID = nil
+            if built.contains(where: { $0.id == pending }) { selectedID = pending }
         }
         if let selectedID, !built.contains(where: { $0.id == selectedID }) { self.selectedID = nil }
         if selectedID == nil { selectedID = built.first?.id }
@@ -112,8 +131,8 @@ final class ProfileStudioModel: ObservableObject {
             return
         }
         leaveEdit()
+        pendingSelectID = profileID
         reload()
-        if rows.contains(where: { $0.id == profileID }) { selectedID = profileID }
     }
 
     // MARK: Edit mode

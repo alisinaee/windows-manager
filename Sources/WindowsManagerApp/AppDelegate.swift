@@ -101,6 +101,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if isDuplicate { return .terminateNow }
+        let proceed = MainActor.assumeIsolated { ProfileStudioWindowController.shared.shouldTerminateNow() }
+        return proceed ? .terminateNow : .terminateCancel
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         if !isDuplicate { AppInfo.logger.notice("Windows Manager quitting") }
     }

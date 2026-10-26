@@ -42,7 +42,18 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        resolveUnsaved { [weak sender] in sender?.close() }
+    }
+
+    /// True when quitting may go ahead now. Otherwise asks Save / Discard / Cancel and, after a save, replies to the pending terminate.
+    func shouldTerminateNow() -> Bool {
+        resolveUnsaved { NSApp.reply(toApplicationShouldTerminate: true) }
+    }
+
+    /// Returns true when there is nothing to ask (or the user discarded). On Save it returns false and runs `afterSave` once saved.
+    private func resolveUnsaved(afterSave: @escaping () -> Void) -> Bool {
         guard model.hasUnsavedChanges else { return true }
+        if let window { present(window) }
         let alert = NSAlert()
         alert.messageText = "Save changes to this profile?"
         alert.informativeText = "Your changes will be lost if you close without saving."
@@ -51,7 +62,7 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
         alert.addButton(withTitle: "Cancel")
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            model.saveThen { [weak sender] in sender?.close() }
+            model.saveThen(afterSave)
             return false
         case .alertSecondButtonReturn:
             model.leaveEdit()

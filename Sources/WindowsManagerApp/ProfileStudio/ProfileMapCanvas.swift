@@ -94,9 +94,18 @@ struct ProfileMapCanvas: View {
         HStack(spacing: 8) {
             if let summary = model.summaryText {
                 Image(systemName: "checklist").foregroundStyle(.secondary).accessibilityHidden(true)
-                Text(summary).font(.callout)
+                Text(summaryWithParked(summary)).font(.callout)
             }
             Spacer()
+            if keyOverride == nil {
+                // View mode only: previous / next Space on the shown monitor.
+                Button { stepShownDesktop(forward: false) } label: { Image(systemName: "chevron.left") }
+                    .keyboardShortcut("[", modifiers: .command)
+                    .accessibilityLabel("Previous Desktop").help("Previous Desktop (Cmd+[)")
+                Button { stepShownDesktop(forward: true) } label: { Image(systemName: "chevron.right") }
+                    .keyboardShortcut("]", modifiers: .command)
+                    .accessibilityLabel("Next Desktop").help("Next Desktop (Cmd+])")
+            }
             Button { model.zoomBy(1 / 1.25) } label: { Image(systemName: "minus.magnifyingglass") }
                 .keyboardShortcut("-", modifiers: .command)
                 .accessibilityLabel("Zoom out").help("Zoom out (Cmd+-)")
@@ -117,6 +126,22 @@ struct ProfileMapCanvas: View {
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 12).padding(.vertical, 6)
+    }
+
+    /// The model's summary does not count parked windows, so the canvas adds them when Compare data is present.
+    private func summaryWithParked(_ summary: String) -> String {
+        guard let parked = model.status?.summary.mayBeParked, parked > 0 else { return summary }
+        return summary + ", \(parked) may be parked"
+    }
+
+    /// Cmd+[ / Cmd+]: the previous or next Space on the shown monitor (the focused one, else the first).
+    private func stepShownDesktop(forward: Bool) {
+        guard let uuid = model.focusedDisplayUUID ?? model.layout.monitors.first?.id else { return }
+        let spaces = model.index.spaces(onDisplay: uuid)
+        guard spaces.count > 1 else { return }
+        let current = model.shownSpace(onDisplay: uuid).flatMap { shown in spaces.firstIndex { $0.id == shown.id } } ?? 0
+        let next = (current + (forward ? 1 : -1) + spaces.count) % spaces.count
+        model.selectSpace(spaces[next].id)
     }
 
     // MARK: Canvas

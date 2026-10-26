@@ -36,7 +36,8 @@ final class HotkeyController {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.syncProfiles() }
             return
         }
-        if !sweptStaleDefaults {
+        // An empty list may mean the profiles failed to load, not that none exist: never wipe hotkeys on that.
+        if !sweptStaleDefaults, !state.savedProfiles.isEmpty {
             // Once per launch: shortcuts of profiles deleted in an earlier session were never registered here.
             sweptStaleDefaults = true
             removeStaleProfileDefaults(current: state.savedProfiles.map(\.id))

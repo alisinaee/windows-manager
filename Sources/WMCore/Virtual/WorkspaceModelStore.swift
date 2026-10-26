@@ -11,12 +11,19 @@ public struct VirtualLiveWindow: Hashable, Sendable {
     public var pid: Int32
     public var frame: CGRect
     public var isOnScreen: Bool
+    /// The owning app's bundle id, when the reader knows it.
+    public var bundleID: String?
+    /// True when the user minimized the window (such a window is never unhidden by reassert).
+    public var isMinimized: Bool
 
-    public init(windowID: UInt32, pid: Int32, frame: CGRect, isOnScreen: Bool = true) {
+    public init(windowID: UInt32, pid: Int32, frame: CGRect, isOnScreen: Bool = true,
+                bundleID: String? = nil, isMinimized: Bool = false) {
         self.windowID = windowID
         self.pid = pid
         self.frame = frame
         self.isOnScreen = isOnScreen
+        self.bundleID = bundleID
+        self.isMinimized = isMinimized
     }
 }
 
@@ -164,15 +171,22 @@ public final class WorkspaceModelStore: @unchecked Sendable {
                 if !frame(window.frame, near: record.originalFrame, tolerance: tolerance) {
                     actions.append(.restoreFrame(windowID: window.windowID, pid: window.pid, frame: record.originalFrame))
                 }
-            } else if !window.isOnScreen, records[window.windowID]?.method == .appHidden || records[window.windowID] == nil {
+            } else if !window.isOnScreen, !window.isMinimized,
+                      records[window.windowID]?.method == .appHidden || records[window.windowID] == nil {
                 if unhidden.insert(window.pid).inserted { actions.append(.unhideApp(pid: window.pid)) }
             }
         }
 
-        let otherIDs = Set(model.workspaces.filter { $0.id != active.id }.flatMap(\.windows).map(\.windowID))
+        // Other workspaces own a window by its id or by its bundle id; the active workspace's apps keep theirs.
+        let otherWindowIDs = Set(model.workspaces.filter { $0.id != active.id }.flatMap(\.windows).map(\.windowID))
             .subtracting(activeIDs)
-        for window in live where otherIDs.contains(window.windowID) && window.isOnScreen && records[window.windowID] == nil {
-            actions.append(.hideWindow(windowID: window.windowID, pid: window.pid))
+        let otherApps = Set(model.workspaces.filter { $0.id != active.id }.flatMap(\.apps))
+            .subtracting(active.apps)
+        for window in live where !activeIDs.contains(window.windowID) && window.isOnScreen
+            && records[window.windowID] == nil {
+            let ownedElsewhere = otherWindowIDs.contains(window.windowID)
+                || (window.bundleID.map { otherApps.contains($0) } ?? false)
+            if ownedElsewhere { actions.append(.hideWindow(windowID: window.windowID, pid: window.pid)) }
         }
         return actions
     }

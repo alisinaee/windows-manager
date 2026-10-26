@@ -56,19 +56,17 @@ public final class WorkspaceFollower {
         return target
     }
 
-    /// The workspace an activated app/window belongs to. The current workspace wins when it claims the
-    /// event; otherwise the first workspace that does. Nil when none claims it.
+    /// The workspace an activated app/window belongs to. Order: a specific window assignment first (the
+    /// active workspace if it holds the window, otherwise the workspace that does), then whole-app claims
+    /// (the active workspace first, then the first one that claims the bundle id). Nil when none claims it.
     public static func owner(of event: WorkspaceActivationEvent, in model: WorkspaceModel) -> UUID? {
-        func claims(_ ws: Workspace) -> Bool {
-            if let id = event.windowID, ws.windows.contains(where: { $0.windowID == id }) { return true }
-            if let bundle = event.bundleID, ws.apps.contains(bundle) { return true }
-            return false
+        if let id = event.windowID {
+            if let active = model.activeWorkspace, active.windows.contains(where: { $0.windowID == id }) { return active.id }
+            if let ws = model.workspaces.first(where: { $0.windows.contains { $0.windowID == id } }) { return ws.id }
         }
-        if let active = model.activeWorkspace, claims(active) { return active.id }
-        // A specific window assignment beats a whole-app assignment in another workspace.
-        if let id = event.windowID,
-           let ws = model.workspaces.first(where: { $0.windows.contains { $0.windowID == id } }) { return ws.id }
-        return model.workspaces.first(where: claims)?.id
+        guard let bundle = event.bundleID else { return nil }
+        if let active = model.activeWorkspace, active.apps.contains(bundle) { return active.id }
+        return model.workspaces.first(where: { $0.apps.contains(bundle) })?.id
     }
 }
 

@@ -25,12 +25,15 @@ public struct LiveWindow: Hashable, Sendable, Identifiable {
     public var indexInApp: Int
     /// True when the window sits on a Space that is visible right now (so Accessibility can reach it).
     public var isOnCurrentSpace: Bool
+    /// Stage Manager is on and the window sits in the strip or in another stage, where it cannot be moved.
+    public var isInStageStrip: Bool
 
     public var id: UInt32 { windowID }
 
     public init(windowID: UInt32, pid: Int32 = 0, app: AppRef, title: String? = nil, documentPath: String? = nil,
                 frame: CGRect, displayUUID: String? = nil, spaceIDs: [UInt64] = [], isFullScreen: Bool = false,
-                isMinimized: Bool = false, indexInApp: Int = 0, isOnCurrentSpace: Bool = true) {
+                isMinimized: Bool = false, indexInApp: Int = 0, isOnCurrentSpace: Bool = true,
+                isInStageStrip: Bool = false) {
         self.windowID = windowID
         self.pid = pid
         self.app = app
@@ -43,5 +46,6 @@ public struct LiveWindow: Hashable, Sendable, Identifiable {
         self.isMinimized = isMinimized
         self.indexInApp = indexInApp
         self.isOnCurrentSpace = isOnCurrentSpace
+        self.isInStageStrip = isInStageStrip
     }
 }

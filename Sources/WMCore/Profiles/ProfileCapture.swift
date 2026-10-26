@@ -59,6 +59,14 @@ public enum ProfileCapture {
             }
         }
 
+        if scan.stageManagerOn == true {
+            let parked = scan.windows.filter(\.isInStageStrip).count
+            if parked > 0 {
+                warnings.append("Stage Manager is on: \(parked) window\(parked == 1 ? " sits" : "s sit") in the strip or another stage; "
+                    + "\(parked == 1 ? "its" : "their") position is saved as it is now and may not be exact.")
+            }
+        }
+
         // Spaces, with the owner windows of full-screen Spaces.
         var spaces: [SpaceSnapshot] = []
         for list in scan.spaces {
@@ -82,7 +90,8 @@ public enum ProfileCapture {
         }
 
         let profile = Profile(id: makeID(), name: name, createdAt: now, monitorSetKey: DisplayMap.monitorSetKey(scan.displays),
-                              displays: scan.displays, spaces: spaces, windows: snapshots, options: options)
+                              displays: scan.displays, spaces: spaces, windows: snapshots, options: options,
+                              stageManagerOn: scan.stageManagerOn)
         return (profile, warnings)
     }
 

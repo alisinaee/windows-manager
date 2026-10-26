@@ -252,12 +252,16 @@ public struct Profile: Codable, Hashable, Sendable, Identifiable {
     public var windows: [WindowSnapshot]
     public var options: ProfileOptions
     public var notes: String?
+    /// Whether Stage Manager was on when the profile was captured; nil in profiles saved before P3.8.
+    public var stageManagerOn: Bool?
 
     /// `updatedAt` defaults to `createdAt`.
     public init(schemaVersion: Int = Profile.currentSchemaVersion, id: UUID = UUID(), name: String,
                 icon: String = Profile.defaultIcon, createdAt: Date = Date(), updatedAt: Date? = nil,
                 monitorSetKey: String, displays: [DisplayIdentity] = [], spaces: [SpaceSnapshot] = [],
-                windows: [WindowSnapshot] = [], options: ProfileOptions = ProfileOptions(), notes: String? = nil) {
+                windows: [WindowSnapshot] = [], options: ProfileOptions = ProfileOptions(), notes: String? = nil,
+                stageManagerOn: Bool? = nil) {
+        self.stageManagerOn = stageManagerOn
         self.schemaVersion = schemaVersion
         self.id = id
         self.name = name
@@ -274,7 +278,7 @@ public struct Profile: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, id, name, icon, createdAt, updatedAt, monitorSetKey, displays, spaces, windows
-        case options, notes
+        case options, notes, stageManagerOn
     }
 
     public init(from decoder: Decoder) throws {
@@ -291,6 +295,7 @@ public struct Profile: Codable, Hashable, Sendable, Identifiable {
         windows = try c.decode([WindowSnapshot].self, forKey: .windows)
         options = try c.decodeIfPresent(ProfileOptions.self, forKey: .options) ?? ProfileOptions()
         notes = try c.decodeIfPresent(String.self, forKey: .notes)
+        stageManagerOn = try c.decodeIfPresent(Bool.self, forKey: .stageManagerOn)
     }
 
     // MARK: Helpers

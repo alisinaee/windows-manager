@@ -84,10 +84,13 @@ public struct WorkspaceScan: @unchecked Sendable {
     /// Things a person should know about this scan (screen locked, Spaces that could not be matched, ...).
     public var notes: [String]
     public var scannedAt: Date
+    /// Stage Manager on/off now; nil when unknown.
+    public var stageManagerOn: Bool?
 
     public init(displays: [DisplayIdentity], spaces: [ScannedSpaces] = [], windows: [LiveWindow] = [],
                 activeSpaceID: UInt64 = 0, accessibilityTrusted: Bool = true, screenIsLocked: Bool = false,
-                notes: [String] = [], scannedAt: Date = Date()) {
+                notes: [String] = [], scannedAt: Date = Date(), stageManagerOn: Bool? = nil) {
+        self.stageManagerOn = stageManagerOn
         self.displays = displays
         self.spaces = spaces
         self.windows = windows
@@ -168,9 +171,10 @@ public enum WorkspaceScanner {
             return ref
         }
 
-        return assemble(displays: displays, skyLight: skyLight, catalog: catalog,
-                        activeSpaceID: SpaceReader.activeSpaceID(), appRef: appRef, ax: ax, options: options,
-                        accessibilityTrusted: trusted, screenIsLocked: locked, notes: notes)
+        let scanned = assemble(displays: displays, skyLight: skyLight, catalog: catalog,
+                               activeSpaceID: SpaceReader.activeSpaceID(), appRef: appRef, ax: ax, options: options,
+                               accessibilityTrusted: trusted, screenIsLocked: locked, notes: notes)
+        return StageManager.annotate(scanned)
     }
 
     /// True while the login window or screen saver covers the session.

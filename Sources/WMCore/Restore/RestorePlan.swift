@@ -362,8 +362,26 @@ public enum RestorePlanner {
             }
         }
 
+        // Stage Manager: windows in the strip or another stage cannot be reached; leave them alone and say so.
+        let stageManagerOn = scan.stageManagerOn == true
+        if stageManagerOn {
+            let parked = items.filter { $0.live.isInStageStrip }
+            items.removeAll { $0.live.isInStageStrip }
+            if !parked.isEmpty {
+                let names = parked.map { $0.target.label }
+                plan.warnings.append("Stage Manager is on: \(parked.count) window\(parked.count == 1 ? "" : "s") in the strip or another stage "
+                    + "\(parked.count == 1 ? "was" : "were") left where \(parked.count == 1 ? "it is" : "they are"): "
+                    + RestoreFormat.list(names) + ".")
+            }
+        }
+        if let saved = profile.stageManagerOn, let now = scan.stageManagerOn, saved != now {
+            plan.warnings.append("Stage Manager was \(saved ? "on" : "off") when this profile was captured and is \(now ? "on" : "off") now; "
+                + "windows are placed as saved.")
+        }
+
         // Launch + unmatched.
         planLaunch(profile: profile, scan: scan, match: match, options: options, into: &plan)
+        if stageManagerOn { absorbStageManagerUnmatched(scan: scan, into: &plan) }
 
         // Window phases.
         var exitFullScreen: [RestoreStep] = []
@@ -602,6 +620,23 @@ public enum RestorePlanner {
         }
     }
 
+    /// Stage Manager on: a saved window that is not found while its app has windows parked in the strip or in
+    /// another stage is probably one of those, so it is a warning and not a missing window.
+    private static func absorbStageManagerUnmatched(scan: WorkspaceScan, into plan: inout RestorePlan) {
+        var hidden: [UnmatchedSnapshot] = []
+        plan.unmatched.removeAll { item in
+            guard item.reason == "the app has fewer windows open than the profile",
+                  scan.windows.contains(where: { $0.isInStageStrip && Profile.isSameApp($0.app, item.app) })
+            else { return false }
+            hidden.append(item)
+            return true
+        }
+        if !hidden.isEmpty {
+            plan.warnings.append("Stage Manager is on: \(hidden.count) saved window\(hidden.count == 1 ? "" : "s") "
+                + "(\(RestoreFormat.list(hidden.map(\.label)))) may be in the strip or another stage and could not be checked.")
+        }
+    }
+
     private static func planOtherApps(profile: Profile, scan: WorkspaceScan, options: ProfileOptions) -> [RestoreStep] {
         guard options.otherApps != .leave else { return [] }
         let profileApps = profile.apps
@@ -632,6 +667,12 @@ enum RestoreFormat {
     /// `1200x800 at 100,200`.
     static func rect(_ frame: CGRect) -> String {
         "\(Int(frame.width.rounded()))x\(Int(frame.height.rounded())) at \(Int(frame.minX.rounded())),\(Int(frame.minY.rounded()))"
+    }
+
+    /// `a, b and 3 more`.
+    static func list(_ names: [String], limit: Int = 3) -> String {
+        guard names.count > limit else { return names.joined(separator: ", ") }
+        return names.prefix(limit).joined(separator: ", ") + " and \(names.count - limit) more"
     }
 
     static func shorten(_ text: String, _ limit: Int) -> String {

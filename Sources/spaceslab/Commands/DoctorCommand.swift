@@ -119,5 +119,14 @@ enum DoctorCommand {
         } else {
             print("Auto-rearrange Spaces by recent use: off (\(raw))")
         }
+
+        // Same pure evaluation the app uses (no live self-test here, so the doctor output stays read-only and fast).
+        let health = SkyLightHealth.evaluate(symbols: report.symbols, classes: report.classes,
+                                             osVersion: report.macOS, loadError: report.skyLightError)
+        print("")
+        print("SkyLight health: \(health.overall.rawValue)")
+        for line in health.fallbacks {
+            print("  fallback: \(line)")
+        }
     }
 }

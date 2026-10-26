@@ -215,7 +215,6 @@ final class SequenceEnvironment: RestoreEnvironment {
         profile.options.addMissingDesktops = true
         let plan = await off.preview(profile: profile)
         #expect(plan.steps.first == .addDesktop(display: F.displayA(), count: 1))
-        #expect(plan.steps == F.plan(profile, scan).steps || true)
 
         // Run: the adder is called although the engine-level flag is off.
         let adder = FakeDesktopAdder(count: 2)

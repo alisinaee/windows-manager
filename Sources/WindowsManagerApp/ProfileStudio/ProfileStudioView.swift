@@ -59,17 +59,7 @@ struct ProfileStudioView: View {
             VStack(spacing: 0) {
                 header(row)
                 Divider()
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [6, 4]))
-                    VStack(spacing: 6) {
-                        Image(systemName: "map").font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
-                        Text("Map canvas arrives with UI2").font(.headline).foregroundStyle(.secondary)
-                    }
-                }
-                .padding(20)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Map canvas placeholder. The map arrives with UI2.")
+                ProfileMapHost(row: row)
             }
         } else {
             Text("Select a profile").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)

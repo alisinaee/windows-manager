@@ -17,6 +17,18 @@ BIN_DIR="$(swift build -c release --show-bin-path)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/$EXECUTABLE" "$APP/Contents/MacOS/$EXECUTABLE"
+# Sparkle (update checks) is a dynamic framework. The executable links it through @rpath, and the
+# build has no @executable_path/../Frameworks entry, so add it here for the bundled layout.
+SPARKLE="$BIN_DIR/Sparkle.framework"
+if [ ! -d "$SPARKLE" ]; then
+    echo "error: $SPARKLE not found; Sparkle must be built before bundling" >&2
+    exit 1
+fi
+mkdir -p "$APP/Contents/Frameworks"
+cp -R "$SPARKLE" "$APP/Contents/Frameworks/"
+if ! otool -l "$APP/Contents/MacOS/$EXECUTABLE" | grep -q "@executable_path/../Frameworks"; then
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/$EXECUTABLE"
+fi
 cp Resources/App/Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 # Any other file under Resources/App (icons, assets) goes into Contents/Resources.

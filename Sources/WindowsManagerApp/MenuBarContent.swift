@@ -38,6 +38,15 @@ struct MenuBarContent: View {
             MenuRow(title: "Layouts…") {
                 LayoutEditorWindowController.shared.show()
             }
+            MenuRow(title: "Check for Updates…") {
+                UpdateController.shared.checkForUpdates()
+            }
+            .disabled(!UpdateController.shared.canCheckForUpdates)
+            if !UpdateController.shared.isConfigured {
+                Text(UpdateController.notConfiguredText)
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+            }
             MenuRow(title: "Settings…") {
                 NSApp.activate()
                 openSettings()

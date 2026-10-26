@@ -14,6 +14,14 @@ struct AboutSettingsTab: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .padding(.top, 8)
+            Button("Check for Updates…") {
+                UpdateController.shared.checkForUpdates()
+            }
+            .disabled(!UpdateController.shared.canCheckForUpdates)
+            .padding(.top, 12)
+            Text(UpdateController.shared.isConfigured ? "Updates are checked against the release appcast." : UpdateController.notConfiguredText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

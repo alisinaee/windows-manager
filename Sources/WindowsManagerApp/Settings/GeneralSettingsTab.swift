@@ -2,6 +2,7 @@ import SwiftUI
 
 struct GeneralSettingsTab: View {
     @EnvironmentObject private var appState: AppState
+    @StateObject private var launchAtLogin = LaunchAtLogin()
 
     var body: some View {
         Form {
@@ -18,12 +19,29 @@ struct GeneralSettingsTab: View {
                 }
             }
             Section("Launch") {
-                Text("Windows Manager lives in the menu bar and has no Dock icon. To start it at login, add it in System Settings > General > Login Items.")
+                Toggle("Launch at login", isOn: Binding(
+                    get: { launchAtLogin.isEnabled },
+                    set: { launchAtLogin.set($0) }
+                ))
+                if launchAtLogin.needsApproval {
+                    Text("Approve Windows Manager in System Settings > General > Login Items.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if let error = launchAtLogin.errorText {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(Color.red)
+                }
+                Text("Windows Manager lives in the menu bar and has no Dock icon.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .onAppear { appState.refreshPermissions() }
+        .onAppear {
+            appState.refreshPermissions()
+            launchAtLogin.refresh()
+        }
     }
 }

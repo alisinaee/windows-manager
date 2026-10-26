@@ -13,6 +13,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", exact: "1.10.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
     ],
     targets: [
         .target(
@@ -32,6 +33,7 @@ let package = Package(
             dependencies: [
                 "WMCore",
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
+                .product(name: "Sparkle", package: "Sparkle"),
             ],
             linkerSettings: [
                 .linkedFramework("AppKit"),

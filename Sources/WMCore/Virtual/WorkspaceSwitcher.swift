@@ -391,10 +391,34 @@ public struct SystemWorkspaceBackend: WorkspaceSystem {
         self.pollInterval = pollInterval
     }
 
+    /// Every layer-0 window from CGWindowList. Per process (cached within this call): the bundle id from
+    /// NSRunningApplication, and the minimized flags of its AX windows. Any failure leaves the field at its default.
     public func liveWindows() -> [VirtualLiveWindow] {
-        WindowListReader.windows().map {
-            VirtualLiveWindow(windowID: $0.windowID, pid: $0.pid, frame: $0.bounds, isOnScreen: $0.isOnScreen)
+        var bundleIDs: [Int32: String?] = [:]
+        var minimized: [Int32: [UInt32: Bool]] = [:]
+        return WindowListReader.windows().map { entry in
+            let bundleID: String?
+            if let cached = bundleIDs[entry.pid] {
+                bundleID = cached
+            } else {
+                bundleID = NSRunningApplication(processIdentifier: entry.pid)?.bundleIdentifier
+                bundleIDs[entry.pid] = bundleID
+            }
+            if minimized[entry.pid] == nil {
+                minimized[entry.pid] = axMinimizedByID(pid: entry.pid)
+            }
+            return VirtualLiveWindow(
+                windowID: entry.windowID, pid: entry.pid, frame: entry.bounds, isOnScreen: entry.isOnScreen,
+                bundleID: bundleID,
+                isMinimized: LiveWindowInfo.isMinimized(windowID: entry.windowID, in: minimized[entry.pid] ?? [:]))
         }
+    }
+
+    /// Minimized flag of each AX window of `pid`, by CGWindowID. Empty without Accessibility permission.
+    private func axMinimizedByID(pid: Int32) -> [UInt32: Bool] {
+        guard AXPermission.isTrusted() else { return [:] }
+        let entries = AXWindows.windows(ofPID: pid).map { (windowID: $0.windowID, isMinimized: $0.isMinimized ?? false) }
+        return LiveWindowInfo.minimizedByID(entries)
     }
 
     public func bundleID(ofPID pid: Int32) -> String? {

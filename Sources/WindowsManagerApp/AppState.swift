@@ -27,7 +27,11 @@ final class AppState: ObservableObject {
     /// Names shown in the Settings list.
     var profiles: [String] { savedProfiles.map(\.name) }
 
+    /// Set by init so URL handling in the app delegate can reach the state.
+    static weak var current: AppState?
+
     init() {
+        AppState.current = self
         reloadProfiles()
         // The user grants Accessibility in System Settings and comes back: re-check when we become active.
         activationObserver = NotificationCenter.default.addObserver(
@@ -64,6 +68,25 @@ final class AppState: ObservableObject {
     }
 
     var canAct: Bool { isAccessibilityTrusted && !status.isBusy }
+
+    // MARK: URL control
+
+    /// Handles a windowsmanager:// request: run a profile by name, capture under a name, or list.
+    func handle(_ command: ControlCommand) {
+        switch command {
+        case .run(let profile):
+            guard let match = savedProfiles.first(where: { $0.name.localizedCaseInsensitiveCompare(profile) == .orderedSame }) else {
+                status = .failure("No profile named \(profile)")
+                return
+            }
+            run(match)
+        case .capture(let name):
+            captureName = name
+            commitCapture()
+        case .list:
+            status = .success(savedProfiles.isEmpty ? "No profiles" : "Profiles: " + profiles.joined(separator: ", "))
+        }
+    }
 
     // MARK: Run
 

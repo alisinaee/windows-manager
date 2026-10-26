@@ -21,6 +21,7 @@ let commands: [Command] = [
     Command(name: CaptureCommand.name, help: CaptureCommand.help, run: CaptureCommand.run),
     Command(name: RestoreCommand.name, help: RestoreCommand.help, run: RestoreCommand.run),
     Command(name: ProfileTransferCommand.name, help: ProfileTransferCommand.help, run: ProfileTransferCommand.run),
+    Command(name: CtlCommand.name, help: CtlCommand.help, run: CtlCommand.run),
 ]
 
 func usageText() -> String {

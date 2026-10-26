@@ -68,6 +68,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard !isDuplicate else { return }
+        for url in urls {
+            do {
+                let command = try ControlCommand.parse(url: url)
+                Task { @MainActor in
+                    guard let state = AppState.current else {
+                        AppInfo.logger.error("URL ignored, app state not ready: \(url.absoluteString, privacy: .public)")
+                        return
+                    }
+                    state.reloadProfiles()
+                    state.handle(command)
+                }
+            } catch {
+                AppInfo.logger.error("Bad control URL \(url.absoluteString, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         if !isDuplicate { AppInfo.logger.notice("Windows Manager quitting") }
     }

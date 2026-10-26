@@ -23,6 +23,7 @@ struct SpacesSettingsTab: View {
         Form {
             SkyLightHealthView()
             SpaceGuardView(controller: SpacesServices.shared.spaceGuard)
+            BackupSection()
             PinRulesSection(onChange: { SpacesServices.shared.pins.reload() })
         }
         .formStyle(.grouped)

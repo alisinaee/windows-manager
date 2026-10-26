@@ -46,6 +46,9 @@ final class ProfileBuilderModel: ObservableObject {
     /// The editable name text; may be empty while typing (an empty name blocks saving).
     @Published private(set) var nameText = ""
 
+    /// The map showing this draft, if any. Set by the owner so Space selection follows structural edits.
+    weak var mapModel: ProfileMapModel?
+
     private let store: ProfileStore
     private var connectedDisplays: [DisplayIdentity] = []
     private var installed: [InstalledApp]?
@@ -211,32 +214,35 @@ final class ProfileBuilderModel: ObservableObject {
     // Desktops and Spaces
     @discardableResult
     func addDesktop(onDisplay uuid: String, atNumber: Int? = nil) -> Int? {
-        guard let n = edit(kind: "addDesktop", { try $0.addDesktop(onDisplay: uuid, atNumber: atNumber) }) else { return nil }
+        guard let n = edit({ try $0.addDesktop(onDisplay: uuid, atNumber: atNumber) }) else { return nil }
         selectedDisplayUUID = uuid
         selectedDesktop = n
         return n
     }
 
     func deleteDesktop(onDisplay uuid: String, number: Int, moveWindowsTo target: Int?) {
-        guard edit(kind: "deleteDesktop", { try $0.deleteDesktop(onDisplay: uuid, number: number, moveWindowsTo: target) }) != nil else { return }
+        guard edit({ try $0.deleteDesktop(onDisplay: uuid, number: number, moveWindowsTo: target) }) != nil else { return }
         keepSelectionValid()
+        syncMapSelection()
     }
 
     func moveDesktop(onDisplay uuid: String, number: Int, toNumber new: Int) {
-        edit(kind: "moveDesktop") { try $0.moveDesktop(onDisplay: uuid, number: number, toNumber: new) }
+        guard edit({ try $0.moveDesktop(onDisplay: uuid, number: number, toNumber: new) }) != nil else { return }
+        if selectedDisplayUUID == uuid, selectedDesktop == number { selectedDesktop = new }
+        syncMapSelection()
     }
 
     /// `⛶ +`: makes the window full screen in a new Space.
     func makeFullScreen(windowID: UUID, afterPosition: Int? = nil) {
-        edit(kind: "makeFullScreen") { _ = try $0.makeFullScreen(windowID: windowID, afterPosition: afterPosition) }
+        edit { _ = try $0.makeFullScreen(windowID: windowID, afterPosition: afterPosition) }
     }
 
     func moveFullScreenSpace(onDisplay uuid: String, position: Int, toIndex index: Int) {
-        edit(kind: "moveFullScreenSpace") { try $0.moveFullScreenSpace(onDisplay: uuid, position: position, toIndex: index) }
+        edit { try $0.moveFullScreenSpace(onDisplay: uuid, position: position, toIndex: index) }
     }
 
     func removeFullScreenSpace(onDisplay uuid: String, position: Int, removal: FullScreenRemoval) {
-        edit(kind: "removeFullScreenSpace") { try $0.removeFullScreenSpace(onDisplay: uuid, position: position, removal: removal) }
+        edit { try $0.removeFullScreenSpace(onDisplay: uuid, position: position, removal: removal) }
     }
 
     // Windows
@@ -244,7 +250,7 @@ final class ProfileBuilderModel: ObservableObject {
     @discardableResult
     func addWindow(app: AppRef, onDisplay uuid: String, desktop: Int,
                    relativeFrame: CGRect? = nil, zoneName: String? = nil) -> UUID? {
-        guard let id = edit(kind: "addWindow", { try $0.addPlannedWindow(app: app, onDisplay: uuid, desktop: desktop,
+        guard let id = edit({ try $0.addPlannedWindow(app: app, onDisplay: uuid, desktop: desktop,
                                                                        relativeFrame: relativeFrame, zoneName: zoneName) })
         else { return nil }
         selectedWindowID = id
@@ -262,11 +268,11 @@ final class ProfileBuilderModel: ObservableObject {
 
     /// Dropping on another monitor tile or Space thumbnail.
     func moveWindow(_ id: UUID, toDisplay uuid: String, desktop: Int) {
-        edit(kind: "moveWindowToSpace") { try $0.moveWindow(id, toDisplay: uuid, desktop: desktop) }
+        edit { try $0.moveWindow(id, toDisplay: uuid, desktop: desktop) }
     }
 
     func removeWindow(_ id: UUID) {
-        guard edit(kind: "removeWindow", { try $0.removeWindow(id) }) != nil else { return }
+        guard edit({ try $0.removeWindow(id) }) != nil else { return }
         if selectedWindowID == id { selectedWindowID = nil }
     }
 
@@ -283,12 +289,12 @@ final class ProfileBuilderModel: ObservableObject {
     }
 
     func setLaunchPlan(_ plan: LaunchPlan?) {
-        edit(kind: "launchPlan") { try $0.setLaunchPlan(plan) }
+        edit { try $0.setLaunchPlan(plan) }
     }
 
     /// Library context menu `Launch only, no window`: a launch-order entry without a window.
     func addLaunchOnly(app: AppRef) {
-        var plan = profile?.launchPlan ?? LaunchPlan()
+        var plan = profile?.launchPlan ?? LaunchPlan(mode: .parallel)
         let item = LaunchItem(app: app, wait: .appReady, withoutWindows: true)
         guard !plan.items.contains(where: { $0.id == item.id }) else { return }
         plan.items.append(item)
@@ -302,6 +308,7 @@ final class ProfileBuilderModel: ObservableObject {
         session = s
         keepSelectionValid()
         refresh()
+        syncMapSelection()
     }
 
     func redo() {
@@ -309,6 +316,7 @@ final class ProfileBuilderModel: ObservableObject {
         session = s
         keepSelectionValid()
         refresh()
+        syncMapSelection()
     }
 
     // MARK: Save and discard
@@ -362,6 +370,16 @@ final class ProfileBuilderModel: ObservableObject {
         } else {
             launchIssues = []
         }
+    }
+
+    /// Points the map at the builder's selected Desktop (Space ids are positional and shift on structural edits).
+    private func syncMapSelection() {
+        guard let map = mapModel, let p = profile else { return }
+        map.load(p)
+        guard let uuid = selectedDisplayUUID, let n = selectedDesktop,
+              let space = map.index.spaces.first(where: { $0.displayUUID == uuid && $0.kind == .desktop && $0.desktopNumber == n })
+        else { return }
+        map.selectSpace(space.id)
     }
 
     private func keepSelectionValid() {

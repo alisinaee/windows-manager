@@ -34,12 +34,33 @@ final class ProfileMapModel: ObservableObject {
 
     func load(_ profile: Profile?) {
         let changed = self.profile?.id != profile?.id
+        let oldIndex = index
         self.profile = profile
         index = ProfileSpaceIndex(profile: profile ?? Profile.emptyForMap)
         if changed {
             spaceSelection = [:]
             selectedWindowID = nil
             focusedDisplayUUID = profile?.displays.first?.uuid
+        } else {
+            // Space ids are positional, so re-resolve each stored selection by kind + Desktop number
+            // (or the owner windows of a full-screen Space) and drop the ones that no longer exist.
+            var resolved: [String: String] = [:]
+            for (display, id) in spaceSelection {
+                guard let old = oldIndex.space(id: id) else { continue }
+                let match = index.spaces.first { s in
+                    guard s.displayUUID == display, s.kind == old.kind else { return false }
+                    switch old.kind {
+                    case .desktop: return s.desktopNumber == old.desktopNumber
+                    case .fullScreen: return !old.fullScreenWindowIDs.isEmpty && s.fullScreenWindowIDs == old.fullScreenWindowIDs
+                    case .other: return s.position == old.position
+                    }
+                }
+                if let match { resolved[display] = match.id }
+            }
+            spaceSelection = resolved
+            if let focus = focusedDisplayUUID, !(profile?.displays.contains { $0.uuid == focus } ?? false) {
+                focusedDisplayUUID = profile?.displays.first?.uuid
+            }
         }
         relayout()
     }

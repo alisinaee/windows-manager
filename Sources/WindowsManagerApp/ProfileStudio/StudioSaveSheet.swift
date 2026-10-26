@@ -73,12 +73,20 @@ struct StudioStartSheet: View {
     }
 }
 
+private final class NameDraft: ObservableObject {
+    @Published var text: String?
+}
+
 /// Name, problems and Save/Cancel. The model refuses to save while an error is listed.
 struct StudioSaveSheet: View {
     @ObservedObject var builder: ProfileBuilderModel
     /// Called with the stored profile after a successful save.
     let onSaved: (Profile) -> Void
     let onCancel: () -> Void
+    /// Edited locally; committed to the builder on Save so Cancel leaves the draft untouched.
+    @StateObject private var draft = NameDraft()
+    private var nameDraft: String? { draft.text }
+    private var shownName: String { nameDraft ?? builder.nameText }
 
     private var errors: [DraftCheckIssue] { ProfileDraftCheck.errors(builder.draftIssues) }
     private var warnings: [DraftCheckIssue] { ProfileDraftCheck.warnings(builder.draftIssues) }
@@ -86,11 +94,11 @@ struct StudioSaveSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Save profile").font(.title2.bold())
-            TextField("Name", text: Binding(get: { builder.nameText }, set: { builder.setName($0) }))
+            TextField("Name", text: Binding(get: { shownName }, set: { draft.text = $0 }))
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(save)
 
-            if builder.nameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if shownName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 issueRow("exclamationmark.octagon.fill", .red, "Give the profile a name.")
             }
             ScrollView {
@@ -120,7 +128,7 @@ struct StudioSaveSheet: View {
                 Button("Save", action: save)
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
-                    .disabled(builder.blocksSaving)
+                    .disabled(builder.blocksSaving || shownName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(20)
@@ -128,6 +136,7 @@ struct StudioSaveSheet: View {
     }
 
     private func save() {
+        if let nameDraft { builder.setName(nameDraft) }
         guard !builder.blocksSaving, let saved = builder.save() else { return }
         onSaved(saved)
     }

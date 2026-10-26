@@ -300,10 +300,10 @@ public struct Profile: Codable, Hashable, Sendable, Identifiable {
 
     // MARK: Helpers
 
-    /// Two refs are the same app when both have a bundle id and the ids are equal, otherwise when the
+    /// Two refs are the same app when both have a bundle id and the ids are equal (ignoring case, like WindowMatcher), otherwise when the
     /// names are equal (ignoring case). A path alone never decides: it can change between machines.
     static func isSameApp(_ a: AppRef, _ b: AppRef) -> Bool {
-        if let x = a.bundleID, let y = b.bundleID { return x == y }
+        if let x = a.bundleID, let y = b.bundleID { return x.caseInsensitiveCompare(y) == .orderedSame }
         return a.name.caseInsensitiveCompare(b.name) == .orderedSame
     }
 

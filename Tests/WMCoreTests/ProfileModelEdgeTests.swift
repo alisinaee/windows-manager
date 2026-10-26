@@ -280,3 +280,12 @@ import Testing
         #expect(problems.contains { $0.contains("does not list") })
     }
 }
+
+@Suite("Profile bundle id case")
+struct ProfileBundleIDCaseTests {
+    @Test func bundleIDsCompareIgnoringCase() {
+        let a = AppRef(name: "Chrome", bundleID: "com.google.chrome")
+        let b = AppRef(name: "Chrome", bundleID: "com.google.Chrome")
+        #expect(Profile.isSameApp(a, b))
+    }
+}

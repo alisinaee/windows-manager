@@ -59,6 +59,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !isDuplicate else { return }
         AppInfo.logger.notice("Windows Manager \(AppInfo.version) (\(AppInfo.build)) started, pid \(ProcessInfo.processInfo.processIdentifier)")
         AppInfo.logger.notice("SkyLight loaded: \(PrivateSymbols.isLoaded), Accessibility trusted: \(AXPermission.isTrusted())")
+
+        // First run, or Accessibility is missing (for example after a rebuild changed the signature): show setup.
+        // --self-check exits before any UI exists; the guard keeps that true if the order of startup ever changes.
+        if !CommandLine.arguments.contains("--self-check"),
+           !OnboardingWindowController.isCompleted || !AXPermission.isTrusted() {
+            OnboardingWindowController.shared.show()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

@@ -24,6 +24,9 @@ struct MenuBarContent: View {
 
             Divider().padding(.vertical, 2)
 
+            MenuRow(title: "Setup…") {
+                OnboardingWindowController.shared.show()
+            }
             MenuRow(title: "Settings…") {
                 NSApp.activate()
                 openSettings()

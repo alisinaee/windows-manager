@@ -82,6 +82,9 @@ public struct FullScreenAwareWindowSource: WorkspaceWindowSource {
     }
 
     public func bundleID(ofPID pid: Int32) -> String? { base.bundleID(ofPID: pid) }
+
+    /// Unfiltered: windows on other Spaces still exist, they are only not visible to the switcher.
+    public func allWindows() -> [VirtualLiveWindow] { base.allWindows() }
 }
 
 /// A whole `WorkspaceSystem` whose window source is wrapped by `FullScreenAwareWindowSource`;
@@ -97,6 +100,7 @@ public struct FullScreenAwareSystem: WorkspaceSystem {
 
     public func liveWindows() -> [VirtualLiveWindow] { source.liveWindows() }
     public func bundleID(ofPID pid: Int32) -> String? { source.bundleID(ofPID: pid) }
+    public func allWindows() -> [VirtualLiveWindow] { source.allWindows() }
     public func hideApp(pid: Int32) -> Bool { base.hideApp(pid: pid) }
     public func unhideApp(pid: Int32) -> Bool { base.unhideApp(pid: pid) }
     public func frame(ofWindow windowID: UInt32, pid: Int32) -> CGRect? { base.frame(ofWindow: windowID, pid: pid) }

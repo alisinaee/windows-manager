@@ -17,6 +17,13 @@ public protocol WorkspaceWindowSource {
     /// Every normal window the window server lists, including hidden and parked ones.
     func liveWindows() -> [VirtualLiveWindow]
     func bundleID(ofPID pid: Int32) -> String?
+    /// Every window that exists, even ones a filter hides from `liveWindows()` (other native Spaces).
+    /// Used to tell "not visible to the filter" from "closed". Defaults to `liveWindows()`.
+    func allWindows() -> [VirtualLiveWindow]
+}
+
+public extension WorkspaceWindowSource {
+    func allWindows() -> [VirtualLiveWindow] { liveWindows() }
 }
 
 /// Hides and unhides a whole app.
@@ -141,7 +148,11 @@ public final class WorkspaceSwitcher {
 
     private func hide(old: Workspace, keeping target: Workspace, into result: inout WorkspaceSwitchResult) throws {
         let live = system.liveWindows()
-        let liveByPID = Dictionary(grouping: live, by: \.pid)
+        // Windows on other native Spaces count as "others" too, so use the unfiltered list for that.
+        var everything = live
+        let liveIDs = Set(live.map(\.windowID))
+        everything.append(contentsOf: system.allWindows().filter { !liveIDs.contains($0.windowID) })
+        let liveByPID = Dictionary(grouping: everything, by: \.pid)
         let recorded = Set(model.hiddenRecords.map(\.windowID))
         var bundles: [Int32: String?] = [:]
         func bundle(_ pid: Int32) -> String? {
@@ -158,11 +169,18 @@ public final class WorkspaceSwitcher {
             $0.isOnScreen && !recorded.contains($0.windowID) && belongs($0, to: old) && !belongs($0, to: target)
         }
         let hideIDs = Set(toHide.map(\.windowID))
+        let parkedIDs = Set(model.hiddenRecords.filter { $0.method == .parked }.map(\.windowID))
         let pids = Array(Set(toHide.map(\.pid))).sorted()
 
         for pid in pids {
             let mine = toHide.filter { $0.pid == pid }
-            let others = (liveByPID[pid] ?? []).filter { $0.isOnScreen && !hideIDs.contains($0.windowID) }
+            // Hiding the whole app also hides windows that are visible now, parked ones and windows of other
+            // workspaces (which would be stranded under a hidden app when their workspace is shown).
+            let others = (liveByPID[pid] ?? []).filter { w in
+                guard !hideIDs.contains(w.windowID) else { return false }
+                return w.isOnScreen || parkedIDs.contains(w.windowID)
+                    || model.workspaces.contains { $0.id != old.id && belongs(w, to: $0) }
+            }
             let wholeApp = others.isEmpty
             var parkList = mine
             if wholeApp {
@@ -195,9 +213,9 @@ public final class WorkspaceSwitcher {
         return false
     }
 
-    private func park(_ window: VirtualLiveWindow, bundleID: String?, workspace: UUID,
+    private func park(_ window: VirtualLiveWindow, bundleID: String?, workspace: UUID?, originalOverride: CGRect? = nil,
                       into result: inout WorkspaceSwitchResult) throws {
-        let original = system.frame(ofWindow: window.windowID, pid: window.pid) ?? window.frame
+        let original = originalOverride ?? system.frame(ofWindow: window.windowID, pid: window.pid) ?? window.frame
         let screens = system.screenFrames()
         guard let index = CornerParker.screenIndex(containing: original, screens: screens) else {
             result.warnings.append("Window \(window.windowID) was not parked: no screens were found.")
@@ -232,18 +250,25 @@ public final class WorkspaceSwitcher {
     // MARK: Show
 
     private func show(target: Workspace, into result: inout WorkspaceSwitchResult) {
-        let live = system.liveWindows()
-        let liveIDs = Set(live.map(\.windowID))
+        var live = system.liveWindows()
+        let everExisting = Set(system.allWindows().map(\.windowID))
         let records = model.hiddenRecords.filter { belongs(record: $0, to: target) }
 
         // Whole apps first.
         let appPIDs = Array(Set(records.filter { $0.method == .appHidden }.map(\.pid))).sorted()
+        var strangers: [HiddenWindowRecord] = []
+        var unhiddenIDs: [UInt32] = []
         for pid in appPIDs {
             if system.unhideApp(pid: pid) {
                 result.unhiddenApps.append(pid)
                 for r in model.hiddenRecords where r.pid == pid && r.method == .appHidden {
-                    if liveIDs.contains(r.windowID) { if belongs(record: r, to: target) { result.restoredWindows.append(r.windowID) } }
-                    model.clearHidden(windowID: r.windowID)
+                    if belongs(record: r, to: target) {
+                        unhiddenIDs.append(r.windowID)
+                        model.clearHidden(windowID: r.windowID)
+                    } else {
+                        // Another workspace's window: the unhide showed it, so it must go back out of sight.
+                        strangers.append(r)
+                    }
                 }
                 persistAfterAction(into: &result)
             } else {
@@ -251,9 +276,31 @@ public final class WorkspaceSwitcher {
             }
         }
 
+        // The unhide changes what the window server lists: look again.
+        live = system.liveWindows()
+        let liveIDs = Set(live.map(\.windowID))
+        result.restoredWindows.append(contentsOf: unhiddenIDs.filter { liveIDs.contains($0) })
+        for r in strangers {
+            if let window = live.first(where: { $0.windowID == r.windowID }) {
+                do {
+                    try park(window, bundleID: r.bundleID, workspace: r.workspaceID, originalOverride: r.originalFrame, into: &result)
+                } catch {
+                    result.warnings.append("Window \(r.windowID) could not be parked again: \(error.localizedDescription)")
+                }
+            } else if !everExisting.contains(r.windowID) {
+                model.clearHidden(windowID: r.windowID)
+                persistAfterAction(into: &result)
+            }
+        }
+
         // Then parked windows.
         for record in records where record.method == .parked {
             guard liveIDs.contains(record.windowID) else {
+                if everExisting.contains(record.windowID) {
+                    // Alive, but on another native Space: keep the record, restore it later.
+                    result.warnings.append("Window \(record.windowID) is on another Space; its restore is deferred and its record is kept.")
+                    continue
+                }
                 model.clearHidden(windowID: record.windowID)
                 persistAfterAction(into: &result)
                 result.missingWindows.append(record.windowID)
@@ -270,7 +317,7 @@ public final class WorkspaceSwitcher {
         }
 
         // Target windows that are gone and were never hidden.
-        for ref in target.windows where !liveIDs.contains(ref.windowID)
+        for ref in target.windows where !liveIDs.contains(ref.windowID) && !everExisting.contains(ref.windowID)
             && !result.missingWindows.contains(ref.windowID) {
             result.missingWindows.append(ref.windowID)
             result.warnings.append("Window \(ref.windowID) of workspace \"\(target.name)\" no longer exists.")
@@ -294,9 +341,11 @@ public final class WorkspaceSwitcher {
         for action in WorkspaceModelStore.reassertActive(model, live: live, tolerance: tolerance) {
             guard case .hideWindow(let windowID, let pid) = action,
                   let window = live.first(where: { $0.windowID == windowID }) else { continue }
+            let bundle = system.bundleID(ofPID: pid)
             let owner = model.workspaces.first { ws in ws.windows.contains { $0.windowID == windowID } }
+                ?? model.workspaces.first { ws in bundle.map { ws.apps.contains($0) } ?? false && ws.id != model.activeWorkspaceID }
             do {
-                try park(window, bundleID: system.bundleID(ofPID: pid), workspace: owner?.id ?? UUID(), into: &result)
+                try park(window, bundleID: bundle, workspace: owner?.id, into: &result)
             } catch {
                 result.warnings.append("Window \(windowID) could not be parked again: \(error.localizedDescription)")
             }

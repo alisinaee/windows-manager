@@ -15,7 +15,7 @@ struct FocusProfileFilter: SetFocusFilterIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         // Runs when the Focus turns on (or the filter changes); nothing to do without a profile.
-        if let profile { _ = await IntentRunner.perform(.run(profile: profile.name)) }
+        if let profile { _ = await IntentRunner.runProfile(id: profile.id) }
         return .result()
     }
 }

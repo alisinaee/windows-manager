@@ -62,10 +62,8 @@ final class HotkeyController {
             registeredProfiles.insert(profile.id)
             let id = profile.id
             KeyboardShortcuts.onKeyDown(for: .profile(id)) {
-                // Resolve the name at press time so renames and deletions are honoured.
-                guard let state = AppState.current,
-                      let current = state.savedProfiles.first(where: { $0.id == id }) else { return }
-                state.handle(.run(profile: current.name))
+                // Run by id, looked up at press time, so renames and deletions are honoured and duplicate names are safe.
+                AppState.current?.run(id: id)
             }
         }
     }

@@ -90,17 +90,42 @@ final class AppState: ObservableObject {
 
     var canAct: Bool { isAccessibilityTrusted && !status.isBusy }
 
+    /// Why an action cannot start now, or nil when it can.
+    private var blockReason: String? {
+        if !isAccessibilityTrusted { return "Accessibility is not allowed yet" }
+        if status.isBusy { return "Busy: another action is running" }
+        return nil
+    }
+
+    /// True when the action may start. Otherwise the reason is reported. A running task keeps its status
+    /// (overwriting it would hide its progress and make Shortcuts stop waiting too early), so while busy the
+    /// refusal is only logged.
+    private func checkCanStart() -> Bool {
+        guard let reason = blockReason else { return true }
+        if status.isBusy {
+            AppInfo.logger.notice("Refused while busy: \(reason)")
+        } else {
+            status = .failure(reason)
+        }
+        return false
+    }
+
+    /// Reports a failure that is not about permissions or a running task (for example an unknown name).
+    private func report(_ text: String) {
+        if status.isBusy { AppInfo.logger.notice("Not shown while busy: \(text)") } else { status = .failure(text) }
+    }
+
     // MARK: URL control
 
     /// Handles a windowsmanager:// request: run a profile by name, capture under a name, or list.
     func handle(_ command: ControlCommand) {
         switch command {
         case .run(let profile):
-            guard let match = savedProfiles.first(where: { $0.name.localizedCaseInsensitiveCompare(profile) == .orderedSame }) else {
-                status = .failure("No profile named \(profile)")
-                return
+            switch ProfileResolver.resolve(profile, in: savedProfiles) {
+            case .found(let id): run(id: id)
+            case .ambiguous: report("Several profiles are named \(profile): use a unique name")
+            case .none: report("No profile named \(profile)")
             }
-            run(match)
         case .capture(let name):
             captureName = name
             commitCapture()
@@ -111,10 +136,19 @@ final class AppState: ObservableObject {
 
     // MARK: Run
 
+    /// Runs the profile with this id. Hotkeys and Shortcuts pass the id, so duplicate names never pick the wrong one.
+    func run(id: UUID) {
+        guard let summary = savedProfiles.first(where: { $0.id == id }) else {
+            report("That profile no longer exists")
+            return
+        }
+        run(summary)
+    }
+
     /// Restores a saved profile. The engine is main-actor bound (it awaits every step), so the UI stays
     /// responsive while it runs; the file read happens off the main thread.
     func run(_ summary: ProfileSummary) {
-        guard canAct else { return }
+        guard checkCanStart() else { return }
         status = .running("Loading \(summary.name)…")
         let store = self.store
         Task { [weak self] in
@@ -145,7 +179,7 @@ final class AppState: ObservableObject {
     // MARK: Capture
 
     func beginCapture() {
-        guard canAct else { return }
+        guard checkCanStart() else { return }
         captureName = ""
         isNamingCapture = true
     }
@@ -153,16 +187,19 @@ final class AppState: ObservableObject {
     func cancelCapture() { isNamingCapture = false }
 
     /// Scans the workspace off the main thread and saves the result as a profile.
+    /// A name already used by another profile gets a number ("Work 2"), so names stay unambiguous.
     func commitCapture() {
         let name = captureName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard canAct, !name.isEmpty else { return }
+        guard !name.isEmpty, checkCanStart() else { return }
         isNamingCapture = false
         status = .running("Capturing \(name)…")
         let store = self.store
         Task { [weak self] in
             let outcome: Result<String, Error> = await Task.detached(priority: .userInitiated) {
                 do {
-                    let (profile, warnings) = ProfileCapture.capture(name: name)
+                    let (captured, warnings) = ProfileCapture.capture(name: name)
+                    var profile = captured
+                    profile.name = ProfileTransfer.uniqueName(name, among: store.list().map(\.name))
                     let saved = try store.save(profile)
                     var text = "Saved \(saved.name): \(saved.windows.count) window(s), \(saved.apps.count) app(s)"
                     if !warnings.isEmpty { text += " (\(warnings.count) warning(s))" }

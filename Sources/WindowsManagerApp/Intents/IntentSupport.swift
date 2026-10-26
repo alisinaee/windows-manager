@@ -7,6 +7,15 @@ enum IntentRunner {
     struct Outcome { let ok: Bool; let text: String }
 
     static func perform(_ command: ControlCommand) async -> Outcome {
+        await perform { $0.handle(command) }
+    }
+
+    /// Runs the profile with this id. Shortcuts passes the id it got from ProfileEntity, so names never matter.
+    static func runProfile(id: UUID) async -> Outcome {
+        await perform { $0.run(id: id) }
+    }
+
+    private static func perform(_ start: (AppState) -> Void) async -> Outcome {
         guard let state = AppState.current else {
             return Outcome(ok: false, text: "Windows Manager is not running. Open the app and try again.")
         }
@@ -16,7 +25,9 @@ enum IntentRunner {
         guard !state.status.isBusy else {
             return Outcome(ok: false, text: "Windows Manager is busy with another task.")
         }
-        state.handle(command)
+        // Shortcuts reads profiles from disk, so the cached list may be stale (renamed, added or deleted).
+        state.reloadProfiles()
+        start(state)
         // The work continues in a task; wait until the status leaves "running" (max about 2 minutes).
         try? await Task.sleep(for: .milliseconds(100))
         var waited = 0

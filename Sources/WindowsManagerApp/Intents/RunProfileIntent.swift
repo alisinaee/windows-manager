@@ -10,7 +10,7 @@ struct RunProfileIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let outcome = await IntentRunner.perform(.run(profile: profile.name))
+        let outcome = await IntentRunner.runProfile(id: profile.id)
         return .result(dialog: IntentDialog(stringLiteral: outcome.ok ? outcome.text : "Failed: \(outcome.text)"))
     }
 }

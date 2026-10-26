@@ -611,10 +611,13 @@ public final class AppLauncher: @unchecked Sendable {
         let application = AXElement.application(pid: pid)
         let read = application.read(kAXWindowsAttribute)
         guard read.error == .success else { return WindowSnapshot() }
-        let windows = ((read.value as? [AnyObject]) ?? []).compactMap { item -> AXElement? in
+        var windows = ((read.value as? [AnyObject]) ?? []).compactMap { item -> AXElement? in
             CFGetTypeID(item) == AXUIElementGetTypeID()
                 ? AXElement(unsafeDowncast(item, to: AXUIElement.self)) : nil
         }
+        // Windows on another Space are missing from that list; the main/focused window is still reachable.
+        let listedIDs = Set(windows.compactMap(\.windowID))
+        windows += AXRemoteWindows.directWindows(pid: pid).filter { !listedIDs.contains($0.key) }.map(\.value)
         var snapshot = WindowSnapshot(axReady: true, anyWindowCount: windows.count)
         for window in windows where AXWindows.isStandardWindow(window) {
             if let frame = window.frame, frame.width > 0, frame.height > 0 { snapshot.frames.append(frame) }

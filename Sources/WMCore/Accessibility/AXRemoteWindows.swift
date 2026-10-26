@@ -264,6 +264,13 @@ public enum AXRemoteWindows {
             result.elements[windowID] = element
             result.sources[windowID] = .normalList
         }
+        // 2b. The main and focused window, and the children, are answered by the app even when the window sits
+        // on another Space (while kAXWindowsAttribute is empty there), so no brute force is needed for them.
+        for (windowID, element) in directWindows(pid: pid) where result.sources[windowID] == nil {
+            result.elements[windowID] = element
+            result.sources[windowID] = .normalList
+            fresh[windowID] = element
+        }
         result.normalSeconds = monotonicSeconds() - normalStart
         withCache { $0.store(fresh, pid: pid) }
         if isComplete() { return result }
@@ -283,6 +290,31 @@ public enum AXRemoteWindows {
             remote[windowID] = element
         }
         withCache { $0.store(remote, pid: pid) }
+        return result
+    }
+
+    /// Windows the app hands out directly through `AXMainWindow`, `AXFocusedWindow` and `AXChildren`. Unlike
+    /// `AXWindows` these also answer for a window on another Space (found live on macOS 27: with a full-screen
+    /// Space active, `AXWindows` was empty, no remote element id reached the document window, but
+    /// `AXMainWindow` returned it). Window id -> element; only real windows (role AXWindow with a window id).
+    public static func directWindows(pid: pid_t) -> [UInt32: AXElement] {
+        let application = AXElement.application(pid: pid)
+        var candidates: [AXElement] = []
+        for attribute in [kAXMainWindowAttribute, kAXFocusedWindowAttribute] {
+            if let element = application.element(attribute) { candidates.append(element) }
+        }
+        candidates += application.elements(kAXChildrenAttribute)
+        let items = candidates.compactMap { element -> (windowID: UInt32, element: AXElement)? in
+            guard element.role == kAXWindowRole, let windowID = element.windowID else { return nil }
+            return (windowID, element)
+        }
+        return firstByWindowID(items)
+    }
+
+    /// Window id -> first element with that id. Pure.
+    static func firstByWindowID<E>(_ items: [(windowID: UInt32, element: E)]) -> [UInt32: E] {
+        var result: [UInt32: E] = [:]
+        for item in items where result[item.windowID] == nil { result[item.windowID] = item.element }
         return result
     }
 

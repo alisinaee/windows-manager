@@ -172,3 +172,14 @@ import Testing
         AXRemoteWindows.invalidateAll()
     }
 }
+
+@Suite struct AXRemoteDirectWindowsTests {
+    @Test func firstByWindowIDKeepsFirstElementPerID() {
+        let result = AXRemoteWindows.firstByWindowID([(5500, "main"), (5500, "focused"), (5502, "panel")])
+        #expect(result == [5500: "main", 5502: "panel"])
+    }
+
+    @Test func firstByWindowIDEmpty() {
+        #expect(AXRemoteWindows.firstByWindowID([(UInt32, String)]()).isEmpty)
+    }
+}

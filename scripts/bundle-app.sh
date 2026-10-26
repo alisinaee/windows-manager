@@ -5,6 +5,7 @@
 #   SIGN_IDENTITY="Developer ID Application: ..." scripts/bundle-app.sh
 set -e
 cd "$(dirname "$0")/.."
+. scripts/env.sh
 
 APP_NAME="Windows Manager"
 EXECUTABLE="WindowsManagerApp"

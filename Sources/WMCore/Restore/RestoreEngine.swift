@@ -58,10 +58,18 @@ public struct RestoreActionResult: Equatable, Sendable {
 public struct LaunchRequest: Equatable, Sendable {
     public var app: AppRef
     public var minWindows: Int
+    /// Per-app launcher options from the launch order (timeout, activation). Nil: the launcher defaults with
+    /// `minWindows`. Fake environments ignore it.
+    public var options: LaunchOptions?
+    /// Seconds the engine waits after this app before the next one (sequential launch only; the engine does the
+    /// waiting, the environment never sees it).
+    public var delayAfter: TimeInterval
 
-    public init(app: AppRef, minWindows: Int) {
+    public init(app: AppRef, minWindows: Int, options: LaunchOptions? = nil, delayAfter: TimeInterval = 0) {
         self.app = app
         self.minWindows = minWindows
+        self.options = options
+        self.delayAfter = delayAfter
     }
 }
 
@@ -242,7 +250,7 @@ public final class RestoreEngine {
         var scan = await environment.scan()
         state.scanNotes = scan.notes
         state.lastScan = scan
-        var plan = evaluate(profile, scan: scan, addingDesktops: configuration.addMissingDesktops)
+        var plan = evaluate(profile, scan: scan, addingDesktops: addsDesktops(for: profile))
         emit(state, .planned(plan))
         state.totalSteps = plan.steps.count
 
@@ -314,6 +322,20 @@ public final class RestoreEngine {
         return finish(state, plan: plan)
     }
 
+    /// The engine-level flag or the profile's own option: either one enables adding Desktops.
+    private func addsDesktops(for profile: Profile) -> Bool {
+        configuration.addMissingDesktops || profile.options.addMissingDesktops
+    }
+
+    // MARK: Preview
+
+    /// The plan a run would make now, without doing anything: one `scan` of the environment, then matching and
+    /// planning. Nothing is launched, moved, hidden or sleeping. For the map's dry run and compare overlay.
+    public func preview(profile: Profile) async -> RestorePlan {
+        let scan = await environment.scan()
+        return evaluate(profile, scan: scan, addingDesktops: addsDesktops(for: profile))
+    }
+
     // MARK: Evaluate
 
     /// Monitors, window matching and planning for one scan.
@@ -348,6 +370,9 @@ public final class RestoreEngine {
     // MARK: Launch
 
     private func runLaunch(_ steps: [RestoreStep], state: RunState) async -> [LaunchResult] {
+        if let plan = state.profile.launchPlan, plan.mode == .sequential {
+            return await runSequentialLaunch(steps, plan: plan, state: state)
+        }
         var requests: [LaunchRequest] = []
         for step in steps {
             if case .launch(let app, let count) = step { requests.append(LaunchRequest(app: app, minWindows: count)) }
@@ -364,49 +389,91 @@ public final class RestoreEngine {
         let results = await environment.launchAll(requests)
 
         for (offset, step) in steps.enumerated() {
-            guard case .launch(let app, let count) = step else { continue }
-            let result = offset < results.count ? results[offset] : nil
-            let status: RestoreStepStatus
-            var note: String?
-            var text = "failed: the launcher returned no result"
-            var launched = false
-            var windowCount = 0
-            var elapsed: TimeInterval = 0
-            if let result {
-                elapsed = result.timings.total
-                windowCount = result.windowCount
-                switch result.status {
-                case .launched:
-                    status = .done
-                    launched = true
-                    text = "launched"
-                    note = "\(result.windowCount) of \(count) window\(count == 1 ? "" : "s") ready"
-                case .alreadyRunning:
-                    status = .skipped("already running")
-                    text = "already running"
-                case .notFound:
-                    status = .failed("the app could not be found on this Mac")
-                    text = "not found"
-                case .failed(let message):
-                    status = .failed(message)
-                    text = "failed: \(message)"
-                case .timedOut:
-                    status = .failed("timed out waiting for \(count) window\(count == 1 ? "" : "s")")
-                    text = "timed out"
-                }
-            } else {
-                status = .failed("the launcher returned no result")
-            }
-            state.report.launched.append(RestoreLaunchRecord(app: app, result: text, launched: launched,
-                                                             windowCount: windowCount, elapsed: elapsed))
-            let record = RestoreStepRecord(index: indexes[offset], phase: .launch, kind: step.kind,
-                                           description: step.description, app: app.name, status: status,
-                                           elapsed: elapsed, note: note)
-            state.report.steps.append(record)
-            emit(state, .stepFinished(index: record.index, total: state.totalSteps, description: record.description,
-                                      status: status, elapsed: elapsed))
+            recordLaunch(step, result: offset < results.count ? results[offset] : nil, index: indexes[offset], state: state)
         }
         return results
+    }
+
+    /// Sequential launch order: one app at a time in the order of the steps (the planner already put them in
+    /// `LaunchSequence.order`), each waiting for its own condition and timeout, then its `delayAfter`.
+    /// A failed or timed-out app is a failed step and the sequence goes on; cancellation skips the rest.
+    private func runSequentialLaunch(_ steps: [RestoreStep], plan: LaunchPlan, state: RunState) async -> [LaunchResult] {
+        let sequence = LaunchSequence.order(state.profile)
+        emit(state, .launching(steps.compactMap { if case .launch(let app, _) = $0 { return app } else { return nil } }))
+        var results: [LaunchResult] = []
+        for (offset, step) in steps.enumerated() {
+            guard case .launch(let app, let count) = step else { continue }
+            if Task.isCancelled {
+                state.cancelled = true
+                for rest in steps[offset...] { recordSkipped(rest, reason: "cancelled", state: state) }
+                break
+            }
+            let item = sequence.first { Profile.isSameApp($0.app, app) }
+            let activates = plan.items.first { $0.enabled && Profile.isSameApp($0.app, app) }?.activates ?? false
+            let options = LaunchOptions(minWindows: count, timeout: item?.timeout ?? LaunchOptions.defaultTimeout,
+                                        activates: activates)
+            let request = LaunchRequest(app: app, minWindows: count, options: options, delayAfter: item?.delayAfter ?? 0)
+
+            let index = state.nextIndex
+            state.nextIndex += 1
+            emit(state, .stepStarted(index: index, total: state.totalSteps, description: step.description))
+            let result = await environment.launchAll([request]).first
+            recordLaunch(step, result: result, index: index, state: state)
+            if let result { results.append(result) }
+
+            // Give the app time to finish starting up before the next one. An app that was already running needed
+            // none, and neither does the end of the list.
+            let isLast = offset == steps.count - 1
+            if let result, result.status != .alreadyRunning, result.isRunning || result.status == .timedOut,
+               request.delayAfter > 0, !isLast, !Task.isCancelled {
+                await environment.sleep(request.delayAfter)
+            }
+        }
+        return results
+    }
+
+    /// Writes the outcome of one launch step into the report and the progress.
+    private func recordLaunch(_ step: RestoreStep, result: LaunchResult?, index: Int, state: RunState) {
+        guard case .launch(let app, let count) = step else { return }
+        let status: RestoreStepStatus
+        var note: String?
+        var text = "failed: the launcher returned no result"
+        var launched = false
+        var windowCount = 0
+        var elapsed: TimeInterval = 0
+        if let result {
+            elapsed = result.timings.total
+            windowCount = result.windowCount
+            switch result.status {
+            case .launched:
+                status = .done
+                launched = true
+                text = "launched"
+                note = count == 0 ? "app ready" : "\(result.windowCount) of \(count) window\(count == 1 ? "" : "s") ready"
+            case .alreadyRunning:
+                status = .skipped("already running")
+                text = "already running"
+            case .notFound:
+                status = .failed("the app could not be found on this Mac")
+                text = "not found"
+            case .failed(let message):
+                status = .failed(message)
+                text = "failed: \(message)"
+            case .timedOut:
+                status = .failed("timed out waiting for \(count) window\(count == 1 ? "" : "s")")
+                text = "timed out"
+            }
+        } else {
+            status = .failed("the launcher returned no result")
+        }
+        state.report.launched.append(RestoreLaunchRecord(app: app, result: text, launched: launched,
+                                                         windowCount: windowCount, elapsed: elapsed))
+        let record = RestoreStepRecord(index: index, phase: .launch, kind: step.kind,
+                                       description: step.description, app: app.name, status: status,
+                                       elapsed: elapsed, note: note)
+        state.report.steps.append(record)
+        emit(state, .stepFinished(index: record.index, total: state.totalSteps, description: record.description,
+                                  status: status, elapsed: elapsed))
     }
 
     // MARK: Steps
@@ -787,6 +854,10 @@ public final class LiveRestoreEnvironment: RestoreEnvironment {
         self.launcher = launcher
         return await launcher.launchAll(requests.map(\.app), optionsFor: { app in
             let wanted = requests.first { Profile.isSameApp($0.app, app) }?.minWindows ?? 1
+            if var options = requests.first(where: { Profile.isSameApp($0.app, app) })?.options {
+                options.minWindows = wanted
+                return options
+            }
             return LaunchOptions(minWindows: wanted)
         })
     }

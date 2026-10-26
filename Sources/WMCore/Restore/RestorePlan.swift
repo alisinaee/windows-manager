@@ -240,15 +240,21 @@ public struct RestorePlan: Equatable, Sendable {
     /// `WindowSnapshot.id` of matches that were close to a coin flip.
     public var ambiguous: [UUID]
     public var missingDesktops: [MissingDesktop]
+    /// `WindowSnapshot.id` of saved windows that are not in `unmatched` only because Stage Manager is on and their
+    /// app has windows in the strip or another stage: they may well be there. For the status overlay; reports
+    /// do not use it.
+    public var possiblyParked: [UUID]
 
     public init(profileName: String, steps: [RestoreStep] = [], warnings: [String] = [],
-                unmatched: [UnmatchedSnapshot] = [], ambiguous: [UUID] = [], missingDesktops: [MissingDesktop] = []) {
+                unmatched: [UnmatchedSnapshot] = [], ambiguous: [UUID] = [], missingDesktops: [MissingDesktop] = [],
+                possiblyParked: [UUID] = []) {
         self.profileName = profileName
         self.steps = steps
         self.warnings = warnings
         self.unmatched = unmatched
         self.ambiguous = ambiguous
         self.missingDesktops = missingDesktops
+        self.possiblyParked = possiblyParked
     }
 
     public var isEmpty: Bool { steps.isEmpty }
@@ -636,14 +642,32 @@ public enum RestorePlanner {
     }
 
     /// Launch steps and the list of saved windows that have nothing to restore into.
+    ///
+    /// With a launch plan the steps follow `LaunchSequence.order`, apps switched off in the plan get no step, and
+    /// launch-only apps (no window in the profile, none live) get a step with 0 windows. Without one: today's
+    /// behavior (apps in the order their first missing window appears, at least one window to wait for).
     private static func planLaunch(profile: Profile, scan: WorkspaceScan, match: MatchResult,
                                    options: ProfileOptions, into plan: inout RestorePlan) {
+        let launchPlan = profile.launchPlan
+        let sequence = launchPlan == nil ? [] : LaunchSequence.order(profile)
+        func request(for app: AppRef) -> ProfileLaunchRequest? {
+            sequence.first { Profile.isSameApp($0.app, app) }
+        }
+        /// True when the plan lists the app only as disabled items.
+        func switchedOff(_ app: AppRef) -> Bool {
+            guard let items = launchPlan?.items else { return false }
+            let mine = items.filter { Profile.isSameApp($0.app, app) }
+            return !mine.isEmpty && !mine.contains { $0.enabled }
+        }
+
         var launchApps: [AppRef] = []
         for snapshot in match.missing {
             let hasWindows = scan.windows.contains { Profile.isSameApp($0.app, snapshot.app) }
             let reason: String
             if hasWindows {
                 reason = "the app has fewer windows open than the profile"
+            } else if switchedOff(snapshot.app) {
+                reason = "launching this app is switched off in Launch order"
             } else if options.launchMissingApps {
                 reason = "the app is not running; it will be launched"
                 if !launchApps.contains(where: { Profile.isSameApp($0, snapshot.app) }) { launchApps.append(snapshot.app) }
@@ -653,9 +677,31 @@ public enum RestorePlanner {
             plan.unmatched.append(UnmatchedSnapshot(snapshotID: snapshot.id, app: snapshot.app,
                                                     title: snapshot.title, reason: reason))
         }
+
+        // Launch-only apps: enabled, nothing to place, nothing of them on screen. A running app without windows
+        // is answered quickly by the launcher (already running).
+        if let launchPlan, options.launchMissingApps {
+            for item in launchPlan.items where item.enabled && item.withoutWindows {
+                guard profile.windows(for: item.app).isEmpty,
+                      !launchApps.contains(where: { Profile.isSameApp($0, item.app) }),
+                      !scan.windows.contains(where: { Profile.isSameApp($0.app, item.app) }) else { continue }
+                launchApps.append(item.app)
+            }
+        }
+        if launchPlan != nil {
+            let position = { (app: AppRef) in sequence.firstIndex { Profile.isSameApp($0.app, app) } ?? Int.max }
+            launchApps = launchApps.enumerated()
+                .sorted { (position($0.element), $0.offset) < (position($1.element), $1.offset) }
+                .map(\.element)
+        }
+
         for app in launchApps {
             let wanted = profile.windows.filter { $0.restore && Profile.isSameApp($0.app, app) }.count
-            plan.steps.append(.launch(app: app, windowCount: max(wanted, 1)))
+            if let req = request(for: app), req.minWindows == 0 {
+                plan.steps.append(.launch(app: app, windowCount: 0))
+            } else {
+                plan.steps.append(.launch(app: app, windowCount: max(wanted, 1)))
+            }
         }
     }
 
@@ -663,6 +709,7 @@ public enum RestorePlanner {
     /// another stage is probably one of those, so it is a warning and not a missing window.
     private static func absorbStageManagerUnmatched(scan: WorkspaceScan, into plan: inout RestorePlan) {
         var hidden: [UnmatchedSnapshot] = []
+        defer { plan.possiblyParked.append(contentsOf: hidden.map(\.snapshotID)) }
         plan.unmatched.removeAll { item in
             guard item.reason == "the app has fewer windows open than the profile",
                   scan.windows.contains(where: { $0.isInStageStrip && Profile.isSameApp($0.app, item.app) })
@@ -678,7 +725,7 @@ public enum RestorePlanner {
 
     private static func planOtherApps(profile: Profile, scan: WorkspaceScan, options: ProfileOptions) -> [RestoreStep] {
         guard options.otherApps != .leave else { return [] }
-        let profileApps = profile.apps
+        let profileApps = profile.launchApps
         var seen = Set<Int32>()
         var steps: [RestoreStep] = []
         for window in scan.windows {

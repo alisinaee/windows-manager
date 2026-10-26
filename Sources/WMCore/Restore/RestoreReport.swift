@@ -75,6 +75,7 @@ public extension RestoreStep {
         case .launch: return "launch"
         case .exitFullScreen: return "exitFullScreen"
         case .unminimize: return "unminimize"
+        case .addDesktop: return "addDesktop"
         case .moveToDesktop: return "moveToDesktop"
         case .setFrame: return "setFrame"
         case .enterFullScreen: return "enterFullScreen"

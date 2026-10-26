@@ -65,6 +65,43 @@ public struct LaunchRequest: Equatable, Sendable {
     }
 }
 
+/// Adds one Desktop to a monitor (opt-in, `RestoreEngine.Configuration.addMissingDesktops`). The default
+/// implementation, `MissionControlDesktopAdder`, drives Mission Control; tests inject a fake. It returns the
+/// number of Desktops the monitor has after the add, re-read from the Spaces.
+@MainActor
+public protocol DesktopAdding {
+    func addDesktop(on display: DisplayIdentity) async throws -> Int
+}
+
+/// Adds Desktops through `MissionControlDriver.addDesktop(displayIndex:)`, then re-reads the Spaces with
+/// `SpaceReader` and returns the new Desktop count. Intrusive: it opens Mission Control on the Mac.
+@MainActor
+public final class MissionControlDesktopAdder: DesktopAdding {
+    public init() {}
+
+    public func addDesktop(on display: DisplayIdentity) async throws -> Int {
+        let index = try Self.displayIndex(for: display)
+        try MissionControlDriver().addDesktop(displayIndex: index)
+        let displays = try SpaceReader.displays()
+        guard displays.indices.contains(index) else {
+            throw MissionControlError.verificationFailed("the display list changed while adding a Desktop")
+        }
+        return displays[index].spaces.filter { $0.kind == .desktop }.count
+    }
+
+    /// The 0-based position of the monitor in `SpaceReader.displays()`: by UUID, or "Main" for the main monitor.
+    static func displayIndex(for display: DisplayIdentity) throws -> Int {
+        let displays = try SpaceReader.displays()
+        if let index = displays.firstIndex(where: { $0.displayIdentifier.caseInsensitiveCompare(display.uuid) == .orderedSame }) {
+            return index
+        }
+        if display.isMain, let index = displays.firstIndex(where: { $0.displayIdentifier == "Main" }) {
+            return index
+        }
+        throw MissionControlError.displayNotFound("\(display.name) is not in the list of displays SkyLight reports")
+    }
+}
+
 /// Moves a window to another Desktop. The default implementation (`SystemSpaceMover`) calls `SpaceMover.move`
 /// and reads the window's Space back; P3.2 can offer another one (for example one that adds Desktops first).
 @MainActor
@@ -173,16 +210,24 @@ public final class RestoreEngine {
         public var settleDelay: TimeInterval = 1
         /// A frame within this many points of the wanted one is fine.
         public var frameTolerance: CGFloat = 2
+        /// Opt-in (default off): add the Desktops a profile needs on a monitor that has fewer, before the moves.
+        /// Never removes a Desktop; at most `RestorePlanner.maxAddedDesktopsPerRun` are added per run.
+        public var addMissingDesktops = false
+        /// Seconds one "add a Desktop" may take before the step counts as failed.
+        public var addDesktopTimeout: TimeInterval = 30
 
         public init() {}
     }
 
     public let environment: any RestoreEnvironment
     public var configuration: Configuration
+    public let desktopAdder: any DesktopAdding
 
-    public init(environment: any RestoreEnvironment = .live, configuration: Configuration = Configuration()) {
+    public init(environment: any RestoreEnvironment = .live, configuration: Configuration = Configuration(),
+                desktopAdder: (any DesktopAdding)? = nil) {
         self.environment = environment
         self.configuration = configuration
+        self.desktopAdder = desktopAdder ?? MissionControlDesktopAdder()
     }
 
     // MARK: Run
@@ -196,7 +241,8 @@ public final class RestoreEngine {
         emit(state, .scanning)
         var scan = await environment.scan()
         state.scanNotes = scan.notes
-        var plan = evaluate(profile, scan: scan)
+        state.lastScan = scan
+        var plan = evaluate(profile, scan: scan, addingDesktops: configuration.addMissingDesktops)
         emit(state, .planned(plan))
         state.totalSteps = plan.steps.count
 
@@ -205,9 +251,10 @@ public final class RestoreEngine {
             return finish(state, plan: plan)
         }
 
-        // Launch apps that are not running, then look again.
+        // Launch apps that are not running.
         let launchSteps = plan.steps(in: .launch)
         var launchResults: [LaunchResult] = []
+        var planAgain = false
         if !launchSteps.isEmpty {
             if Task.isCancelled {
                 state.cancelled = true
@@ -217,16 +264,34 @@ public final class RestoreEngine {
             launchResults = await runLaunch(launchSteps, state: state)
             plan = plan.removing(.launch)
             if !Task.isCancelled, launchResults.contains(where: { $0.status == .launched || $0.status == .timedOut }) {
-                emit(state, .rescanning)
-                scan = await environment.scan()
-                state.scanNotes = scan.notes
-                state.handles.removeAll()
-                state.unreachable.removeAll()
-                plan = evaluate(profile, scan: scan).removing(.launch)
-                emit(state, .planned(plan))
+                planAgain = true
             }
-            state.totalSteps = launchSteps.count + plan.steps.count
         }
+
+        // Opt-in: add the missing Desktops. They run before the moves; the moves need the new Desktops' ids, so the
+        // plan is made again afterwards (and then no longer asks for adds, so a failed add is reported once).
+        let addSteps = plan.steps(in: .addDesktop)
+        if !addSteps.isEmpty {
+            if Task.isCancelled {
+                for step in addSteps { recordSkipped(step, reason: "cancelled", state: state) }
+            } else {
+                for step in addSteps { await execute(step, state: state) }
+                planAgain = true
+            }
+            plan = plan.removing(.addDesktop)
+        }
+
+        if planAgain, !Task.isCancelled {
+            emit(state, .rescanning)
+            scan = await environment.scan()
+            state.scanNotes = scan.notes
+            state.lastScan = scan
+            state.handles.removeAll()
+            state.unreachable.removeAll()
+            plan = evaluate(profile, scan: scan, addingDesktops: false).removing(.launch)
+            emit(state, .planned(plan))
+        }
+        state.totalSteps = launchSteps.count + addSteps.count + plan.steps.count
         Self.explainLaunchFailures(in: &plan, results: launchResults)
 
         // The plan, phase by phase.
@@ -252,12 +317,12 @@ public final class RestoreEngine {
     // MARK: Evaluate
 
     /// Monitors, window matching and planning for one scan.
-    private func evaluate(_ profile: Profile, scan: WorkspaceScan) -> RestorePlan {
+    private func evaluate(_ profile: Profile, scan: WorkspaceScan, addingDesktops: Bool) -> RestorePlan {
         let displayMatch = DisplayMap.match(saved: profile.displays, current: scan.displays)
         let snapshots = RestorePlanner.remap(profile.windows, savedDisplays: profile.displays, displayMatch: displayMatch)
         let match = WindowMatcher.match(snapshots: snapshots, live: scan.windows)
         return RestorePlanner.plan(profile: profile, scan: scan, displayMatch: displayMatch, match: match,
-                                   options: profile.options)
+                                   options: profile.options, addMissingDesktops: addingDesktops)
     }
 
     /// Replaces "will be launched" in the unmatched list by what really happened to the app.
@@ -410,6 +475,9 @@ public final class RestoreEngine {
                 await environment.unminimize(handle)
             }
 
+        case .addDesktop(let display, let count):
+            return await addDesktops(on: display, count: count, state: state)
+
         case .moveToDesktop(let target, _, let spaceID, _, _, _):
             return await limited(timeout: config.moveTimeout) {
                 await environment.moveToDesktop(windowID: target.windowID, spaceID: spaceID)
@@ -445,6 +513,45 @@ public final class RestoreEngine {
             state.report.needsConfirmation.append(app)
             return Outcome(status: .skipped("needs confirmation"))
         }
+    }
+
+    /// Adds `count` Desktops to `display`, one at a time. After each add the count must have grown; a failed or
+    /// unverified add fails this step only. Never more than `RestorePlanner.maxAddedDesktopsPerRun` in a run.
+    private func addDesktops(on display: DisplayIdentity, count: Int, state: RunState) async -> Outcome {
+        let adder = desktopAdder
+        let timeout = configuration.addDesktopTimeout
+        var known = state.lastScan?.spaces(onDisplay: display.uuid)?.desktops.count ?? 0
+        var added = 0
+        func outcome(_ status: RestoreStepStatus) -> Outcome {
+            let note = added > 0 ? "added \(added); \(display.name) has \(known) Desktop\(known == 1 ? "" : "s") now" : nil
+            return Outcome(status: status, note: note)
+        }
+        for _ in 0..<max(count, 0) {
+            guard state.desktopsAdded < RestorePlanner.maxAddedDesktopsPerRun else {
+                return outcome(.failed("the limit of \(RestorePlanner.maxAddedDesktopsPerRun) added Desktops per run is reached"))
+            }
+            let attempt = await StepRace<DesktopAddAttempt>().run(timeout: timeout) {
+                do {
+                    return .count(try await adder.addDesktop(on: display))
+                } catch {
+                    return .error(error.localizedDescription)
+                }
+            }
+            switch attempt {
+            case nil:
+                return outcome(.failed("adding a Desktop to \(display.name) timed out after \(Self.format(timeout)) s"))
+            case .error(let message)?:
+                return outcome(.failed("could not add a Desktop to \(display.name): \(message)"))
+            case .count(let now)?:
+                guard now > known else {
+                    return outcome(.failed("\(display.name) still has \(now) Desktop\(now == 1 ? "" : "s") after the add (it had \(known))"))
+                }
+                known = now
+                added += 1
+                state.desktopsAdded += 1
+            }
+        }
+        return outcome(.done)
     }
 
     /// Runs `action` on the window's Accessibility element, within the timeout.
@@ -578,6 +685,10 @@ public final class RestoreEngine {
         var scanNotes: [String] = []
         var handles: [UInt32: WindowHandle] = [:]
         var unreachable: Set<UInt32> = []
+        /// The latest scan, for the Desktop counts the add steps start from.
+        var lastScan: WorkspaceScan?
+        /// Desktops added so far in this run (the safety cap).
+        var desktopsAdded = 0
         /// Windows whose frame was set, to be checked again after the settle delay (by snapshot id).
         var placed: [UUID: Placed] = [:]
         var placedOrder: [UUID] = []
@@ -592,6 +703,13 @@ public final class RestoreEngine {
 }
 
 // MARK: - Timeout
+
+/// What one "add a Desktop" call answered.
+private enum DesktopAddAttempt: Sendable {
+    /// The Desktop count of the monitor after the add.
+    case count(Int)
+    case error(String)
+}
 
 /// Runs one operation and gives up after a time limit. The operation runs in its own task, so a cancelled
 /// engine does not interrupt a step half way; when the limit passes the task is cancelled and the caller

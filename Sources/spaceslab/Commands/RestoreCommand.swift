@@ -3,15 +3,18 @@ import WMCore
 
 enum RestoreCommand {
     static let name = "restore"
-    static let help = "Restore a saved profile onto the live workspace (--profile FILE --dry-run --yes)"
+    static let help = "Restore a saved profile onto the live workspace (--profile FILE --dry-run --yes --add-desktops)"
 
     static let usage = """
-        Usage: spaceslab restore --profile FILE [--dry-run] [--yes]
+        Usage: spaceslab restore --profile FILE [--dry-run] [--yes] [--add-desktops]
 
           --profile FILE  A profile JSON as written by `spaceslab capture --out FILE`.
           --dry-run       Scan, match and print the plan; change nothing (this is also the default).
           --yes           Execute the plan: launch missing apps, then exit full screen, unminimize, move to
                           Desktops, place windows, enter full screen, minimize, restack and hide other apps.
+          --add-desktops  Opt-in: add Desktops that the profile needs and a monitor lacks, before the moves
+                          (Mission Control is opened for each one; at most 8 per run; no Desktop is removed).
+                          Off by default: without it a missing Desktop is only reported.
 
         Without --yes nothing is launched, moved, resized, full-screened, minimized, hidden or quit.
         "Other apps: quit" is never executed here; those apps are only listed as needing confirmation.
@@ -23,6 +26,7 @@ enum RestoreCommand {
         var profilePath: String?
         var dryRun = false
         var yes = false
+        var addDesktops = false
 
         var index = 0
         while index < args.count {
@@ -32,6 +36,9 @@ enum RestoreCommand {
                 index += 1
             case "--yes", "-y":
                 yes = true
+                index += 1
+            case "--add-desktops":
+                addDesktops = true
                 index += 1
             case "--profile":
                 guard index + 1 < args.count else {
@@ -79,7 +86,9 @@ enum RestoreCommand {
 
         var plans = 0
         let report = runOnMain { () -> RestoreReport in
-            let engine = RestoreEngine()
+            var configuration = RestoreEngine.Configuration()
+            configuration.addMissingDesktops = addDesktops
+            let engine = RestoreEngine(configuration: configuration)
             return await engine.run(profile, dryRun: !execute) { event in
                 switch event {
                 case .planned(let plan):

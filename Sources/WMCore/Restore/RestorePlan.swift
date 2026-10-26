@@ -14,6 +14,7 @@ import Foundation
 //  2. exitFullScreen  live window is full screen, snapshot is not
 //  3. unminimize      live window is minimized, snapshot is not
 //  4. moveToDesktop   snapshot Desktop N differs from the live Desktop
+//     (opt-in, before 4) addDesktop  add the Desktops the profile needs and the monitor lacks
 //  5. setFrame        every non-full-screen snapshot that is not within 2 pt already
 //  6. enterFullScreen snapshot is full screen, live window is not; per monitor in saved Space order
 //  7. minimize        snapshot is minimized
@@ -25,6 +26,7 @@ public enum RestorePhase: String, Codable, CaseIterable, Comparable, Sendable {
     case launch
     case exitFullScreen
     case unminimize
+    case addDesktop
     case moveToDesktop
     case setFrame
     case enterFullScreen
@@ -43,6 +45,7 @@ public enum RestorePhase: String, Codable, CaseIterable, Comparable, Sendable {
         case .launch: return "Launch apps"
         case .exitFullScreen: return "Leave full screen"
         case .unminimize: return "Unminimize"
+        case .addDesktop: return "Add Desktops"
         case .moveToDesktop: return "Move to Desktop"
         case .setFrame: return "Place windows"
         case .enterFullScreen: return "Enter full screen"
@@ -91,6 +94,9 @@ public enum RestoreStep: Equatable, Sendable, CustomStringConvertible {
     case launch(app: AppRef, windowCount: Int)
     case exitFullScreen(RestoreTarget)
     case unminimize(RestoreTarget)
+    /// Add `count` Desktops to `display` (opt-in, `ProfileOptions.restoreSpaces` and the engine option). Runs
+    /// before the moves, so the windows can land on the new Desktops; the engine plans again afterwards.
+    case addDesktop(display: DisplayIdentity, count: Int)
     /// Move the window to the Desktop with this Space id. `desktop` is the 1-based "Desktop N" on the display
     /// `displayName`; `from` is the Desktop it is on now, when known, and `fromDisplayName` the display it is
     /// on now when that is another one.
@@ -114,6 +120,7 @@ public enum RestoreStep: Equatable, Sendable, CustomStringConvertible {
         case .launch: return .launch
         case .exitFullScreen: return .exitFullScreen
         case .unminimize: return .unminimize
+        case .addDesktop: return .addDesktop
         case .moveToDesktop: return .moveToDesktop
         case .setFrame: return .setFrame
         case .enterFullScreen: return .enterFullScreen
@@ -131,7 +138,7 @@ public enum RestoreStep: Equatable, Sendable, CustomStringConvertible {
         case .setFrame(let t, _, _, _): return t
         case .enterFullScreen(let t, _, _, _): return t
         case .raise(let t, _): return t
-        case .launch, .hideApp, .needsConfirmationQuit: return nil
+        case .launch, .addDesktop, .hideApp, .needsConfirmationQuit: return nil
         }
     }
 
@@ -139,6 +146,7 @@ public enum RestoreStep: Equatable, Sendable, CustomStringConvertible {
     public var app: AppRef {
         switch self {
         case .launch(let app, _), .hideApp(let app, _), .needsConfirmationQuit(let app, _): return app
+        case .addDesktop: return AppRef(bundleID: nil, name: "Mission Control")
         default: return target?.app ?? AppRef(bundleID: nil, name: "?")
         }
     }
@@ -154,6 +162,8 @@ public enum RestoreStep: Equatable, Sendable, CustomStringConvertible {
             return "leave full screen: \(t.label)"
         case .unminimize(let t):
             return "unminimize: \(t.label)"
+        case .addDesktop(let display, let count):
+            return "add \(count) Desktop\(count == 1 ? "" : "s") to \(display.name)"
         case .moveToDesktop(let t, let desktop, _, let display, let from, let fromDisplay):
             let place = fromDisplay.map { " of \($0)" } ?? ""
             let source = from.map { " (now on Desktop \($0)\(place))" } ?? ""
@@ -198,7 +208,8 @@ public struct UnmatchedSnapshot: Hashable, Codable, Sendable {
     }
 }
 
-/// A Desktop the profile needs that does not exist on the live monitor. Adding Desktops is a later task (P3.2).
+/// A Desktop the profile needs that does not exist on the live monitor. Without the opt-in add (see
+/// `RestoreStep.addDesktop`) the window stays where it is and a warning says so.
 public struct MissingDesktop: Hashable, Codable, Sendable {
     /// 1-based "Desktop N".
     public var number: Int
@@ -292,6 +303,9 @@ public enum RestorePlanner {
     /// Frames this close (points) to the saved frame count as already placed.
     public static let frameTolerance: CGFloat = 2
 
+    /// The most Desktops one restore may add (opt-in only). Desktops are never removed.
+    public static let maxAddedDesktopsPerRun = 8
+
     /// Apps that are never hidden or quit by "other apps", on top of `WorkspaceScanner.isExcludedApp`
     /// (lower-case bundle ids): system agents and overlays, and Windows Manager itself.
     static let protectedBundleIDs: Set<String> = [
@@ -327,8 +341,10 @@ public enum RestorePlanner {
     ///   - displayMatch: `DisplayMap.match(saved: profile.displays, current: scan.displays)`.
     ///   - match: `WindowMatcher.match` of `remap(profile.windows, ...)` against `scan.windows`.
     ///   - options: the switches to obey (normally `profile.options`).
+    ///   - addMissingDesktops: the engine's opt-in. When true, a Desktop the profile needs on a monitor that has
+    ///     fewer is planned as one `addDesktop` step (capped at `maxAddedDesktopsPerRun`) instead of a warning.
     public static func plan(profile: Profile, scan: WorkspaceScan, displayMatch: [String: DisplayIdentity],
-                            match: MatchResult, options: ProfileOptions) -> RestorePlan {
+                            match: MatchResult, options: ProfileOptions, addMissingDesktops: Bool = false) -> RestorePlan {
         var plan = RestorePlan(profileName: profile.name)
         plan.ambiguous = match.ambiguous
 
@@ -490,11 +506,34 @@ public enum RestorePlanner {
         if skippedFullScreen > 0 {
             plan.warnings.append("\(skippedFullScreen) full-screen window\(skippedFullScreen == 1 ? " is" : "s are") left alone because restoring full screen is switched off.")
         }
-        for entry in missing.values.sorted(by: { ($0.displayName, $0.number) < ($1.displayName, $1.number) }) {
+        // Opt-in: add the missing Desktops, one step per monitor, before the moves (a shared budget per run).
+        let missingSorted = missing.values.sorted(by: { ($0.displayName, $0.number) < ($1.displayName, $1.number) })
+        var addSteps: [RestoreStep] = []
+        var addedOn: [String: Int] = [:]
+        var budget = maxAddedDesktopsPerRun
+        if addMissingDesktops {
+            var byDisplay: [String: [MissingDesktop]] = [:]
+            for entry in missingSorted { byDisplay[entry.displayUUID, default: []].append(entry) }
+            for (uuid, entries) in byDisplay.sorted(by: { $0.key < $1.key }) {
+                guard let display = scan.display(withUUID: uuid), let highest = entries.map(\.number).max() else { continue }
+                let needed = highest - entries[0].available
+                let take = min(needed, budget)
+                guard take > 0 else { continue }
+                addSteps.append(.addDesktop(display: display, count: take))
+                addedOn[uuid] = take
+                budget -= take
+            }
+        }
+        for entry in missingSorted {
             plan.missingDesktops.append(entry)
+            if addMissingDesktops, entry.number <= entry.available + (addedOn[entry.displayUUID] ?? 0) { continue }
             let count = entry.snapshotIDs.count
-            plan.warnings.append("missing Desktop \(entry.number) on \(entry.displayName) (it has \(entry.available)): "
-                + "\(count) window\(count == 1 ? " stays" : "s stay") where \(count == 1 ? "it is" : "they are").")
+            var warning = "missing Desktop \(entry.number) on \(entry.displayName) (it has \(entry.available)): "
+                + "\(count) window\(count == 1 ? " stays" : "s stay") where \(count == 1 ? "it is" : "they are")."
+            if addMissingDesktops, budget == 0 {
+                warning += " The limit of \(maxAddedDesktopsPerRun) added Desktops per run is reached."
+            }
+            plan.warnings.append(warning)
         }
 
         // 7. Raise, back to front. Only windows that end up on a Desktop that is visible, because raising a
@@ -520,7 +559,7 @@ public enum RestorePlanner {
         // 8. Other apps.
         let otherApps = planOtherApps(profile: profile, scan: scan, options: options)
 
-        plan.steps = plan.steps(in: .launch) + exitFullScreen + unminimize + moveToDesktop + setFrame
+        plan.steps = plan.steps(in: .launch) + addSteps + exitFullScreen + unminimize + moveToDesktop + setFrame
             + enterFullScreen + minimize + raise + otherApps
         return plan
     }

@@ -11,12 +11,15 @@ public enum ContentItem: Equatable, Hashable, Sendable {
     case vscodeFolder(String)
     case browserTabs([URL])
 
-    /// Stable key for the idempotence check ("already opened by us").
-    public var key: String {
+    /// Stable key for planning de-duplication and the idempotence check ("already opened by us").
+    /// Includes the app (bundle id, or name when there is no bundle id) so the same URL or document
+    /// in two different apps stays two items.
+    public func key(app: AppRef) -> String {
+        let owner = "app:" + (app.bundleID ?? "name:" + app.name) + "|"
         switch self {
-        case .document(let url): return "doc:" + url.standardizedFileURL.path
-        case .vscodeFolder(let path): return "folder:" + (path as NSString).standardizingPath
-        case .browserTabs(let urls): return "tabs:" + urls.map(\.absoluteString).joined(separator: "\n")
+        case .document(let url): return owner + "doc:" + url.standardizedFileURL.path
+        case .vscodeFolder(let path): return owner + "folder:" + (path as NSString).standardizingPath
+        case .browserTabs(let urls): return owner + "tabs:" + urls.map(\.absoluteString).joined(separator: "\n")
         }
     }
 }
@@ -73,7 +76,13 @@ public enum ContentKind {
         return (s as NSString).standardizingPath
     }
 
-    /// Folder name from a title like "file — folder — Visual Studio Code" (also "-" separators).
+    /// App names that can end a VS Code title; a name equal to one of these is not a folder.
+    static let vscodeAppNames: Set<String> = [
+        "Visual Studio Code", "Visual Studio Code - Insiders", "VSCodium", "Windsurf", "Code - OSS", "Code",
+    ]
+
+    /// Folder name from a title like "file — folder — Visual Studio Code" or "folder — Visual Studio Code"
+    /// (also "-" separators). The folder is the part before the app name; a title that is only the app name gives nil.
     public static func folderName(fromTitle title: String?) -> String? {
         guard let title else { return nil }
         let parts = title.replacingOccurrences(of: " — ", with: "\u{1}")
@@ -81,9 +90,10 @@ public enum ContentKind {
             .replacingOccurrences(of: " - ", with: "\u{1}")
             .components(separatedBy: "\u{1}")
             .map { $0.trimmingCharacters(in: .whitespaces) }
-        guard parts.count >= 3 else { return nil }
+        guard parts.count >= 2 else { return nil }
         let name = parts[parts.count - 2]
-        return name.isEmpty ? nil : name
+        if name.isEmpty || vscodeAppNames.contains(name) { return nil }
+        return name
     }
 
     /// Folder to open in a VS Code window: the ancestor of the document path named like the title's folder,
@@ -190,7 +200,7 @@ public enum ContentRestorer {
         var plan = ContentPlan()
         var seen = Set<String>()
         func add(_ i: Int, _ app: AppRef, _ item: ContentItem) {
-            if seen.insert(item.key).inserted { plan.items.append(PlannedContent(windowIndex: i, app: app, item: item)) }
+            if seen.insert(item.key(app: app)).inserted { plan.items.append(PlannedContent(windowIndex: i, app: app, item: item)) }
         }
         for (i, w) in windows.enumerated() where w.restore {
             guard let id = w.app.bundleID else { continue }
@@ -215,14 +225,14 @@ public enum ContentRestorer {
     /// - Parameters:
     ///   - availableApps: bundle ids of apps that are running or were launched; others are skipped with a warning.
     ///   - liveWindows: windows open now; a document or folder already shown there is not opened again.
-    ///   - alreadyOpened: keys (`ContentItem.key`) opened by an earlier run; also skipped.
+    ///   - alreadyOpened: keys (`ContentItem.key(app:)`) opened by an earlier run; also skipped.
     public static func restore(plan: ContentPlan, availableApps: Set<String>, liveWindows: [LiveWindow],
                                alreadyOpened: Set<String> = [], opener: ContentOpening,
                                fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> ContentReport {
         var report = ContentReport(warnings: plan.warnings)
         var done = alreadyOpened
         for p in plan.items {
-            let key = p.item.key
+            let key = p.item.key(app: p.app)
             if let id = p.app.bundleID, !availableApps.contains(id) {
                 report.warnings.append("\(p.app.name) is not running, content skipped")
                 continue

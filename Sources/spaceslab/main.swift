@@ -21,6 +21,7 @@ let commands: [Command] = [
     Command(name: CaptureCommand.name, help: CaptureCommand.help, run: CaptureCommand.run),
     Command(name: RestoreCommand.name, help: RestoreCommand.help, run: RestoreCommand.run),
     Command(name: ProfileTransferCommand.name, help: ProfileTransferCommand.help, run: ProfileTransferCommand.run),
+    Command(name: ProfileMapCommand.name, help: ProfileMapCommand.help, run: ProfileMapCommand.run),
     Command(name: CtlCommand.name, help: CtlCommand.help, run: CtlCommand.run),
 ]
 
@@ -44,6 +45,10 @@ func runMain() -> Int32 {
     if ["help", "--help", "-h"].contains(first) {
         print(usageText(), terminator: "")
         return 0
+    }
+    // Two-word commands (such as "profile map") match their first two words; a shared first word goes to its own command.
+    if args.count >= 2, let pair = commands.first(where: { $0.name == "\(first) \(args[1])" }) {
+        return pair.run(Array(args.dropFirst(2)))
     }
     guard let command = commands.first(where: { $0.name == first }) else {
         fputs("Unknown command: \(first)\n\n" + usageText(), stderr)

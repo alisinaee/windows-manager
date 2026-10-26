@@ -65,7 +65,56 @@ Notes:
 - An imported profile gets a new id. If its name is already used, it is saved as "Work 2" (or the next free number).
 - The hotkey of an imported profile is cleared.
 
-## 5. Control the app from links and scripts
+## 5. Profile Studio
+
+Profile Studio is a window where you look at a profile, compare it with your Mac, and change it.
+
+To open it, click the menu bar icon, then **Profiles…**. You can also open a profile from **Settings > Profiles** with **Open in Profile Studio**. The window has a list of your profiles on the left and the selected profile on the right.
+
+### View mode
+
+View mode is the default. It only shows the profile. Nothing is moved.
+
+- **Map.** Each monitor is drawn with its Desktops (Spaces) and the windows on them. Click a window or a Desktop to see its details in the Inspector. Use the zoom buttons or **Fit** to change the size of the map.
+- **Compare with current windows.** Turn on **Compare** (Cmd+L) to see how your Mac looks now against the profile. Each window and Desktop gets a status badge, such as a missing Desktop. Compare only scans. It does not move anything. Click **Refresh** (Cmd+R) to scan again.
+- **Preview restore.** Click **Preview restore** to see the steps a run would take, in order. Nothing changes until you click **Run now** in the preview.
+
+### Edit mode
+
+Click **Edit** (the pencil button) to change a profile. Your changes are a draft until you save them.
+
+1. **Start.** Choose where the draft starts:
+   - **Blank on these monitors**, for an empty layout,
+   - **Start from the current workspace**, which uses the windows and Desktops you have open now,
+   - **Start from a copy of a profile**, and pick the profile to copy.
+2. **App library.** The list of apps on the side has three groups: **Running**, **Installed**, and **Added to this profile**. Search with **Search apps**. Add an app to the selected Desktop, or drag it onto the map. Use **Add app from disk…** for an app that is not in the list. Use **Launch only, no window** for an app that should open but has no window in the profile.
+3. **Map.** Drag a window to move it. Drag its edges or corners to resize it. Windows snap to Layout zones and to edges. Turn **Snap** off by holding Option while you drag.
+4. **Desktops.** Use **Add Desktop** next to a monitor to add a Desktop to it. Use **Make full screen** on a window to put it in its own full-screen Desktop.
+5. **Options.** The **Options** tab has settings for the whole profile. In the **Desktops** part you can choose to add missing Desktops before the profile runs. The app adds up to 8 per run.
+6. **Launch order.** The **Launch order** tab sets the order apps open in. Choose **Sequential** to open one app after another, or **At once** to open them together. Move an app up or down. For each app you can choose to wait for its first window or until it is ready, set a delay after it, and set a timeout. Apps that are not in the list open last, in profile order.
+7. **Save.** Click **Save profile**, type a name, and click **Save**. Click **Cancel** to throw away the draft. Nothing is saved until you press Save.
+
+If the draft has a problem, such as a launch order issue, the Save sheet lists how many problems there are. Open the **Launch order** tab to fix them.
+
+### Print a profile in the terminal
+
+The `spaceslab` command line tool can print a saved profile as a text map. It does not open the Studio.
+
+```bash
+# Print the profile named "Work" as a map
+spaceslab profile map Work
+
+# Use a narrower map, 60 characters wide
+spaceslab profile map Work --width 60
+```
+
+Notes:
+
+- The name match ignores upper and lower case. If two profiles have the same name, rename one first.
+- The default width is 100 characters. Widths below 20 are raised to 20.
+- Each window is listed with its position as a percentage of its monitor.
+
+## 6. Control the app from links and scripts
 
 The app accepts links with the `windowsmanager://` scheme. There are three commands:
 
@@ -95,7 +144,7 @@ spaceslab ctl capture Work
 
 Any app or script that can open a link can send these commands.
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 - **Run does nothing or says Accessibility is not allowed.** Allow Windows Manager in Accessibility (section 1).
 - **A profile says "No profile named ...".** Check the name with `windowsmanager://list` or `spaceslab ctl list`.

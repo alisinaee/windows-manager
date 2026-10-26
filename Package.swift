@@ -11,6 +11,9 @@ let package = Package(
         .executable(name: "spaceslab", targets: ["spaceslab"]),
         .executable(name: "WindowsManagerApp", targets: ["WindowsManagerApp"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", exact: "1.10.0"),
+    ],
     targets: [
         .target(
             name: "WMCore",
@@ -26,7 +29,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "WindowsManagerApp",
-            dependencies: ["WMCore"],
+            dependencies: [
+                "WMCore",
+                .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
+            ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("SwiftUI"),

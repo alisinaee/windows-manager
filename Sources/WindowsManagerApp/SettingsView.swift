@@ -12,6 +12,8 @@ struct SettingsView: View {
                 .tabItem { Label("Window rules", systemImage: "list.bullet.rectangle") }
             WorkspacesSettingsTab()
                 .tabItem { Label("Workspaces", systemImage: "square.stack.3d.up") }
+            HotkeysSettingsTab()
+                .tabItem { Label("Hotkeys", systemImage: "keyboard") }
             MonitorsSettingsTab()
                 .tabItem { Label("Monitors", systemImage: "display.2") }
             AboutSettingsTab()

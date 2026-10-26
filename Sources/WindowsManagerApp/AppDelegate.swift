@@ -75,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // Virtual workspaces: crash recovery now, switching pieces only when the opt-in switch is on.
             WorkspaceController.shared.startIfPossible()
+            HotkeyController.shared.start()
         }
     }
 

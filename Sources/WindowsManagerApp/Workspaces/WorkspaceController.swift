@@ -43,10 +43,14 @@ final class WorkspaceController: ObservableObject {
     private var model = WorkspaceModel()
     private let store = WorkspaceModelStore()
     private let backend = SystemWorkspaceBackend()
+    /// Mixed mode: the switcher sees the backend minus full-screen windows and windows of other Spaces.
+    private let mixedBackend = FullScreenAwareSystem(base: SystemWorkspaceBackend(), info: SystemMixedModeSpaceInfo())
+    private var deferred = DeferredSwitch()
     private let follower = WorkspaceFollower()
     private var observer: WorkspaceActivationObserver?
     private var swipe: SwipeMonitor?
     private var systemTokens: [(center: NotificationCenter, token: NSObjectProtocol)] = []
+    private var spaceToken: NSObjectProtocol?
     private var didRecover = false
     private let log = AppInfo.logger
 
@@ -123,7 +127,13 @@ final class WorkspaceController: ObservableObject {
 
     func switchTo(_ id: UUID) {
         guard isEnabled else { return }
-        let switcher = WorkspaceSwitcher(model: model, system: backend, saver: store)
+        // On a full-screen Space nothing is hidden or shown; the switch waits for a normal desktop.
+        guard let id = deferred.request(id, activeSpaceIsFullScreen: SystemMixedModeSpaceInfo.activeSpaceIsFullScreen()) else {
+            activeID = deferred.pending
+            statusText = "Workspace switch waits until you leave full screen."
+            return
+        }
+        let switcher = WorkspaceSwitcher(model: model, system: mixedBackend, saver: store)
         follower.isSwitching = true
         defer { follower.switchDidEnd() }
         do {
@@ -166,6 +176,23 @@ final class WorkspaceController: ObservableObject {
         observer?.start()
         if swipe == nil { startSwipe() }
         if systemTokens.isEmpty { observeSystemEvents() }
+        if spaceToken == nil {
+            spaceToken = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.activeSpaceChanged() }
+            }
+        }
+    }
+
+    /// Leaving a full-screen Space applies the switch that was deferred while on it.
+    private func activeSpaceChanged() {
+        guard isEnabled, deferred.hasPending else { return }
+        let fullScreen = SystemMixedModeSpaceInfo.activeSpaceIsFullScreen()
+        guard let target = deferred.activeSpaceChanged(activeSpaceIsFullScreen: fullScreen, appliedWorkspace: model.activeWorkspaceID) else {
+            if !deferred.hasPending { publish() }
+            return
+        }
+        switchTo(target)
     }
 
     private func stopPieces() {
@@ -173,6 +200,9 @@ final class WorkspaceController: ObservableObject {
         observer = nil
         swipe?.stop()
         swipe = nil
+        deferred.cancel()
+        if let t = spaceToken { NSWorkspace.shared.notificationCenter.removeObserver(t) }
+        spaceToken = nil
         for t in systemTokens { t.center.removeObserver(t.token) }
         systemTokens.removeAll()
     }

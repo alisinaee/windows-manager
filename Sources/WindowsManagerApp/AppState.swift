@@ -30,6 +30,10 @@ final class AppState: ObservableObject {
     /// Set by init so URL handling in the app delegate can reach the state.
     static weak var current: AppState?
 
+    /// URL commands that arrived before any AppState existed (the app was launched by the URL).
+    /// Drained once at the end of init, after the profile list has loaded.
+    static var pendingCommands = ControlCommandQueue()
+
     init() {
         AppState.current = self
         reloadProfiles()
@@ -39,6 +43,16 @@ final class AppState: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.refreshPermissions() }
         }
+        drainPendingCommands()
+    }
+
+    /// Runs the queued URL commands in arrival order, each once.
+    private func drainPendingCommands() {
+        let commands = AppState.pendingCommands.drain()
+        guard !commands.isEmpty else { return }
+        AppInfo.logger.notice("Running \(commands.count) control URL(s) that arrived before the app was ready")
+        reloadProfiles()
+        for command in commands { handle(command) }
     }
 
     /// Re-reads the permissions. Cheap and never shows a dialog.

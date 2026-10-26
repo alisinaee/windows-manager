@@ -86,7 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let command = try ControlCommand.parse(url: url)
                 Task { @MainActor in
                     guard let state = AppState.current else {
-                        AppInfo.logger.error("URL ignored, app state not ready: \(url.absoluteString, privacy: .public)")
+                        // Launched by the URL: AppState does not exist yet. It drains this queue when it is created.
+                        AppState.pendingCommands.enqueue(command)
+                        AppInfo.logger.notice("Control URL queued, app state not ready: \(url.absoluteString, privacy: .public)")
                         return
                     }
                     state.reloadProfiles()

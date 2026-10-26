@@ -2,21 +2,37 @@ import AppKit
 import ApplicationServices
 import WMCore
 
+/// Messaging timeout (seconds) for the Accessibility calls of the snap gesture. A hung app under the pointer
+/// must not hold up the snap for long.
+private let snapAXTimeout: Float = 0.2
+
 /// Watches global mouse and modifier events and runs the snap gesture: hold the modifier while dragging a
 /// window to see the zones of the layout on the display under the pointer; release over a zone to place
 /// the window there. Needs Accessibility (global event monitors and AX window access).
+///
+/// Main thread: events, the controller and the overlay. Accessibility hit tests, frame reads and window moves
+/// run on `axQueue`, and their results come back to the main thread tagged with a gesture id, so late
+/// results of an old gesture are dropped. Layouts are cached and reloaded only when they change.
 @MainActor
 final class SnapMonitor {
     static let shared = SnapMonitor()
     static let settingsKey = "snapSettings"
 
+    /// Serial: AX work keeps the order it was requested in.
+    private let axQueue = DispatchQueue(label: "dev.windowsmanager.snap.ax", qos: .userInitiated)
+
     private var controller = SnapController()
     private var monitors: [Any] = []
+    private var layoutsObserver: NSObjectProtocol?
     private var overlays: [String: SnapOverlayWindow] = [:]
+    /// Cached in memory; loaded at start and again on `.layoutsDidChange`.
     private var layouts: [WMCore.Layout] = []
     private var element: AXElement?
     private var nextWindowID: UInt64 = 0
     private var currentWindowID: UInt64 = 0
+    private var gestures = SnapGestureClock()
+    private var pressPoint: CGPoint = .zero
+    private var lastPoint: CGPoint = .zero
     private var timer: Timer?
     private let store = LayoutStore()
     private let log = AppInfo.logger
@@ -49,6 +65,10 @@ final class SnapMonitor {
     func start(settings: SnapSettings) {
         guard !isRunning else { return }
         controller = SnapController(settings: settings)
+        reloadLayouts()
+        layoutsObserver = NotificationCenter.default.addObserver(forName: .layoutsDidChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reloadLayouts() }
+        }
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .flagsChanged]
         if let m = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] event in
             let type = event.type
@@ -65,11 +85,19 @@ final class SnapMonitor {
     func stop() {
         for m in monitors { NSEvent.removeMonitor(m) }
         monitors.removeAll()
+        if let layoutsObserver { NotificationCenter.default.removeObserver(layoutsObserver) }
+        layoutsObserver = nil
+        gestures.advance()   // Accessibility results still in flight belong to a gesture that is over.
         stopTimer()
         _ = controller.cancel()
         hideOverlays()
         element = nil
+        layouts = []
         isRunning = false
+    }
+
+    private func reloadLayouts() {
+        layouts = (try? store.load()) ?? []
     }
 
     // MARK: Events
@@ -80,27 +108,27 @@ final class SnapMonitor {
         let now = ProcessInfo.processInfo.systemUptime
         switch type {
         case .leftMouseDown:
-            layouts = (try? store.load()) ?? []
-            var window: SnapWindow?
-            if !layouts.isEmpty, let el = Self.window(at: point), let frame = el.frame {
-                nextWindowID += 1
-                currentWindowID = nextWindowID
-                element = el
-                window = SnapWindow(id: currentWindowID, frame: frame)
-            }
-            apply(controller.mouseDown(at: point, window: window))
+            beginPress(at: point)
         case .leftMouseDragged:
+            lastPoint = point
             guard controller.isActive else { return }
-            let frame = controller.needsWindowFrame ? element?.frame : nil
-            apply(controller.dragged(to: point, flags: flags, display: display(at: point), windowFrame: frame, at: now))
+            if controller.needsWindowFrame {
+                // The window's frame is only needed once the pointer has moved far enough to be a drag.
+                guard SnapGestureClock.passedDragThreshold(from: pressPoint, to: point,
+                                                           minimumDistance: controller.settings.minimumDragDistance) else { return }
+                requestWindowFrame()
+                return
+            }
+            apply(controller.dragged(to: point, flags: flags, display: display(at: point), windowFrame: nil, at: now))
             updateTimer()
         case .flagsChanged:
             guard controller.isActive else { return }
             apply(controller.flagsChanged(flags, at: point, display: display(at: point), time: now))
         case .leftMouseUp:
+            gestures.advance()
+            stopTimer()
             guard controller.isActive else { return }
             apply(controller.mouseUp(at: point, flags: flags, display: display(at: point)))
-            stopTimer()
         default:
             break
         }
@@ -122,12 +150,61 @@ final class SnapMonitor {
         case .commit(let id, let frame):
             hideOverlays()
             guard id == currentWindowID, let target = element else { return }
-            // AX calls can take a while; keep them off the main thread.
-            DispatchQueue.global(qos: .userInitiated).async {
+            axQueue.async {
                 let result = WindowMover.setFrame(target, to: frame)
                 AppInfo.logger.notice("Snap placed window: refused=\(result.refused) minSizeHit=\(result.minSizeHit)")
             }
         }
+    }
+
+    // MARK: Press and drag (Accessibility work happens on axQueue)
+
+    /// A press starts a gesture. The controller gets the window once the hit test answers.
+    private func beginPress(at point: CGPoint) {
+        let gesture = gestures.advance()
+        pressPoint = point
+        lastPoint = point
+        element = nil
+        apply(controller.mouseDown(at: point, window: nil))
+        // Nothing to find when snapping is off or no layout exists: then no Accessibility call is made.
+        guard controller.settings.enabled, !layouts.isEmpty else { return }
+        axQueue.async {
+            let found = Self.window(at: point)
+            let frame = found?.frame
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self.windowFound(found, frame: frame, gesture: gesture) }
+            }
+        }
+    }
+
+    private func windowFound(_ found: AXElement?, frame: CGRect?, gesture: UInt64) {
+        guard gestures.isCurrent(gesture), let found, let frame else { return }
+        nextWindowID += 1
+        currentWindowID = nextWindowID
+        element = found
+        apply(controller.mouseDown(at: pressPoint, window: SnapWindow(id: currentWindowID, frame: frame)))
+    }
+
+    /// Reads the dragged window's frame off the main thread; at most one read per gesture is in flight.
+    private func requestWindowFrame() {
+        guard let target = element else { return }
+        let gesture = gestures.current
+        guard gestures.beginFrameRead(for: gesture) else { return }
+        axQueue.async {
+            let frame = target.frame
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self.windowFrameRead(frame, of: target, gesture: gesture) }
+            }
+        }
+    }
+
+    private func windowFrameRead(_ frame: CGRect?, of target: AXElement, gesture: UInt64) {
+        gestures.finishFrameRead(for: gesture)
+        guard gestures.isCurrent(gesture), controller.isActive, element == target, let frame else { return }
+        apply(controller.dragged(to: lastPoint, flags: Self.flags(NSEvent.modifierFlags),
+                                 display: display(at: lastPoint), windowFrame: frame,
+                                 at: ProcessInfo.processInfo.systemUptime))
+        updateTimer()
     }
 
     /// While a drag is on, a timer lets a zone that has been under a still pointer pass the debounce.
@@ -199,24 +276,32 @@ final class SnapMonitor {
     }
 
     /// The AXWindow under a point (global top-left), found with AXUIElementCopyElementAtPosition and then
-    /// walked up through the parents. Windows of this app are skipped.
-    private static func window(at point: CGPoint) -> AXElement? {
+    /// walked up through the parents. Windows of this app are skipped. Runs on `axQueue`, never on the main thread.
+    private nonisolated static func window(at point: CGPoint) -> AXElement? {
         var hit: AXUIElement?
-        let err = AXUIElementCopyElementAtPosition(AXElement.systemWide.raw, Float(point.x), Float(point.y), &hit)
+        let system = AXElement(AXUIElementCreateSystemWide(), timeout: snapAXTimeout)
+        let err = AXUIElementCopyElementAtPosition(system.raw, Float(point.x), Float(point.y), &hit)
         guard err == .success, let hit else { return nil }
-        var current: AXElement? = AXElement(hit, timeout: 0.25)
+        var current: AXElement? = AXElement(hit, timeout: snapAXTimeout)
         for _ in 0..<12 {
             guard let el = current else { return nil }
             if el.role == kAXWindowRole as String {
                 if el.pid == ProcessInfo.processInfo.processIdentifier { return nil }
                 return el
             }
-            if let win = el.element(kAXWindowAttribute as String), win.role == kAXWindowRole as String {
+            if let win = child(of: el, kAXWindowAttribute as String), win.role == kAXWindowRole as String {
                 if win.pid == ProcessInfo.processInfo.processIdentifier { return nil }
                 return win
             }
-            current = el.element(kAXParentAttribute as String)
+            current = child(of: el, kAXParentAttribute as String)
         }
         return nil
+    }
+
+    /// An attribute element with the snap timeout applied (AXElement.element uses the default timeout).
+    private nonisolated static func child(of el: AXElement, _ attribute: String) -> AXElement? {
+        guard let c = el.element(attribute) else { return nil }
+        c.setMessagingTimeout(snapAXTimeout)
+        return c
     }
 }

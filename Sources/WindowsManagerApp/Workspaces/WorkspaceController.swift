@@ -205,6 +205,12 @@ final class WorkspaceController: ObservableObject {
             statusText = error.localizedDescription
             log.error("Workspace switch failed: \(error.localizedDescription, privacy: .public)")
         }
+        finishRun()
+    }
+
+    /// Shared tail of every background run (switch, recovery, reassert): clears the busy flags, publishes,
+    /// then starts whatever was queued while the run was going.
+    private func finishRun() {
         switchInFlight = false
         isSwitching = false
         follower.switchDidEnd()
@@ -311,22 +317,65 @@ final class WorkspaceController: ObservableObject {
     /// Brings back every hidden or parked window and clears the records (launch, switch off, delete).
     private func recoverEverything() {
         guard !switchInFlight else { needsRecovery = true; return }
-        let plan = WorkspaceModelStore.recover(model, live: backend.liveWindows())
-        let report = VirtualActionApplier.apply(plan.actions, system: backend)
-        model = plan.model
-        if let first = report.failures.first { statusText = first }
-        try? saveGate.saveUserEdit(model)
-        publish()
+        startMaintenance(.recover)
     }
 
     /// After lock, unlock or wake: windows of the active workspace come back, the rest stay away.
     func reassert() {
         guard isEnabled, AXPermission.isTrusted() else { return }
         guard !switchInFlight else { needsReassert = true; return }
-        let actions = WorkspaceModelStore.reassertActive(model, live: backend.liveWindows())
-        guard !actions.isEmpty else { return }
-        let report = VirtualActionApplier.apply(actions, system: backend)
-        if let first = report.failures.first { statusText = first }
+        startMaintenance(.reassert)
+    }
+
+    private enum Maintenance { case recover, reassert }
+
+    /// What a recovery or reassert run decided, applied back on the main actor.
+    private struct MaintenanceOutcome: Sendable {
+        var clearsRecords = false
+        /// Windows that no longer exist; recovery drops them from the workspaces.
+        var deadWindowIDs: Set<UInt32> = []
+        var failure: String?
+    }
+
+    /// Runs recovery or reassert on `switchQueue`, like a switch: one run at a time, with a snapshot of the
+    /// model, so the main actor never waits on the window server. Main actor only.
+    private func startMaintenance(_ kind: Maintenance) {
+        switchInFlight = true
+        isSwitching = true
+        follower.isSwitching = true
+        let input = model
+        let system = SwitchSystem(base: backend, screens: CornerParker.screenFrames())
+        switchQueue.async { [weak self] in
+            let outcome: MaintenanceOutcome
+            switch kind {
+            case .recover:
+                let live = system.liveWindows()
+                let plan = WorkspaceModelStore.recover(input, live: live)
+                let report = VirtualActionApplier.apply(plan.actions, system: system)
+                let liveIDs = Set(live.map(\.windowID))
+                let dead = Set(input.workspaces.flatMap(\.windows).map(\.windowID)).subtracting(liveIDs)
+                outcome = MaintenanceOutcome(clearsRecords: true, deadWindowIDs: dead, failure: report.failures.first)
+            case .reassert:
+                let actions = WorkspaceModelStore.reassertActive(input, live: system.liveWindows())
+                let failure = actions.isEmpty ? nil : VirtualActionApplier.apply(actions, system: system).failures.first
+                outcome = MaintenanceOutcome(failure: failure)
+            }
+            Task { @MainActor in self?.finishMaintenance(outcome) }
+        }
+    }
+
+    /// Back on the main actor after recovery or reassert. Only what the run decided is applied, so workspace
+    /// edits made while it ran are kept.
+    private func finishMaintenance(_ outcome: MaintenanceOutcome) {
+        if outcome.clearsRecords {
+            model.hiddenRecords = []
+            for k in model.workspaces.indices {
+                model.workspaces[k].windows.removeAll { outcome.deadWindowIDs.contains($0.windowID) }
+            }
+            try? saveGate.saveUserEdit(model)
+        }
+        if let failure = outcome.failure { statusText = failure }
+        finishRun()
     }
 
     private func observeSystemEvents() {

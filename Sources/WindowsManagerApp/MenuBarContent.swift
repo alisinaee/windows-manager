@@ -5,6 +5,7 @@ struct MenuBarContent: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.openSettings) private var openSettings
     @ObservedObject private var workspaces = WorkspaceController.shared
+    @ObservedObject private var updates = UpdateController.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -41,8 +42,8 @@ struct MenuBarContent: View {
             MenuRow(title: "Check for Updates…") {
                 UpdateController.shared.checkForUpdates()
             }
-            .disabled(!UpdateController.shared.canCheckForUpdates)
-            if !UpdateController.shared.isConfigured {
+            .disabled(!updates.canCheckForUpdates)
+            if !updates.isConfigured {
                 Text(UpdateController.notConfiguredText)
                     .font(.footnote).foregroundStyle(.secondary)
                     .padding(.horizontal, 10)

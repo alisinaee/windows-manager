@@ -13,11 +13,17 @@ struct RunningAppChip: Identifiable, Hashable {
 @MainActor
 final class LayoutEditorModel: ObservableObject {
     @Published var layouts: [WMCore.Layout] = []
-    @Published var selectedID: UUID?
+    /// Commits the name draft to the layout being left before the selection moves, then loads the new one's name.
+    @Published var selectedID: UUID? {
+        willSet { commitName() }
+        didSet { nameDraft = selected?.name ?? "" }
+    }
     @Published var selectedZoneID: UUID?
     @Published var displays: [DisplayIdentity] = []
     @Published var runningApps: [RunningAppChip] = []
     @Published var errorText: String?
+    /// The name as typed; saved only by `commitName()` (on submit or focus loss), not per keystroke.
+    @Published var nameDraft = ""
 
     private let store: LayoutStore
     private var edgeDragStart: Double?
@@ -38,6 +44,7 @@ final class LayoutEditorModel: ObservableObject {
             errorText = error.localizedDescription
         }
         if selectedID == nil || !layouts.contains(where: { $0.id == selectedID }) { selectedID = layouts.first?.id }
+        nameDraft = selected?.name ?? ""
     }
 
     func refreshApps() {
@@ -88,6 +95,24 @@ final class LayoutEditorModel: ObservableObject {
     }
 
     func rename(_ name: String) { mutate { $0.name = name } }
+
+    /// Saves the name draft to the selected layout. An empty name is rejected and the old name kept.
+    func commitName() {
+        guard let layout = selected else { return }
+        let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            nameDraft = layout.name
+            errorText = "A layout needs a name. The old name was kept."
+            return
+        }
+        if trimmed != layout.name { rename(trimmed) }
+        nameDraft = trimmed
+    }
+
+    /// True when a dragged string may be assigned to a zone: a bundle id shape, or a running app's id.
+    func acceptsDrop(_ bundleID: String) -> Bool {
+        BundleIDValidation.accepts(bundleID, runningBundleIDs: Set(runningApps.map(\.bundleID)))
+    }
 
     func setDisplay(_ key: String?) { mutate { $0.displayKey = key?.uppercased() } }
 

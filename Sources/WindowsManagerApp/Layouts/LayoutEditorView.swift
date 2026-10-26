@@ -5,6 +5,7 @@ import WMCore
 /// Drag an app chip onto a zone to assign it; drag a zone edge to resize; tap a preset to start over.
 struct LayoutEditorView: View {
     @ObservedObject var model: LayoutEditorModel
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         HStack(spacing: 0) {
@@ -47,8 +48,13 @@ struct LayoutEditorView: View {
         if let layout = model.selected, let display = model.selectedDisplay {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    TextField("Name", text: Binding(get: { layout.name }, set: { model.rename($0) }))
+                    TextField("Name", text: $model.nameDraft)
                         .textFieldStyle(.roundedBorder)
+                        .focused($nameFocused)
+                        .onSubmit { model.commitName() }
+                        .onChange(of: nameFocused) { _, focused in
+                            if !focused { model.commitName() }
+                        }
                     Picker("Display", selection: Binding(get: { layout.displayKey ?? "" }, set: { model.setDisplay($0.isEmpty ? nil : $0) })) {
                         Text("Any display").tag("")
                         ForEach(model.displays, id: \.uuid) { d in
@@ -120,6 +126,59 @@ struct LayoutEditorView: View {
     }
 }
 
+/// Tracks whether this handle pushed a resize cursor, so every push is matched by exactly one pop.
+@MainActor
+private final class CursorHold: ObservableObject {
+    @Published var pushed = false
+
+    func hover(_ inside: Bool, _ cursor: NSCursor) {
+        if inside, !pushed {
+            cursor.push()
+            pushed = true
+        } else if !inside, pushed {
+            NSCursor.pop()
+            pushed = false
+        }
+    }
+
+    func release() {
+        if pushed {
+            NSCursor.pop()
+            pushed = false
+        }
+    }
+}
+
+/// A drag strip on one zone edge. Its own view so the cursor state lives with it.
+private struct EdgeHandle: View {
+    @ObservedObject var model: LayoutEditorModel
+    let zoneID: UUID
+    let edge: ZoneEdge
+    let horizontal: Bool
+    let thickness: CGFloat
+    let length: CGFloat
+    let center: CGPoint
+    let size: CGSize
+    @StateObject private var cursor = CursorHold()
+
+    var body: some View {
+        Color.clear
+            .frame(width: horizontal ? thickness : length, height: horizontal ? length : thickness)
+            .contentShape(Rectangle())
+            .position(center)
+            .onHover { inside in
+                cursor.hover(inside, horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown)
+            }
+            .onDisappear { cursor.release() }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    let t = horizontal ? Double(value.translation.width / size.width) : Double(value.translation.height / size.height)
+                    model.dragEdge(zone: zoneID, edge: edge, translation: t)
+                }
+                .onEnded { _ in model.endEdgeDrag() })
+    }
+}
+
 private struct AppChip: View {
     let title: String
 
@@ -157,7 +216,7 @@ private struct MiniMap: View {
             }
             .frame(width: size.width, height: size.height)
             .dropDestination(for: String.self) { items, location in
-                guard let bundleID = items.first,
+                guard let bundleID = items.first, model.acceptsDrop(bundleID),
                       let zone = layout.zone(atX: Double(location.x / size.width), y: Double(location.y / size.height))
                 else { return false }
                 model.assign(bundleID: bundleID, to: zone.id)
@@ -219,19 +278,16 @@ private struct MiniMap: View {
                     case .bottom: return CGPoint(x: r.midX * size.width, y: r.maxY * size.height)
                     }
                 }()
-                Color.clear
-                    .frame(width: horizontal ? thick : length, height: horizontal ? length : thick)
-                    .contentShape(Rectangle())
-                    .position(center)
-                    .onHover { inside in
-                        if inside { (horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push() } else { NSCursor.pop() }
-                    }
-                    .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                        .onChanged { value in
-                            let t = horizontal ? Double(value.translation.width / size.width) : Double(value.translation.height / size.height)
-                            model.dragEdge(zone: zone.id, edge: edge, translation: t)
-                        }
-                        .onEnded { _ in model.endEdgeDrag() })
+                EdgeHandle(
+                    model: model,
+                    zoneID: zone.id,
+                    edge: edge,
+                    horizontal: horizontal,
+                    thickness: thick,
+                    length: length,
+                    center: center,
+                    size: size
+                )
             }
         }
     }

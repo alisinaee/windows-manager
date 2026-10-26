@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct AboutSettingsTab: View {
+    @ObservedObject private var updates = UpdateController.shared
+
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: "rectangle.3.group")
@@ -17,9 +19,9 @@ struct AboutSettingsTab: View {
             Button("Check for Updates…") {
                 UpdateController.shared.checkForUpdates()
             }
-            .disabled(!UpdateController.shared.canCheckForUpdates)
+            .disabled(!updates.canCheckForUpdates)
             .padding(.top, 12)
-            Text(UpdateController.shared.isConfigured ? "Updates are checked against the release appcast." : UpdateController.notConfiguredText)
+            Text(updates.isConfigured ? "Updates are checked against the release appcast." : UpdateController.notConfiguredText)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

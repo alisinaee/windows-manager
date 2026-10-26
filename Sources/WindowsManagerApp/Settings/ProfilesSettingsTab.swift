@@ -8,7 +8,6 @@ import WMCore
 final class ProfilesSettingsModel: ObservableObject {
     @Published var selection: UUID?
     @Published var nameText = ""
-    @Published var hotkeyText = ""
     @Published var message = ""
     @Published var confirmingDelete = false
 
@@ -17,11 +16,9 @@ final class ProfilesSettingsModel: ObservableObject {
         message = ""
         guard let id, let profile = try? store.load(id) else {
             nameText = ""
-            hotkeyText = ""
             return
         }
         nameText = profile.name
-        hotkeyText = profile.options.hotkey ?? ""
     }
 }
 
@@ -75,9 +72,8 @@ struct ProfilesSettingsTab: View {
                 TextField("Name", text: $model.nameText)
                     .onSubmit { rename(id) }
                 Button("Rename") { rename(id) }
-                TextField("Hotkey", text: $model.hotkeyText, prompt: Text("for example ctrl+opt+1"))
-                    .onSubmit { saveHotkey(id) }
-                Button("Set hotkey") { saveHotkey(id) }
+                Text("Set hotkeys in the Hotkeys tab.")
+                    .foregroundStyle(.secondary)
                 Section {
                     HStack {
                         Button("Duplicate") { duplicate(id) }
@@ -108,17 +104,6 @@ struct ProfilesSettingsTab: View {
             try appState.store.rename(id, to: model.nameText)
             appState.reloadProfiles()
             model.message = "Renamed."
-        } catch { fail(error) }
-    }
-
-    private func saveHotkey(_ id: UUID) {
-        do {
-            var profile = try appState.store.load(id)
-            let text = model.hotkeyText.trimmingCharacters(in: .whitespacesAndNewlines)
-            profile.options.hotkey = text.isEmpty ? nil : text
-            try appState.store.save(profile)
-            appState.reloadProfiles()
-            model.message = text.isEmpty ? "Hotkey cleared." : "Hotkey saved."
         } catch { fail(error) }
     }
 

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import WMCore
 
@@ -7,9 +8,16 @@ final class WindowRulesModel: ObservableObject {
     @Published var rules: WindowRules
     @Published var newBundleID = ""
     @Published var message = ""
+    @Published private(set) var displays: [DisplayIdentity] = []
     private let store = WindowRulesStore()
 
-    init() { rules = store.load() }
+    init() {
+        rules = store.load()
+        refreshDisplays()
+    }
+
+    /// Re-reads the monitors so a hot-plugged or removed display shows up correctly.
+    func refreshDisplays() { displays = DisplayMap.current() }
 
     func persist() {
         do { try store.save(rules); message = "" } catch { message = error.localizedDescription }
@@ -45,7 +53,6 @@ final class WindowRulesModel: ObservableObject {
 
 struct WindowRulesSettingsTab: View {
     @StateObject private var model = WindowRulesModel()
-    private let displays = DisplayMap.current()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -73,6 +80,10 @@ struct WindowRulesSettingsTab: View {
             }
         }
         .padding()
+        .onAppear { model.refreshDisplays() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            model.refreshDisplays()
+        }
     }
 
     private func kind(_ action: WindowRuleAction) -> String {
@@ -91,7 +102,7 @@ struct WindowRulesSettingsTab: View {
                 case "ignore": model.set(WindowRule(bundleID: rule.bundleID, action: .ignore))
                 case "alwaysRestore": model.set(WindowRule(bundleID: rule.bundleID, action: .alwaysRestore))
                 default:
-                    let uuid = displays.first(where: \.isMain)?.uuid ?? displays.first?.uuid ?? ""
+                    let uuid = model.displays.first(where: \.isMain)?.uuid ?? model.displays.first?.uuid ?? ""
                     model.set(WindowRule(bundleID: rule.bundleID, action: .pinToDisplay(uuid: uuid)))
                 }
             })
@@ -110,8 +121,8 @@ struct WindowRulesSettingsTab: View {
                     get: { uuid },
                     set: { model.set(WindowRule(bundleID: rule.bundleID, action: .pinToDisplay(uuid: $0))) })
                 Picker("", selection: uuidBinding) {
-                    ForEach(displays, id: \.uuid) { Text($0.name).tag($0.uuid) }
-                    if !displays.contains(where: { $0.uuid == uuid }) { Text("Disconnected display").tag(uuid) }
+                    ForEach(model.displays, id: \.uuid) { Text($0.name).tag($0.uuid) }
+                    if !model.displays.contains(where: { $0.uuid == uuid }) { Text("Disconnected display").tag(uuid) }
                 }
                 .labelsHidden()
                 .frame(width: 140)

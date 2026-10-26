@@ -24,9 +24,25 @@ struct ProfileMapHost: View {
     }
 }
 
+private struct CanvasFocusRequestKey: EnvironmentKey {
+    static let defaultValue: () -> Void = {}
+}
+
+extension EnvironmentValues {
+    /// Gives the map canvas keyboard focus (the Edit mode overlay calls it when a tile is clicked).
+    var canvasFocusRequest: () -> Void {
+        get { self[CanvasFocusRequestKey.self] }
+        set { self[CanvasFocusRequestKey.self] = newValue }
+    }
+}
+
 /// The map: monitors drawn to scale, a Space strip per monitor, window tiles, the tray and the zoom bar.
 struct ProfileMapCanvas: View {
     @ObservedObject var model: ProfileMapModel
+    /// Edit mode (UI5): drawn on top of the monitors, in canvas coordinates. Nil in View mode.
+    var canvasOverlay: AnyView?
+    /// Edit mode (UI5): sees every handled key first; returns true when it used the key. Nil in View mode.
+    var keyOverride: ((KeyPress) -> Bool)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
 
@@ -55,8 +71,11 @@ struct ProfileMapCanvas: View {
         }
         .focusable()
         .focused($focused)
-        .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .tab]) { press in
+        .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .tab, .delete, .deleteForward, .escape,
+                           "1", "2", "3", "4", "5", "6", "7", "8", "9"]) { press in
+            if keyOverride?(press) == true { return .handled }
             switch press.key {
+            case .delete, .deleteForward, .escape, "1", "2", "3", "4", "5", "6", "7", "8", "9": return .ignored
             case .leftArrow: model.moveSelection(.left)
             case .rightArrow: model.moveSelection(.right)
             case .upArrow: model.moveSelection(.up)
@@ -111,6 +130,9 @@ struct ProfileMapCanvas: View {
                 Color.clear.contentShape(Rectangle()).onTapGesture { model.selectWindow(nil) }
                 ForEach(layout.monitors) { monitor in
                     monitorView(monitor)
+                }
+                if let canvasOverlay {
+                    canvasOverlay.environment(\.canvasFocusRequest, { focused = true })
                 }
             }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: model.zoom)

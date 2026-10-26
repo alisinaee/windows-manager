@@ -9,6 +9,7 @@ let package = Package(
     products: [
         .library(name: "WMCore", targets: ["WMCore"]),
         .executable(name: "spaceslab", targets: ["spaceslab"]),
+        .executable(name: "WindowsManagerApp", targets: ["WindowsManagerApp"]),
     ],
     targets: [
         .target(
@@ -22,6 +23,14 @@ let package = Package(
         .executableTarget(
             name: "spaceslab",
             dependencies: ["WMCore"]
+        ),
+        .executableTarget(
+            name: "WindowsManagerApp",
+            dependencies: ["WMCore"],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI"),
+            ]
         ),
         .testTarget(
             name: "WMCoreTests",

@@ -4,7 +4,8 @@ import WMCore
 
 /// Owns the virtual-workspace model and the pieces that act on it (switcher backend, follower, swipe monitor,
 /// activation observer). Everything that hides or shows windows is gated by the opt-in `isEnabled` switch
-/// (default OFF). Backend calls are synchronous and short, so they run on the main actor.
+/// (default OFF). Switches run on a serial background queue (`isSwitching` is true meanwhile); recovery and
+/// reassert wait for the running switch to finish.
 @MainActor
 final class WorkspaceController: ObservableObject {
     static let shared = WorkspaceController()
@@ -16,6 +17,8 @@ final class WorkspaceController: ObservableObject {
     @Published private(set) var workspaces: [Workspace] = []
     @Published private(set) var activeID: UUID?
     @Published private(set) var statusText: String?
+    /// true while a switch runs on the switch queue (the menu shows progress).
+    @Published private(set) var isSwitching = false
 
     @Published var isEnabled: Bool {
         didSet {
@@ -46,6 +49,16 @@ final class WorkspaceController: ObservableObject {
     /// Mixed mode: the switcher sees the backend minus full-screen windows and windows of other Spaces.
     private let mixedBackend = FullScreenAwareSystem(base: SystemWorkspaceBackend(), info: SystemMixedModeSpaceInfo())
     private var deferred = DeferredSwitch()
+    /// Switches run one at a time here, off the main actor. Only this queue touches the windows while one runs.
+    private let switchQueue = DispatchQueue(label: "com.windowsmanager.workspace-switch", qos: .userInitiated)
+    private var switchInFlight = false
+    /// The newest request made while a switch runs; an older queued request is replaced (latest wins).
+    private var queuedSwitch: UUID?
+    /// The newest requested target, used as the base for next/previous.
+    private var latestRequest: UUID?
+    /// Recovery or reassert asked for while a switch ran; done when the switch chain ends.
+    private var needsRecovery = false
+    private var needsReassert = false
     private let follower = WorkspaceFollower()
     private var observer: WorkspaceActivationObserver?
     private var swipe: SwipeMonitor?
@@ -125,6 +138,8 @@ final class WorkspaceController: ObservableObject {
 
     // MARK: Switching
 
+    /// Asks for a switch. The work runs on `switchQueue`, so the menu never waits for hidden apps.
+    /// A request made while a switch runs is queued; only the newest queued request is kept.
     func switchTo(_ id: UUID) {
         guard isEnabled else { return }
         // On a full-screen Space nothing is hidden or shown; the switch waits for a normal desktop.
@@ -133,24 +148,76 @@ final class WorkspaceController: ObservableObject {
             statusText = "Workspace switch waits until you leave full screen."
             return
         }
-        let switcher = WorkspaceSwitcher(model: model, system: mixedBackend, saver: store)
-        follower.isSwitching = true
-        defer { follower.switchDidEnd() }
-        do {
-            let result = try switcher.switchTo(id)
-            model = switcher.model
-            statusText = result.hasWarnings ? result.warnings.first : nil
-        } catch {
-            model = switcher.model
-            statusText = error.localizedDescription
-            log.error("Workspace switch failed: \(error.localizedDescription, privacy: .public)")
+        latestRequest = id
+        if switchInFlight {
+            queuedSwitch = id
+            return
         }
-        publish()
+        startSwitch(id)
     }
 
     func run(_ command: WorkspaceSwitchCommand) {
-        guard isEnabled, let target = command.target(in: model) else { return }
+        guard isEnabled else { return }
+        var view = model
+        if let latest = latestRequest { view.activeWorkspaceID = latest }
+        guard let target = command.target(in: view) else { return }
         switchTo(target)
+    }
+
+    /// Runs one switch on `switchQueue` with a snapshot of the model. Main actor only.
+    private func startSwitch(_ id: UUID) {
+        switchInFlight = true
+        isSwitching = true
+        follower.isSwitching = true
+        let input = model
+        // NSScreen is a main-thread API: the screen frames are read here, the switch only uses the copy.
+        let system = SwitchSystem(base: mixedBackend, screens: CornerParker.screenFrames())
+        let saver = store
+        switchQueue.async { [weak self] in
+            let switcher = WorkspaceSwitcher(model: input, system: system, saver: saver)
+            let outcome: Result<WorkspaceSwitchResult, Error>
+            do {
+                outcome = .success(try switcher.switchTo(id))
+            } catch {
+                outcome = .failure(error)
+            }
+            let output = switcher.model
+            Task { @MainActor in self?.finishSwitch(output, outcome) }
+        }
+    }
+
+    /// Back on the main actor after a switch: publish the result, then run whatever was queued.
+    private func finishSwitch(_ output: WorkspaceModel, _ outcome: Result<WorkspaceSwitchResult, Error>) {
+        // Only the switch's own state comes back; workspace edits made while it ran are kept.
+        model.activeWorkspaceID = output.activeWorkspaceID
+        model.hiddenRecords = output.hiddenRecords
+        if let active = model.activeWorkspaceID, model.workspace(active) == nil { model.activeWorkspaceID = nil }
+        switch outcome {
+        case .success(let result):
+            statusText = result.hasWarnings ? result.warnings.first : nil
+        case .failure(let error):
+            statusText = error.localizedDescription
+            log.error("Workspace switch failed: \(error.localizedDescription, privacy: .public)")
+        }
+        switchInFlight = false
+        isSwitching = false
+        follower.switchDidEnd()
+        publish()
+
+        if let next = queuedSwitch {
+            queuedSwitch = nil
+            startSwitch(next)
+            return
+        }
+        latestRequest = nil
+        if needsRecovery {
+            needsRecovery = false
+            needsReassert = false
+            recoverEverything()
+        } else if needsReassert {
+            needsReassert = false
+            reassert()
+        }
     }
 
     // MARK: On / off
@@ -162,6 +229,7 @@ final class WorkspaceController: ObservableObject {
 
     private func turnOff() {
         stopPieces()
+        queuedSwitch = nil
         recoverEverything()
         statusText = nil
     }
@@ -236,6 +304,7 @@ final class WorkspaceController: ObservableObject {
 
     /// Brings back every hidden or parked window and clears the records (launch, switch off, delete).
     private func recoverEverything() {
+        guard !switchInFlight else { needsRecovery = true; return }
         let plan = WorkspaceModelStore.recover(model, live: backend.liveWindows())
         let report = VirtualActionApplier.apply(plan.actions, system: backend)
         model = plan.model
@@ -247,6 +316,7 @@ final class WorkspaceController: ObservableObject {
     /// After lock, unlock or wake: windows of the active workspace come back, the rest stay away.
     func reassert() {
         guard isEnabled, AXPermission.isTrusted() else { return }
+        guard !switchInFlight else { needsReassert = true; return }
         let actions = WorkspaceModelStore.reassertActive(model, live: backend.liveWindows())
         guard !actions.isEmpty else { return }
         let report = VirtualActionApplier.apply(actions, system: backend)
@@ -269,6 +339,26 @@ final class WorkspaceController: ObservableObject {
     }
 
     // MARK: Helpers
+
+    /// The switch backend as seen from `switchQueue`: the mixed-mode backend, with screen frames
+    /// captured on the main actor when the switch started.
+    private struct SwitchSystem: WorkspaceSystem {
+        let base: WorkspaceSystem
+        let screens: [CGRect]
+
+        func liveWindows() -> [VirtualLiveWindow] { base.liveWindows() }
+        func bundleID(ofPID pid: Int32) -> String? { base.bundleID(ofPID: pid) }
+        func hideApp(pid: Int32) -> Bool { base.hideApp(pid: pid) }
+        func unhideApp(pid: Int32) -> Bool { base.unhideApp(pid: pid) }
+        func frame(ofWindow windowID: UInt32, pid: Int32) -> CGRect? { base.frame(ofWindow: windowID, pid: pid) }
+        func setPosition(_ origin: CGPoint, ofWindow windowID: UInt32, pid: Int32) -> Bool {
+            base.setPosition(origin, ofWindow: windowID, pid: pid)
+        }
+        func setFrame(_ frame: CGRect, ofWindow windowID: UInt32, pid: Int32) -> Bool {
+            base.setFrame(frame, ofWindow: windowID, pid: pid)
+        }
+        func screenFrames() -> [CGRect] { screens }
+    }
 
     private func commit() {
         do { try store.save(model) } catch { statusText = "Could not save workspaces: \(error.localizedDescription)" }

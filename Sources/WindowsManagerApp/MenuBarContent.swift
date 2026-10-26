@@ -85,6 +85,15 @@ struct MenuBarContent: View {
                     workspaces.switchTo(ws.id)
                 }
             }
+            if workspaces.isSwitching {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Switching…").foregroundStyle(.secondary)
+                }
+                .font(.footnote)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 2)
+            }
             MenuRow(title: "+ New workspace") { workspaces.createWorkspace() }
             MenuRow(title: "Add front app to current") { workspaces.addFrontmostAppToActive() }
                 .disabled(workspaces.activeID == nil)

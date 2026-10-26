@@ -17,6 +17,7 @@ let commands: [Command] = [
     Command(name: DesktopsCommand.name, help: DesktopsCommand.help, run: DesktopsCommand.run),
     Command(name: OrderFileCommand.name, help: OrderFileCommand.help, run: OrderFileCommand.run),
     Command(name: VirtualCommand.name, help: VirtualCommand.help, run: VirtualCommand.run),
+    Command(name: AXRemoteCommand.name, help: AXRemoteCommand.help, run: AXRemoteCommand.run),
 ]
 
 func usageText() -> String {

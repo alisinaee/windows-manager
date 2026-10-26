@@ -28,3 +28,6 @@ docs/work.json
 
 # Spaces Lab output
 lab-results/
+
+# Local dev signing (scripts/make-dev-cert.sh)
+.signing/

@@ -119,6 +119,9 @@ struct AXWindowDetails: Equatable {
     var title: String?
     var documentPath: String?
     var isMinimized: Bool?
+    /// The window's real frame from Accessibility. The window server reports thumbnail-sized bounds for windows
+    /// on inactive Spaces and under Stage Manager, so this is the size to trust for those.
+    var frame: CGRect?
 }
 
 public enum WorkspaceScanner {
@@ -195,7 +198,9 @@ public enum WorkspaceScanner {
     /// either on a Space or (for minimized ones) on no Space.
     private static func accessibilityCandidates(catalog: [CatalogWindow], options: ScanOptions) -> Set<Int32> {
         var pids = Set<Int32>()
-        for window in catalog where window.alpha > 0.01 && min(window.bounds.width, window.bounds.height) >= 100 {
+        // Small windows count too: the window server reports tiny bounds for a real window on another Space.
+        for window in catalog where window.alpha > 0.01 && (!window.spaceIDs.isEmpty
+            || min(window.bounds.width, window.bounds.height) >= 100) {
             guard !pids.contains(window.pid),
                   let app = NSRunningApplication(processIdentifier: window.pid),
                   app.activationPolicy == .regular,
@@ -213,7 +218,13 @@ public enum WorkspaceScanner {
                 guard let windowID = element.windowID else { continue }
                 let title = element.title.flatMap { $0.isEmpty ? nil : $0 }
                 result[windowID] = AXWindowDetails(title: title, documentPath: AXWindows.documentPath(of: element),
-                                                   isMinimized: element.isMinimized)
+                                                   isMinimized: element.isMinimized, frame: element.frame)
+            }
+            // Windows on another Space are not in AXWindows; the app still hands them out directly.
+            for (windowID, element) in AXRemoteWindows.directWindows(pid: pid) where result[windowID] == nil {
+                let title = element.title.flatMap { $0.isEmpty ? nil : $0 }
+                result[windowID] = AXWindowDetails(title: title, documentPath: AXWindows.documentPath(of: element),
+                                                   isMinimized: element.isMinimized, frame: element.frame)
             }
         }
         return result
@@ -235,12 +246,25 @@ public enum WorkspaceScanner {
     /// `CatalogWindow.looksLikeUserWindow` accepts and that belongs to an app that is not excluded.
     /// A minimized window belongs to no Space, so it passes too when Accessibility says it is minimized
     /// (`isMinimized`) and it is big and visible enough.
+    ///
+    /// A window the window server reports as small is still kept when it is on a Space, visible, and
+    /// Accessibility gives it a real frame (`axFrame`) that is big enough: the small bounds are then a thumbnail
+    /// of a window on an inactive Space or in the Stage Manager strip. Without such a frame it stays out.
     public static func isUserWindow(_ window: CatalogWindow, bundleID: String?, isMinimized: Bool = false,
-                                    options: ScanOptions = ScanOptions()) -> Bool {
+                                    axFrame: CGRect? = nil, options: ScanOptions = ScanOptions()) -> Bool {
         if isExcludedApp(name: window.appName, bundleID: bundleID, options: options) { return false }
         if window.looksLikeUserWindow { return true }
+        if usesAccessibilityFrame(window, axFrame: axFrame) { return true }
         return isMinimized && window.spaceIDs.isEmpty && window.alpha > 0.01
             && min(window.bounds.width, window.bounds.height) >= 100
+    }
+
+    /// True when the window server's bounds are too small only because of a thumbnail (window on an inactive
+    /// Space or in the Stage Manager strip) and Accessibility shows a real, user-sized frame.
+    static func usesAccessibilityFrame(_ window: CatalogWindow, axFrame: CGRect?) -> Bool {
+        guard let axFrame, !window.spaceIDs.isEmpty, window.alpha > 0.01, window.appName != "WindowManager",
+              min(window.bounds.width, window.bounds.height) < 100 else { return false }
+        return min(axFrame.width, axFrame.height) >= 100
     }
 
     /// For each full-screen Space, the window(s) that own it, as CGWindowIDs: one normally, two for Split View.
@@ -320,7 +344,7 @@ public enum WorkspaceScanner {
         for window in catalog {
             let app = appRef(window.pid)
             if isUserWindow(window, bundleID: app?.bundleID, isMinimized: ax[window.windowID]?.isMinimized ?? false,
-                            options: options) {
+                            axFrame: ax[window.windowID]?.frame, options: options) {
                 accepted.append((window, app))
             }
         }
@@ -344,11 +368,12 @@ public enum WorkspaceScanner {
             let index = indexInApp[appKey(appRef), default: 0]
             indexInApp[appKey(appRef)] = index + 1
             let details = ax[window.windowID]
+            let frame = usesAccessibilityFrame(window, axFrame: details?.frame) ? details!.frame! : window.bounds
             windows.append(LiveWindow(
                 windowID: window.windowID, pid: window.pid, app: appRef,
                 title: window.title ?? details?.title, documentPath: details?.documentPath,
-                frame: window.bounds,
-                displayUUID: DisplayMap.display(containing: window.bounds, in: displays)?.uuid,
+                frame: frame,
+                displayUUID: DisplayMap.display(containing: frame, in: displays)?.uuid,
                 spaceIDs: window.spaceIDs, isFullScreen: ownerIDs.contains(window.windowID),
                 isMinimized: details?.isMinimized ?? false, indexInApp: index,
                 isOnCurrentSpace: !currentSpaceIDs.isDisjoint(with: window.spaceIDs)))

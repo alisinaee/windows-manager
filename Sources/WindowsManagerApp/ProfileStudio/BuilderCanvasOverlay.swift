@@ -87,7 +87,7 @@ final class BuilderCanvasController: ObservableObject {
     /// Zone rects in canvas points, inside the monitor's visible part.
     func zones(on monitor: ProfileMapLayout.Monitor) -> [(name: String, rect: CGRect)] {
         guard let layout = activeLayout(monitor.id) else { return [] }
-        let f = monitor.frame
+        let f = monitor.contentRect
         return layout.zones.compactMap { zone in
             let r = CGRect(x: f.minX + zone.rect.x * f.width, y: f.minY + zone.rect.y * f.height,
                            width: zone.rect.width * f.width, height: zone.rect.height * f.height)

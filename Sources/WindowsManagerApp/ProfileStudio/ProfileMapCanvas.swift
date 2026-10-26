@@ -167,7 +167,7 @@ struct ProfileMapCanvas: View {
 
     private func monitorView(_ monitor: ProfileMapLayout.Monitor) -> some View {
         let layout = model.layout
-        let windowsByID = Dictionary(uniqueKeysWithValues: (model.profile?.windows ?? []).map { ($0.id, $0) })
+        let windowsByID = Dictionary((model.profile?.windows ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let thumbs = layout.thumbnails.filter { $0.displayUUID == monitor.id }
         let shown = model.shownSpace(onDisplay: monitor.id)
         let tiles = layout.windows.filter { $0.displayUUID == monitor.id }
@@ -260,7 +260,7 @@ struct ProfileMapCanvas: View {
     // MARK: Tray
 
     private var trayRow: some View {
-        let windows = Dictionary(uniqueKeysWithValues: (model.profile?.windows ?? []).map { ($0.id, $0) })
+        let windows = Dictionary((model.profile?.windows ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         func chips(_ reason: ProfileSpaceIndex.TrayReason) -> [ProfileSpaceIndex.TrayEntry] {
             model.index.tray.filter { $0.reason == reason }
         }

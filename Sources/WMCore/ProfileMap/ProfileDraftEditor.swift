@@ -214,10 +214,13 @@ public struct ProfileDraftEditor {
         try edit { p in
             _ = try Self.requireDisplay(uuid, in: p)
             var slots = Self.slots(of: p, display: uuid)
-            _ = try Self.desktopSlotIndex(number, in: slots, display: uuid)
+            let source = try Self.desktopSlotIndex(number, in: slots, display: uuid)
             let slotIndices = slots.indices.filter { slots[$0].space.kind == .desktop }
+            guard let position = slotIndices.firstIndex(of: source) else {
+                throw ProfileDraftError.unknownDesktop(display: uuid, number: number)
+            }
             var desktops = slotIndices.map { slots[$0] }
-            let moved = desktops.remove(at: number - 1)
+            let moved = desktops.remove(at: position)
             desktops.insert(moved, at: min(max(newNumber, 1), desktops.count + 1) - 1)
             for (i, slotIndex) in slotIndices.enumerated() { slots[slotIndex] = desktops[i] }
             Self.commit(slots, display: uuid, into: &p)

@@ -19,6 +19,7 @@ let commands: [Command] = [
     Command(name: VirtualCommand.name, help: VirtualCommand.help, run: VirtualCommand.run),
     Command(name: AXRemoteCommand.name, help: AXRemoteCommand.help, run: AXRemoteCommand.run),
     Command(name: CaptureCommand.name, help: CaptureCommand.help, run: CaptureCommand.run),
+    Command(name: RestoreCommand.name, help: RestoreCommand.help, run: RestoreCommand.run),
 ]
 
 func usageText() -> String {

@@ -1,0 +1,374 @@
+import AppKit
+import CoreGraphics
+import Foundation
+import WMCore
+
+/// Where a new draft comes from (plan B2 step 1).
+enum StudioStartChoice: Equatable {
+    case blank
+    case currentWorkspace
+    case copyOf(UUID)
+    /// Edit a saved profile in place (no start sheet).
+    case editExisting(UUID)
+}
+
+enum ProfileBuilderPhase: Equatable {
+    case idle
+    case starting
+    case ready
+    case failed(String)
+}
+
+/// State of one Builder session: the draft (`DraftSession`), selection, the app library and the derived
+/// issue lists. Every edit goes through `ProfileDraftEditor` and is recorded in the undo history.
+@MainActor
+final class ProfileBuilderModel: ObservableObject {
+    @Published private(set) var phase: ProfileBuilderPhase = .idle
+    @Published private(set) var session: DraftSession?
+    /// Notes from the capture (missing titles, Stage Manager, ...).
+    @Published private(set) var startNotes: [String] = []
+
+    // Selection
+    @Published var selectedDisplayUUID: String?
+    @Published var selectedDesktop: Int?
+    @Published var selectedWindowID: UUID?
+
+    // Library
+    @Published private(set) var library: [LibraryEntry] = []
+    @Published private(set) var isLoadingLibrary = false
+    @Published var librarySearch = ""
+
+    // Derived
+    @Published private(set) var draftIssues: [DraftCheckIssue] = []
+    @Published private(set) var launchIssues: [LaunchIssue] = []
+    /// A sentence for people about the last failed action (edit refused, save failed). Cleared by the next success.
+    @Published private(set) var lastError: String?
+    /// The editable name text; may be empty while typing (an empty name blocks saving).
+    @Published private(set) var nameText = ""
+
+    private let store: ProfileStore
+    private var connectedDisplays: [DisplayIdentity] = []
+    private var installed: [InstalledApp]?
+
+    init(store: ProfileStore? = nil) {
+        self.store = store ?? AppState.current?.store ?? ProfileStore()
+    }
+
+    // MARK: Read access
+
+    var profile: Profile? { session?.profile }
+    var isDirty: Bool { session?.isDirty ?? false }
+    var canUndo: Bool { session?.canUndo ?? false }
+    var canRedo: Bool { session?.canRedo ?? false }
+    var isNewProfile: Bool { session?.isNew ?? false }
+    var blocksSaving: Bool { nameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || ProfileDraftCheck.blocksSaving(draftIssues) }
+    var errorCount: Int { ProfileDraftCheck.errors(draftIssues).count }
+    var warningCount: Int { ProfileDraftCheck.warnings(draftIssues).count }
+
+    /// The library filtered by `librarySearch` (name or bundle id, case-insensitive).
+    var filteredLibrary: [LibraryEntry] {
+        let q = librarySearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return library }
+        return library.filter { $0.name.localizedCaseInsensitiveContains(q) || $0.bundleID.localizedCaseInsensitiveContains(q) }
+    }
+    var runningLibrary: [LibraryEntry] { filteredLibrary.filter(\.isRunning) }
+    var installedLibrary: [LibraryEntry] { filteredLibrary.filter { !$0.isRunning && $0.isInstalled } }
+    /// Apps that already have a window or a launch-order entry in the draft.
+    var appsInProfile: [AppRef] { profile?.apps ?? [] }
+
+    // MARK: Starting
+
+    /// Builds the initial draft. Capture and the disk reads happen off the main thread.
+    func start(from choice: StudioStartChoice) async {
+        phase = .starting
+        lastError = nil
+        startNotes = []
+        let store = self.store
+        let existingNames = store.list().map(\.name)
+        let displays = await Task.detached { DisplayMap.current() }.value
+        connectedDisplays = displays
+
+        switch choice {
+        case .blank:
+            guard !displays.isEmpty else { return fail("No monitors were found.") }
+            let name = ProfileTransfer.uniqueName("New profile", among: existingNames)
+            begin(DraftSession.blankProfile(name: name, displays: displays), isNew: true)
+        case .currentWorkspace:
+            let (captured, notes) = await Task.detached { ProfileCapture.capture(name: "Current workspace") }.value
+            guard !captured.displays.isEmpty else { return fail("The workspace could not be read. Check the permissions in Settings.") }
+            startNotes = notes
+            begin(DraftSession.capturedDraft(captured, existingNames: existingNames), isNew: true)
+        case .copyOf(let id):
+            do {
+                let source = try await Task.detached { try store.load(id) }.value
+                begin(DraftSession.copyProfile(of: source, existingNames: existingNames), isNew: true)
+            } catch {
+                fail("That profile could not be opened: \(error.localizedDescription)")
+            }
+        case .editExisting(let id):
+            do {
+                let source = try await Task.detached { try store.load(id) }.value
+                begin(source, isNew: false)
+            } catch {
+                fail("That profile could not be opened: \(error.localizedDescription)")
+            }
+        }
+        await loadLibrary()
+    }
+
+    private func fail(_ message: String) {
+        session = nil
+        phase = .failed(message)
+    }
+
+    private func begin(_ initial: Profile, isNew: Bool) {
+        session = DraftSession(initial: initial, isNew: isNew)
+        selectedDisplayUUID = initial.displays.first?.uuid
+        selectedDesktop = initial.spaces.first { $0.displayUUID == selectedDisplayUUID && $0.kind == .desktop }?.desktopNumber
+        selectedWindowID = nil
+        phase = .ready
+        refresh()
+    }
+
+    // MARK: Library
+
+    /// Scans the installed apps (once per session, off the main thread) and merges them with the running apps.
+    func loadLibrary(forceRescan: Bool = false) async {
+        isLoadingLibrary = true
+        defer { isLoadingLibrary = false }
+        if installed == nil || forceRescan {
+            installed = await Task.detached { InstalledApps.scan() }.value
+        }
+        rebuildLibrary()
+        refresh()
+    }
+
+    /// Re-reads the running apps without rescanning the disk.
+    func rebuildLibrary() {
+        let running: [(name: String, bundleID: String, url: URL?)] = NSWorkspace.shared.runningApplications.compactMap { app in
+            guard app.activationPolicy == .regular, let id = app.bundleIdentifier else { return nil }
+            return (name: app.localizedName ?? id, bundleID: id, url: app.bundleURL)
+        }
+        library = InstalledApps.merge(running: running, installed: installed ?? [])
+    }
+
+    /// An `AppRef` for a library row.
+    func appRef(for entry: LibraryEntry) -> AppRef { AppRef(bundleID: entry.bundleID, name: entry.name) }
+
+    /// Adds an app from an `.app` bundle chosen with an open panel. Returns the new library row.
+    @discardableResult
+    func addAppBundle(at url: URL) -> LibraryEntry? {
+        guard let bundle = Bundle(url: url), let id = bundle.bundleIdentifier else {
+            lastError = "That is not an app (no bundle identifier)."
+            return nil
+        }
+        let name = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? url.deletingPathExtension().lastPathComponent
+        var apps = installed ?? []
+        if !InstalledApps.isInstalled(bundleID: id, in: apps) {
+            apps.append(InstalledApp(name: name, bundleID: id, url: url.standardizedFileURL))
+            installed = apps
+        }
+        rebuildLibrary()
+        refresh()
+        return library.first { $0.bundleID.lowercased() == id.lowercased() }
+    }
+
+    // MARK: Editing
+
+    /// Runs one edit through `ProfileDraftEditor`. A refused edit leaves the draft alone and sets `lastError`.
+    @discardableResult
+    func edit<T>(kind: String? = nil, _ body: (inout ProfileDraftEditor) throws -> T) -> T? {
+        guard var s = session else { return nil }
+        do {
+            let result = try s.edit(kind: kind, body)
+            session = s
+            lastError = nil
+            refresh()
+            return result
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    func setName(_ text: String) {
+        nameText = text
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != profile?.name else { return }
+        edit(kind: "rename") { try $0.setName(trimmed) }
+        nameText = text
+    }
+
+    func setIcon(_ icon: String) {
+        guard var s = session, s.profile.icon != icon else { return }
+        s.setIcon(icon)
+        session = s
+        refresh()
+    }
+
+    // Desktops and Spaces
+    @discardableResult
+    func addDesktop(onDisplay uuid: String, atNumber: Int? = nil) -> Int? {
+        guard let n = edit(kind: "addDesktop", { try $0.addDesktop(onDisplay: uuid, atNumber: atNumber) }) else { return nil }
+        selectedDisplayUUID = uuid
+        selectedDesktop = n
+        return n
+    }
+
+    func deleteDesktop(onDisplay uuid: String, number: Int, moveWindowsTo target: Int?) {
+        guard edit(kind: "deleteDesktop", { try $0.deleteDesktop(onDisplay: uuid, number: number, moveWindowsTo: target) }) != nil else { return }
+        keepSelectionValid()
+    }
+
+    func moveDesktop(onDisplay uuid: String, number: Int, toNumber new: Int) {
+        edit(kind: "moveDesktop") { try $0.moveDesktop(onDisplay: uuid, number: number, toNumber: new) }
+    }
+
+    /// `⛶ +`: makes the window full screen in a new Space.
+    func makeFullScreen(windowID: UUID, afterPosition: Int? = nil) {
+        edit(kind: "makeFullScreen") { _ = try $0.makeFullScreen(windowID: windowID, afterPosition: afterPosition) }
+    }
+
+    func moveFullScreenSpace(onDisplay uuid: String, position: Int, toIndex index: Int) {
+        edit(kind: "moveFullScreenSpace") { try $0.moveFullScreenSpace(onDisplay: uuid, position: position, toIndex: index) }
+    }
+
+    func removeFullScreenSpace(onDisplay uuid: String, position: Int, removal: FullScreenRemoval) {
+        edit(kind: "removeFullScreenSpace") { try $0.removeFullScreenSpace(onDisplay: uuid, position: position, removal: removal) }
+    }
+
+    // Windows
+    /// Drop of a library app: a planned window on `desktop` of `display`. Returns the new window id and selects it.
+    @discardableResult
+    func addWindow(app: AppRef, onDisplay uuid: String, desktop: Int,
+                   relativeFrame: CGRect? = nil, zoneName: String? = nil) -> UUID? {
+        guard let id = edit(kind: "addWindow", { try $0.addPlannedWindow(app: app, onDisplay: uuid, desktop: desktop,
+                                                                       relativeFrame: relativeFrame, zoneName: zoneName) })
+        else { return nil }
+        selectedWindowID = id
+        return id
+    }
+
+    /// Move; one entry per drag when the caller records only on drag end, otherwise ticks of the same window coalesce.
+    func moveWindow(_ id: UUID, to relativeFrame: CGRect, zoneName: String? = nil) {
+        edit(kind: "moveWindow:\(id.uuidString)") { try $0.setRelativeFrame(ofWindow: id, relativeFrame: relativeFrame, zoneName: zoneName) }
+    }
+
+    func resizeWindow(_ id: UUID, to relativeFrame: CGRect, zoneName: String? = nil) {
+        edit(kind: "resizeWindow:\(id.uuidString)") { try $0.setRelativeFrame(ofWindow: id, relativeFrame: relativeFrame, zoneName: zoneName) }
+    }
+
+    /// Dropping on another monitor tile or Space thumbnail.
+    func moveWindow(_ id: UUID, toDisplay uuid: String, desktop: Int) {
+        edit(kind: "moveWindowToSpace") { try $0.moveWindow(id, toDisplay: uuid, desktop: desktop) }
+    }
+
+    func removeWindow(_ id: UUID) {
+        guard edit(kind: "removeWindow", { try $0.removeWindow(id) }) != nil else { return }
+        if selectedWindowID == id { selectedWindowID = nil }
+    }
+
+    func setRestore(_ restore: Bool, forWindow id: UUID) {
+        edit(kind: "setRestore:\(id.uuidString)") { try $0.setRestore(restore, forWindow: id) }
+    }
+
+    func setMinimized(_ minimized: Bool, forWindow id: UUID) {
+        edit(kind: "setMinimized:\(id.uuidString)") { try $0.setMinimized(minimized, forWindow: id) }
+    }
+
+    func setOptions(_ change: @escaping (inout ProfileOptions) -> Void) {
+        edit(kind: "options") { try $0.setOptions(change) }
+    }
+
+    func setLaunchPlan(_ plan: LaunchPlan?) {
+        edit(kind: "launchPlan") { try $0.setLaunchPlan(plan) }
+    }
+
+    /// Library context menu `Launch only, no window`: a launch-order entry without a window.
+    func addLaunchOnly(app: AppRef) {
+        var plan = profile?.launchPlan ?? LaunchPlan()
+        let item = LaunchItem(app: app, wait: .appReady, withoutWindows: true)
+        guard !plan.items.contains(where: { $0.id == item.id }) else { return }
+        plan.items.append(item)
+        setLaunchPlan(plan)
+    }
+
+    // MARK: Undo
+
+    func undo() {
+        guard var s = session, s.undo() else { return }
+        session = s
+        keepSelectionValid()
+        refresh()
+    }
+
+    func redo() {
+        guard var s = session, s.redo() else { return }
+        session = s
+        keepSelectionValid()
+        refresh()
+    }
+
+    // MARK: Save and discard
+
+    /// Saves through `ProfileStore`. The name is made unique among the other saved profiles. Returns the stored
+    /// profile, or nil with `lastError` set (empty name, blocking issues, disk error).
+    @discardableResult
+    func save() -> Profile? {
+        guard var s = session else { return nil }
+        let ownID = s.profile.id
+        let others = store.list().filter { $0.id != ownID }.map(\.name)
+        do {
+            let ready = try s.prepareSave(otherNames: others, connectedDisplays: connectedDisplays)
+            let saved = try store.save(ready)
+            s.markSaved(saved)
+            session = s
+            lastError = nil
+            refresh()
+            AppState.current?.reloadProfiles()
+            return saved
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Throws the draft away (the caller asks first when `isDirty`).
+    func discard() {
+        session = nil
+        phase = .idle
+        draftIssues = []
+        launchIssues = []
+        startNotes = []
+        lastError = nil
+        nameText = ""
+        selectedWindowID = nil
+        selectedDesktop = nil
+        selectedDisplayUUID = nil
+    }
+
+    // MARK: Derived state
+
+    private func refresh() {
+        guard let s = session else { return }
+        let p = s.profile
+        if nameText.trimmingCharacters(in: .whitespacesAndNewlines) != p.name { nameText = p.name }
+        draftIssues = s.issues(connectedDisplays: connectedDisplays.isEmpty ? nil : connectedDisplays)
+        if let plan = p.launchPlan {
+            let ids = installed.map { Set($0.map(\.bundleID)) }
+            launchIssues = LaunchSequence.validate(plan: plan, profile: p, installedApps: ids)
+        } else {
+            launchIssues = []
+        }
+    }
+
+    private func keepSelectionValid() {
+        guard let p = profile else { return }
+        if let id = selectedWindowID, !p.windows.contains(where: { $0.id == id }) { selectedWindowID = nil }
+        if let d = selectedDisplayUUID, !p.displays.contains(where: { $0.uuid == d }) { selectedDisplayUUID = p.displays.first?.uuid }
+        let desktops = p.spaces.filter { $0.displayUUID == selectedDisplayUUID && $0.kind == .desktop }.compactMap(\.desktopNumber)
+        if let n = selectedDesktop, !desktops.contains(n) { selectedDesktop = desktops.first }
+    }
+}

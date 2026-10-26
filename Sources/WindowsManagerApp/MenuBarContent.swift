@@ -32,6 +32,9 @@ struct MenuBarContent: View {
             MenuRow(title: "Setup…") {
                 OnboardingWindowController.shared.show()
             }
+            MenuRow(title: "Layouts…") {
+                LayoutEditorWindowController.shared.show()
+            }
             MenuRow(title: "Settings…") {
                 NSApp.activate()
                 openSettings()

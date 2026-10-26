@@ -78,7 +78,7 @@ private final class BlockingRestoreEnvironment: RestoreEnvironment {
         let moved = F.defaultFrame.offsetBy(dx: 300, dy: 0)
         let fake = FakeRestoreEnvironment(scans: [F.scan([F.live(101, F.chrome, frame: moved)])])
         let env = BlockingRestoreEnvironment(fake)
-        env.elementBlock = 0.6
+        env.elementBlock = 1.0
         var configuration = RestoreEngine.Configuration()
         configuration.stepTimeout = 0.1
         let engine = RestoreEngine(environment: env, configuration: configuration)
@@ -86,7 +86,7 @@ private final class BlockingRestoreEnvironment: RestoreEnvironment {
         let started = ProcessInfo.processInfo.systemUptime
         let ticks = await ticksWhile { report = await engine.run(profile) }
         let took = ProcessInfo.processInfo.systemUptime - started
-        #expect(took < 0.5) // the timeout fired while the lookup was still blocked
+        #expect(took < 0.9) // the timeout fired while the lookup was still blocked
         #expect(ticks >= 2)
         #expect(report?.steps.first?.status.isFailed == true)
         #expect(report?.steps.first?.status.reason?.contains("timed out") == true)

@@ -66,6 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            !OnboardingWindowController.isCompleted || !AXPermission.isTrusted() {
             OnboardingWindowController.shared.show()
         }
+
+        // Snap overlay (Option-drag): starts only when Accessibility is trusted and a layout exists.
+        if !CommandLine.arguments.contains("--self-check") { SnapMonitor.shared.startIfPossible() }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

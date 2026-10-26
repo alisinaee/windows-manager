@@ -115,6 +115,14 @@ public enum TitleMatch: Codable, Hashable, Sendable {
     }
 }
 
+/// Where a `WindowSnapshot` came from. Nil in files from before the Profile Studio: those are captured windows.
+public enum WindowOrigin: String, Codable, Hashable, Sendable {
+    /// Recorded from the live workspace by a capture.
+    case captured
+    /// Placed by hand in the Profile Studio Builder; the app may or may not open such a window.
+    case planned
+}
+
 /// One window as it was when the profile was captured.
 public struct WindowSnapshot: Codable, Hashable, Sendable, Identifiable {
     /// Stable id inside this profile; `SpaceSnapshot.fullScreenWindowIDs` points at it.
@@ -140,11 +148,16 @@ public struct WindowSnapshot: Codable, Hashable, Sendable, Identifiable {
     public var zIndex: Int
     /// The user can untick a window to leave it out of a restore.
     public var restore: Bool
+    /// nil = captured (older files and every capture). `.planned` = placed in the Builder.
+    public var origin: WindowOrigin?
+    /// Name of the Layout zone the window was snapped to ("Left half"), for display only; nil when not snapped.
+    public var zoneName: String?
 
     public init(id: UUID = UUID(), app: AppRef, title: String? = nil, titleMatch: TitleMatch = .any,
                 documentPath: String? = nil, indexInApp: Int = 0, displayUUID: String, frame: CGRect,
                 relativeFrame: CGRect, placement: SpacePlacement, isFullScreen: Bool = false,
-                isMinimized: Bool = false, zIndex: Int = 0, restore: Bool = true) {
+                isMinimized: Bool = false, zIndex: Int = 0, restore: Bool = true,
+                origin: WindowOrigin? = nil, zoneName: String? = nil) {
         self.id = id
         self.app = app
         self.title = title
@@ -159,11 +172,13 @@ public struct WindowSnapshot: Codable, Hashable, Sendable, Identifiable {
         self.isMinimized = isMinimized
         self.zIndex = zIndex
         self.restore = restore
+        self.origin = origin
+        self.zoneName = zoneName
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, app, title, titleMatch, documentPath, indexInApp, displayUUID, frame, relativeFrame
-        case placement, isFullScreen, isMinimized, zIndex, restore
+        case placement, isFullScreen, isMinimized, zIndex, restore, origin, zoneName
     }
 
     public init(from decoder: Decoder) throws {
@@ -182,6 +197,8 @@ public struct WindowSnapshot: Codable, Hashable, Sendable, Identifiable {
         isMinimized = try c.decode(Bool.self, forKey: .isMinimized)
         zIndex = try c.decode(Int.self, forKey: .zIndex)
         restore = try c.decodeIfPresent(Bool.self, forKey: .restore) ?? true
+        origin = try c.decodeIfPresent(WindowOrigin.self, forKey: .origin)
+        zoneName = try c.decodeIfPresent(String.self, forKey: .zoneName)
     }
 }
 
@@ -204,19 +221,25 @@ public struct ProfileOptions: Codable, Hashable, Sendable {
     public var otherApps: OtherAppsPolicy
     /// Global shortcut that restores this profile, e.g. "ctrl+opt+1".
     public var hotkey: String?
+    /// Create missing Desktops on the monitors before placing windows (the engine also honors the global
+    /// setting). Written only when true, so profiles that never set it re-encode byte-identical.
+    public var addMissingDesktops: Bool
 
     public init(launchMissingApps: Bool = true, restoreFullScreen: Bool = true, restoreSpaces: Bool = true,
-                restoreSpaceOrder: Bool = true, otherApps: OtherAppsPolicy = .leave, hotkey: String? = nil) {
+                restoreSpaceOrder: Bool = true, otherApps: OtherAppsPolicy = .leave, hotkey: String? = nil,
+                addMissingDesktops: Bool = false) {
         self.launchMissingApps = launchMissingApps
         self.restoreFullScreen = restoreFullScreen
         self.restoreSpaces = restoreSpaces
         self.restoreSpaceOrder = restoreSpaceOrder
         self.otherApps = otherApps
         self.hotkey = hotkey
+        self.addMissingDesktops = addMissingDesktops
     }
 
     private enum CodingKeys: String, CodingKey {
         case launchMissingApps, restoreFullScreen, restoreSpaces, restoreSpaceOrder, otherApps, hotkey
+        case addMissingDesktops
     }
 
     // Every switch falls back to its default, so a newer option never breaks an older file.
@@ -228,6 +251,19 @@ public struct ProfileOptions: Codable, Hashable, Sendable {
         restoreSpaceOrder = try c.decodeIfPresent(Bool.self, forKey: .restoreSpaceOrder) ?? true
         otherApps = try c.decodeIfPresent(OtherAppsPolicy.self, forKey: .otherApps) ?? .leave
         hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey)
+        addMissingDesktops = try c.decodeIfPresent(Bool.self, forKey: .addMissingDesktops) ?? false
+    }
+
+    // Written by hand, not synthesized, so a `false` addMissingDesktops adds no key to existing files.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(launchMissingApps, forKey: .launchMissingApps)
+        try c.encode(restoreFullScreen, forKey: .restoreFullScreen)
+        try c.encode(restoreSpaces, forKey: .restoreSpaces)
+        try c.encode(restoreSpaceOrder, forKey: .restoreSpaceOrder)
+        try c.encode(otherApps, forKey: .otherApps)
+        try c.encodeIfPresent(hotkey, forKey: .hotkey)
+        if addMissingDesktops { try c.encode(true, forKey: .addMissingDesktops) }
     }
 }
 
@@ -254,14 +290,17 @@ public struct Profile: Codable, Hashable, Sendable, Identifiable {
     public var notes: String?
     /// Whether Stage Manager was on when the profile was captured; nil in profiles saved before P3.8.
     public var stageManagerOn: Bool?
+    /// Launch order and timing; nil = launch every closed app in parallel, as before the launch order existed.
+    public var launchPlan: LaunchPlan?
 
     /// `updatedAt` defaults to `createdAt`.
     public init(schemaVersion: Int = Profile.currentSchemaVersion, id: UUID = UUID(), name: String,
                 icon: String = Profile.defaultIcon, createdAt: Date = Date(), updatedAt: Date? = nil,
                 monitorSetKey: String, displays: [DisplayIdentity] = [], spaces: [SpaceSnapshot] = [],
                 windows: [WindowSnapshot] = [], options: ProfileOptions = ProfileOptions(), notes: String? = nil,
-                stageManagerOn: Bool? = nil) {
+                stageManagerOn: Bool? = nil, launchPlan: LaunchPlan? = nil) {
         self.stageManagerOn = stageManagerOn
+        self.launchPlan = launchPlan
         self.schemaVersion = schemaVersion
         self.id = id
         self.name = name
@@ -278,7 +317,7 @@ public struct Profile: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, id, name, icon, createdAt, updatedAt, monitorSetKey, displays, spaces, windows
-        case options, notes, stageManagerOn
+        case options, notes, stageManagerOn, launchPlan
     }
 
     public init(from decoder: Decoder) throws {
@@ -296,6 +335,7 @@ public struct Profile: Codable, Hashable, Sendable, Identifiable {
         options = try c.decodeIfPresent(ProfileOptions.self, forKey: .options) ?? ProfileOptions()
         notes = try c.decodeIfPresent(String.self, forKey: .notes)
         stageManagerOn = try c.decodeIfPresent(Bool.self, forKey: .stageManagerOn)
+        launchPlan = try c.decodeIfPresent(LaunchPlan.self, forKey: .launchPlan)
     }
 
     // MARK: Helpers
@@ -320,6 +360,15 @@ public struct Profile: Codable, Hashable, Sendable, Identifiable {
         var result: [AppRef] = []
         for window in windows where !result.contains(where: { Self.isSameApp($0, window.app) }) {
             result.append(window.app)
+        }
+        return result
+    }
+
+    /// `apps` plus the launch-only apps of the launch plan (apps that launch without a window to place).
+    public var launchApps: [AppRef] {
+        var result = apps
+        for item in launchPlan?.items ?? [] where item.withoutWindows && !result.contains(where: { Self.isSameApp($0, item.app) }) {
+            result.append(item.app)
         }
         return result
     }

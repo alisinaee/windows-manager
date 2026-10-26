@@ -16,20 +16,40 @@ final class LayoutEditorModel: ObservableObject {
     /// Commits the name draft to the layout being left before the selection moves, then loads the new one's name.
     @Published var selectedID: UUID? {
         willSet { commitName() }
-        didSet { nameDraft = selected?.name ?? "" }
+        didSet {
+            nameDraft = selected?.name ?? ""
+            if oldValue != selectedID {
+                selectedZoneID = nil
+                selectedZoneIDs = []
+            }
+        }
     }
+    /// The zone that single-zone actions (split, delete) use. See `ZoneSelection.primary`.
     @Published var selectedZoneID: UUID?
+    /// Every selected zone, for merging. A plain tap selects one zone; Shift or Command toggles zones.
+    @Published var selectedZoneIDs: Set<UUID> = []
     @Published var displays: [DisplayIdentity] = []
     @Published var runningApps: [RunningAppChip] = []
     @Published var errorText: String?
     /// The name as typed; saved only by `commitName()` (on submit or focus loss), not per keystroke.
     @Published var nameDraft = ""
+    /// Grid, merge and remove controls. Their closures call back into this model through `actionTarget`.
+    let gridControls: LayoutGridControlsModel
 
     private let store: LayoutStore
+    private let actionTarget: GridActionTarget
     private var edgeDragStart: Double?
 
     init(store: LayoutStore = LayoutStore()) {
         self.store = store
+        let target = GridActionTarget()
+        actionTarget = target
+        gridControls = LayoutGridControlsModel(actions: LayoutGridActions(
+            applyGrid: { [target] rows, columns in target.editor?.applyGrid(rows: rows, columns: columns) },
+            mergeSelected: { [target] in target.editor?.mergeSelectedZones() },
+            removeSelected: { [target] in target.editor?.removeSelectedZoneIntoNeighbour() }
+        ))
+        target.editor = self
         reload()
     }
 
@@ -79,12 +99,21 @@ final class LayoutEditorModel: ObservableObject {
         layouts.append(layout)
         selectedID = layout.id
         selectedZoneID = nil
+        selectedZoneIDs = []
         persist(layout)
     }
 
     func applyPreset(_ preset: LayoutPreset) {
         mutate { $0.zones = preset.makeZones(); $0.assignments = [:] }
         selectedZoneID = nil
+        selectedZoneIDs = []
+    }
+
+    /// Tapping a zone selects it; with Shift or Command held (`extend`) it is toggled in the multi-selection.
+    func tapZone(_ zoneID: UUID, extend: Bool) {
+        let next = ZoneSelection.afterTap(selectedZoneIDs, tapped: zoneID, extend: extend)
+        selectedZoneIDs = next
+        selectedZoneID = ZoneSelection.primary(in: next, tapped: zoneID)
     }
 
     func deleteSelected() {
@@ -119,7 +148,10 @@ final class LayoutEditorModel: ObservableObject {
     func splitSelectedZone(_ axis: SplitAxis) {
         guard let zone = selectedZoneID else { return }
         mutate { layout in
-            if let ids = layout.split(zoneID: zone, axis: axis) { selectedZoneID = ids.0 }
+            if let ids = layout.split(zoneID: zone, axis: axis) {
+                selectedZoneID = ids.0
+                selectedZoneIDs = [ids.0]
+            }
         }
     }
 
@@ -127,6 +159,52 @@ final class LayoutEditorModel: ObservableObject {
         guard let zone = selectedZoneID else { return }
         mutate { $0.removeZone(zone) }
         selectedZoneID = nil
+        selectedZoneIDs = []
+    }
+
+    // MARK: Grid, merge and remove (LayoutBuilder)
+
+    /// Replaces the zones with a rows x columns grid. The apps on the old zones are dropped.
+    func applyGrid(rows: Int, columns: Int) -> String? {
+        guard let layout = selected else { return nil }
+        do {
+            let built = try LayoutBuilder.grid(rows: rows, columns: columns, name: layout.name, displayKey: layout.displayKey)
+            mutate { $0.zones = built.zones; $0.assignments = [:] }
+            selectedZoneID = nil
+            selectedZoneIDs = []
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Merges the selected zones into one. Needs two or more zones that form a rectangle.
+    func mergeSelectedZones() -> String? {
+        guard let layout = selected else { return nil }
+        do {
+            let merged = try LayoutBuilder.merge(layout, zoneIDs: Array(selectedZoneIDs))
+            mutate { $0.zones = merged.zones; $0.assignments = merged.assignments }
+            selectedZoneID = merged.zones.first { selectedZoneIDs.contains($0.id) }?.id
+            selectedZoneIDs = selectedZoneID.map { [$0] } ?? []
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Removes the selected zone and gives its area and apps to the neighbour with the longest shared edge.
+    func removeSelectedZoneIntoNeighbour() -> String? {
+        guard let layout = selected else { return nil }
+        guard let zone = selectedZoneID else { return "Click a zone to select it first." }
+        do {
+            let removed = try LayoutBuilder.removeZone(layout, zoneID: zone)
+            mutate { $0.zones = removed.zones; $0.assignments = removed.assignments }
+            selectedZoneID = nil
+            selectedZoneIDs = []
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
     }
 
     func assign(bundleID: String, to zoneID: UUID) {
@@ -176,6 +254,12 @@ final class LayoutEditorModel: ObservableObject {
         while names.contains("\(base) \(n)") { n += 1 }
         return "\(base) \(n)"
     }
+}
+
+/// Lets the grid action closures reach the editor without keeping it alive. Set once `init` has finished.
+@MainActor
+private final class GridActionTarget {
+    weak var editor: LayoutEditorModel?
 }
 
 extension Notification.Name {

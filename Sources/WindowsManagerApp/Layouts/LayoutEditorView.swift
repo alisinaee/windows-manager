@@ -1,8 +1,10 @@
+import AppKit
 import SwiftUI
 import WMCore
 
-/// Layout editor: layouts on the left, the monitor mini map in the middle, running apps on the right.
+/// Layout editor: layouts on the left, the monitor mini map and grid controls in the middle, running apps on the right.
 /// Drag an app chip onto a zone to assign it; drag a zone edge to resize; tap a preset to start over.
+/// Tap a zone to select it; Shift- or Command-click adds or removes zones from the selection for merging.
 struct LayoutEditorView: View {
     @ObservedObject var model: LayoutEditorModel
     @FocusState private var nameFocused: Bool
@@ -26,7 +28,7 @@ struct LayoutEditorView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Layouts").font(.headline)
-            List(selection: Binding(get: { model.selectedID }, set: { model.selectedID = $0; model.selectedZoneID = nil })) {
+            List(selection: Binding(get: { model.selectedID }, set: { model.selectedID = $0 })) {
                 ForEach(model.layouts) { layout in
                     Text(layout.name).tag(layout.id as UUID?)
                 }
@@ -69,14 +71,19 @@ struct LayoutEditorView: View {
                         Button(preset.title) { model.applyPreset(preset) }
                     }
                 }
-                MiniMap(model: model, layout: layout, display: display)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                HStack(alignment: .top, spacing: 12) {
+                    MiniMap(model: model, layout: layout, display: display)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    LayoutGridControls(model: model.gridControls)
+                        .frame(width: 180)
+                }
+                .frame(maxHeight: .infinity)
                 HStack {
                     Button("Split left | right") { model.splitSelectedZone(.vertical) }
                     Button("Split top / bottom") { model.splitSelectedZone(.horizontal) }
                     Button("Delete zone") { model.deleteSelectedZone() }
                     Spacer()
-                    Text(model.selectedZoneID == nil ? "Click a zone to select it" : "Zone selected")
+                    Text(selectionHint)
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 .disabled(model.selectedZoneID == nil)
@@ -99,6 +106,14 @@ struct LayoutEditorView: View {
                 .fixedSize()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var selectionHint: String {
+        switch model.selectedZoneIDs.count {
+        case 0: return "Click a zone to select it"
+        case 1: return "Zone selected"
+        default: return "\(model.selectedZoneIDs.count) zones selected"
         }
     }
 
@@ -234,7 +249,7 @@ private struct MiniMap: View {
 
     private func zoneView(_ zone: Zone, size: CGSize) -> some View {
         let r = zone.rect
-        let selected = model.selectedZoneID == zone.id
+        let selected = model.selectedZoneIDs.contains(zone.id)
         return ZStack(alignment: .topLeading) {
             Rectangle()
                 .fill(Color.accentColor.opacity(selected ? 0.30 : 0.15))
@@ -258,7 +273,11 @@ private struct MiniMap: View {
         }
         .frame(width: r.width * size.width, height: r.height * size.height, alignment: .topLeading)
         .contentShape(Rectangle())
-        .onTapGesture { model.selectedZoneID = zone.id }
+        .onTapGesture {
+            // Read the modifiers at tap time: Shift or Command adds or removes this zone from the selection.
+            let flags = NSEvent.modifierFlags
+            model.tapZone(zone.id, extend: flags.contains(.shift) || flags.contains(.command))
+        }
         .offset(x: r.x * size.width, y: r.y * size.height)
     }
 

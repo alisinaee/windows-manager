@@ -162,7 +162,9 @@ public enum WorkspaceScanner {
             } else if !trusted {
                 notes.append("Accessibility access is not granted, so document paths and minimized windows could not be read.")
             } else {
-                ax = readAccessibility(pids: accessibilityCandidates(catalog: catalog, options: options))
+                let candidates = accessibilityCandidates(catalog: catalog, options: options)
+                ax = readAccessibility(pids: candidates)
+                recoverThumbnailFrames(catalog: catalog, pids: candidates, ax: &ax)
             }
         }
 
@@ -230,6 +232,32 @@ public enum WorkspaceScanner {
         return result
     }
 
+    /// Time shared by all apps for `AXRemoteWindows` lookups of windows on other Spaces during one scan.
+    private static let recoveryTimeBudget: TimeInterval = 1.0
+
+    /// Small windows on a Space that `readAccessibility` did not give a frame are looked up one by one with
+    /// `AXRemoteWindows` (by element id, so no Space switch), until the shared time budget runs out. Windows that
+    /// get a frame are then kept by `isUserWindow`; the rest are reported by `assemble`.
+    private static func recoverThumbnailFrames(catalog: [CatalogWindow], pids: Set<Int32>,
+                                               ax: inout [UInt32: AXWindowDetails]) {
+        let wanted = thumbnailWindowsNeedingFrame(catalog: catalog, ax: ax, pids: pids)
+        let deadline = ProcessInfo.processInfo.systemUptime + recoveryTimeBudget
+        for pid in wanted.keys.sorted() {
+            guard let ids = wanted[pid] else { continue }
+            let remaining = deadline - ProcessInfo.processInfo.systemUptime
+            guard remaining > 0 else { break }
+            let found = AXRemoteWindows.windows(pid: pid, wanted: ids, timeBudget: remaining)
+            for windowID in ids {
+                guard let element = found[windowID], ax[windowID]?.frame == nil else { continue }
+                let existing = ax[windowID]
+                ax[windowID] = AXWindowDetails(
+                    title: existing?.title ?? element.title.flatMap { $0.isEmpty ? nil : $0 },
+                    documentPath: existing?.documentPath ?? AXWindows.documentPath(of: element),
+                    isMinimized: existing?.isMinimized ?? element.isMinimized, frame: element.frame)
+            }
+        }
+    }
+
     // MARK: Filter (pure)
 
     /// True for apps whose windows are never part of a workspace: Windows Manager, Dock, Window Server,
@@ -262,9 +290,49 @@ public enum WorkspaceScanner {
     /// True when the window server's bounds are too small only because of a thumbnail (window on an inactive
     /// Space or in the Stage Manager strip) and Accessibility shows a real, user-sized frame.
     static func usesAccessibilityFrame(_ window: CatalogWindow, axFrame: CGRect?) -> Bool {
-        guard let axFrame, !window.spaceIDs.isEmpty, window.alpha > 0.01, window.appName != "WindowManager",
-              min(window.bounds.width, window.bounds.height) < 100 else { return false }
+        guard let axFrame, isSmallOnSpace(window) else { return false }
         return min(axFrame.width, axFrame.height) >= 100
+    }
+
+    /// A visible window on a Space whose bounds are under 100 pt on one side: the thumbnail shape of a window on an
+    /// inactive Space (or a tiny helper, which Accessibility then cannot vouch for). Stage Manager overlays are out. Pure.
+    static func isSmallOnSpace(_ window: CatalogWindow) -> Bool {
+        !window.spaceIDs.isEmpty && window.alpha > 0.01 && window.appName != "WindowManager"
+            && min(window.bounds.width, window.bounds.height) < 100
+    }
+
+    /// The windows that are small on a Space and have no Accessibility frame yet, by pid, for the pids in `pids`. Pure.
+    static func thumbnailWindowsNeedingFrame(catalog: [CatalogWindow], ax: [UInt32: AXWindowDetails],
+                                             pids: Set<Int32>) -> [Int32: Set<UInt32>] {
+        var result: [Int32: Set<UInt32>] = [:]
+        for window in catalog where pids.contains(window.pid) && isSmallOnSpace(window)
+            && ax[window.windowID]?.frame == nil {
+            result[window.pid, default: []].insert(window.windowID)
+        }
+        return result
+    }
+
+    /// True for a small window on a Space that the scan drops for want of a usable frame: its app is known and not
+    /// excluded, and no Accessibility frame makes it a user window. Pure.
+    static func isUnresolvedThumbnail(_ window: CatalogWindow, app: AppRef?, ax: [UInt32: AXWindowDetails],
+                                      options: ScanOptions) -> Bool {
+        guard let app, isSmallOnSpace(window),
+              !usesAccessibilityFrame(window, axFrame: ax[window.windowID]?.frame) else { return false }
+        return !isExcludedApp(name: window.appName, bundleID: app.bundleID, options: options)
+    }
+
+    /// One note per app that had windows dropped this way, in order of first appearance. Pure.
+    static func unresolvedThumbnailNotes(appNames: [String]) -> [String] {
+        var order: [String] = []
+        var counts: [String: Int] = [:]
+        for name in appNames {
+            if counts[name] == nil { order.append(name) }
+            counts[name, default: 0] += 1
+        }
+        return order.map { name in
+            let n = counts[name, default: 0]
+            return "\(n) \(n == 1 ? "window" : "windows") of \(name) on other Spaces could not be read and were skipped"
+        }
     }
 
     /// For each full-screen Space, the window(s) that own it, as CGWindowIDs: one normally, two for Split View.
@@ -341,13 +409,21 @@ public enum WorkspaceScanner {
 
         // Which catalog windows are user windows.
         var accepted: [(window: CatalogWindow, app: AppRef?)] = []
+        // Only when Accessibility was really read (otherwise every small window would be reported), and only for
+        // windows on other Spaces: a thin toolbar strip on the active Space is not a lost window.
+        let accessibilityRead = options.readAccessibility && accessibilityTrusted && !screenIsLocked
+        var droppedThumbnailApps: [String] = []
         for window in catalog {
             let app = appRef(window.pid)
             if isUserWindow(window, bundleID: app?.bundleID, isMinimized: ax[window.windowID]?.isMinimized ?? false,
                             axFrame: ax[window.windowID]?.frame, options: options) {
                 accepted.append((window, app))
+            } else if accessibilityRead, currentSpaceIDs.isDisjoint(with: window.spaceIDs),
+                      isUnresolvedThumbnail(window, app: app, ax: ax, options: options) {
+                droppedThumbnailApps.append(window.appName)
             }
         }
+        notes += unresolvedThumbnailNotes(appNames: droppedThumbnailApps)
 
         // Owners of full-screen Spaces; windows that only sit on a full-screen Space without owning it
         // are overlays (toolbars, menu bar strips).

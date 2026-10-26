@@ -186,11 +186,11 @@ struct OnboardingView: View {
                 LabeledContent("Stage Manager") {
                     StatusLabel(
                         model.report.stageManagerOn ? "On" : "Off",
-                        kind: model.report.stageManagerOn ? .warning : .good)
+                        kind: .good)
                 }
                 Text(model.report.stageManagerOn
-                    ? "Stage Manager arranges windows on its own, which can clash with the positions a profile restores. If windows end up in unexpected places, turn it off in Control Center."
-                    : "Stage Manager is off. It would otherwise arrange windows on its own and could clash with the positions a profile restores.")
+                    ? "Keep Stage Manager on if you like it. Windows Manager works with it and restores your windows inside it."
+                    : "Stage Manager is off. Windows Manager works with it on or off.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -225,7 +225,7 @@ struct OnboardingView: View {
                     summaryRow(
                         "Stage Manager",
                         model.report.stageManagerOn ? "On" : "Off",
-                        model.report.stageManagerOn ? .warning : .good)
+                        .good)
                 }
                 .padding(4)
             }

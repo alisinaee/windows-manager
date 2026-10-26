@@ -39,6 +39,9 @@ struct MenuBarContent: View {
             MenuRow(title: "Layouts…") {
                 LayoutEditorWindowController.shared.show()
             }
+            MenuRow(title: "Profiles…") {
+                ProfileStudioWindowController.shared.show()
+            }
             MenuRow(title: "Check for Updates…") {
                 UpdateController.shared.checkForUpdates()
             }

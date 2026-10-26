@@ -75,6 +75,7 @@ struct ProfilesSettingsTab: View {
                 Text("Set hotkeys in the Hotkeys tab.")
                     .foregroundStyle(.secondary)
                 Section {
+                    Button("Open in Profile Studio") { ProfileStudioWindowController.shared.show(profileID: id) }
                     HStack {
                         Button("Duplicate") { duplicate(id) }
                         Button("Export…") { export(id) }

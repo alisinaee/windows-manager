@@ -236,6 +236,7 @@ struct StudioEditDetail: View {
                 Divider()
                 HSplitView {
                     AppLibraryView(builder: builder)
+                        .onAppear { builder.mapModel = map }
                         .frame(minWidth: 180, idealWidth: 220, maxWidth: 300)
                     VStack(spacing: 0) {
                         BuilderMapCanvas(map: map, builder: builder)

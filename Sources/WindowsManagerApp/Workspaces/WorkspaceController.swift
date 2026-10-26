@@ -44,7 +44,10 @@ final class WorkspaceController: ObservableObject {
     }
 
     private var model = WorkspaceModel()
-    private let store = WorkspaceModelStore()
+    private let store: WorkspaceModelStore
+    /// Every save goes through here. It holds the user's latest model so a switch's save can merge
+    /// the switch's state into it, and user edits made during a switch are not written away.
+    private let saveGate: WorkspaceSaveGate
     private let backend = SystemWorkspaceBackend()
     /// Mixed mode: the switcher sees the backend minus full-screen windows and windows of other Spaces.
     private let mixedBackend = FullScreenAwareSystem(base: SystemWorkspaceBackend(), info: SystemMixedModeSpaceInfo())
@@ -68,6 +71,8 @@ final class WorkspaceController: ObservableObject {
     private let log = AppInfo.logger
 
     private init() {
+        store = WorkspaceModelStore()
+        saveGate = WorkspaceSaveGate(store: store)
         let d = UserDefaults.standard
         isEnabled = d.bool(forKey: Self.enabledKey)
         naturalSwipe = d.object(forKey: Self.naturalSwipeKey) as? Bool ?? true
@@ -77,6 +82,7 @@ final class WorkspaceController: ObservableObject {
             statusText = error.localizedDescription
             log.error("Workspace file not loaded: \(error.localizedDescription, privacy: .public)")
         }
+        saveGate.setUserModel(model)
         publish()
     }
 
@@ -172,7 +178,7 @@ final class WorkspaceController: ObservableObject {
         let input = model
         // NSScreen is a main-thread API: the screen frames are read here, the switch only uses the copy.
         let system = SwitchSystem(base: mixedBackend, screens: CornerParker.screenFrames())
-        let saver = store
+        let saver = WorkspaceSwitchSaver(gate: saveGate)
         switchQueue.async { [weak self] in
             let switcher = WorkspaceSwitcher(model: input, system: system, saver: saver)
             let outcome: Result<WorkspaceSwitchResult, Error>
@@ -309,7 +315,7 @@ final class WorkspaceController: ObservableObject {
         let report = VirtualActionApplier.apply(plan.actions, system: backend)
         model = plan.model
         if let first = report.failures.first { statusText = first }
-        try? store.save(model)
+        try? saveGate.saveUserEdit(model)
         publish()
     }
 
@@ -361,12 +367,54 @@ final class WorkspaceController: ObservableObject {
     }
 
     private func commit() {
-        do { try store.save(model) } catch { statusText = "Could not save workspaces: \(error.localizedDescription)" }
+        do { try saveGate.saveUserEdit(model) } catch { statusText = "Could not save workspaces: \(error.localizedDescription)" }
         publish()
     }
 
     private func publish() {
         workspaces = model.workspaces
         activeID = model.activeWorkspaceID
+    }
+}
+
+/// The user's latest workspace model, guarded by a lock so the background switch can read it. Every save
+/// happens under the same lock, so a switch's save and a user edit's save cannot interleave and write an
+/// older copy over a newer one.
+private final class WorkspaceSaveGate: @unchecked Sendable {
+    private let store: WorkspaceModelStore
+    private let lock = NSLock()
+    private var userModel = WorkspaceModel()
+
+    init(store: WorkspaceModelStore) {
+        self.store = store
+    }
+
+    /// Records the model as loaded at launch, without saving it.
+    func setUserModel(_ model: WorkspaceModel) {
+        lock.lock(); defer { lock.unlock() }
+        userModel = model
+    }
+
+    /// Saves the user's model and remembers it as the base for later switch saves.
+    func saveUserEdit(_ model: WorkspaceModel) throws {
+        lock.lock(); defer { lock.unlock() }
+        userModel = model
+        try store.save(model)
+    }
+
+    /// Saves a switch's model merged onto the user's latest edits: workspaces come from the user, the
+    /// active id and hidden records from the switch.
+    func saveSwitch(_ switchModel: WorkspaceModel) throws {
+        lock.lock(); defer { lock.unlock() }
+        try store.save(WorkspaceModelMerge.merge(userEdited: userModel, switchResult: switchModel))
+    }
+}
+
+/// The saver a switch uses on the background queue. It never writes the switch's copy of the workspaces.
+private struct WorkspaceSwitchSaver: WorkspaceModelSaving, Sendable {
+    let gate: WorkspaceSaveGate
+
+    func save(_ model: WorkspaceModel) throws {
+        try gate.saveSwitch(model)
     }
 }

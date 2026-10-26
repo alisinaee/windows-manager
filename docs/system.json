@@ -16,7 +16,9 @@
       "name": "Menu bar UI",
       "layer": "ui",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WindowsManagerApp/*.swift"
+      ],
       "notes": "MenuBarExtra: profile list, Run, Capture, drift warnings, mode switch.",
       "tasks": [
         "P2.9"
@@ -50,7 +52,10 @@
       "name": "Permission onboarding",
       "layer": "ui",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WindowsManagerApp/Onboarding/*.swift",
+        "Sources/WMCore/System/*.swift"
+      ],
       "notes": "Accessibility check and prompt; optional Screen Recording; Spaces settings advice.",
       "tasks": [
         "P2.10"
@@ -94,9 +99,13 @@
       "name": "Profile engine",
       "layer": "core",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Profiles/WorkspaceScanner.swift",
+        "Sources/WMCore/Profiles/ProfileCapture.swift"
+      ],
       "notes": "Capture and restore orchestration; one restore = a list of steps with retries and timeouts.",
       "tasks": [
+        "P2.5",
         "P2.8"
       ]
     },
@@ -116,7 +125,10 @@
       "name": "Window matcher",
       "layer": "core",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Restore/LiveWindow.swift",
+        "Sources/WMCore/Restore/WindowMatcher.swift"
+      ],
       "notes": "Matches saved windows to live ones by bundle id, title pattern, document, index.",
       "tasks": [
         "P2.6"
@@ -127,7 +139,9 @@
       "name": "Display map",
       "layer": "core",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Displays/*.swift"
+      ],
       "notes": "Display UUIDs, monitor sets, fallback mapping when a monitor is missing; auto-profile on monitor change.",
       "tasks": [
         "P2.3",
@@ -246,7 +260,8 @@
       ],
       "notes": "AXUIElement wrapper: windows, frame set (pos, size, pos), AXFullScreen, observers, _AXUIElementGetWindow.",
       "tasks": [
-        "P2.2"
+        "P2.2",
+        "P2.13"
       ]
     },
     {
@@ -295,7 +310,9 @@
       "name": "App launcher",
       "layer": "platform",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Restore/AppLauncher.swift"
+      ],
       "notes": "NSWorkspace open by bundle id, wait for first window via AX observer, timeouts.",
       "tasks": [
         "P2.7"
@@ -306,7 +323,11 @@
       "name": "Profile store",
       "layer": "data",
       "kind": "store",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Profiles/Profile.swift",
+        "Sources/WMCore/Profiles/ProfileStore.swift",
+        "Sources/WMCore/Model/*.swift"
+      ],
       "notes": "Versioned JSON profiles in Application Support; import and export.",
       "tasks": [
         "P2.4",
@@ -331,7 +352,7 @@
       "kind": "tool",
       "files": [
         "Sources/spaceslab/**",
-        "scripts/*.sh",
+        "scripts/build.sh",
         "docs/LAB.md"
       ],
       "notes": "Phase 1 tool: runs the Space experiments on the user's macOS and writes a results file.",
@@ -351,7 +372,11 @@
         "docs/system.json",
         "Package.swift",
         "Sources/WMCore/Lab/*.swift",
-        "Tests/**"
+        "Tests/**",
+        "Resources/**",
+        "scripts/env.sh",
+        "scripts/bundle-app.sh",
+        "scripts/run-app.sh"
       ],
       "notes": "Git ignore rules and this map.",
       "tasks": [

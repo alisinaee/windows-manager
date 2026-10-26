@@ -101,3 +101,15 @@ spaceslab report --out lab-results/REPORT.md
 ```
 
 Turn "Automatically rearrange Spaces" back on only if you want it. Then tell me "lab done".
+
+## 9. App engine checks (phase 2, screen unlocked)
+
+```bash
+spaceslab ax-remote --app Arc
+spaceslab capture --out lab-results/my-setup.json
+spaceslab restore --profile lab-results/my-setup.json --dry-run
+```
+
+`ax-remote` shows whether windows on other Spaces can be reached; `capture` saves your current setup as a profile;
+the restore dry run prints what a restore would do, without doing it.
+Builds use Xcode's toolchain automatically (`scripts/env.sh`).

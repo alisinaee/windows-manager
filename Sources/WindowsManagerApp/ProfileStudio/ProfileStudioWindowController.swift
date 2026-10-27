@@ -7,8 +7,8 @@ import SwiftUI
 final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
     static let shared = ProfileStudioWindowController()
 
-    /// Minimum content size. The widest layout needs sidebar 200 + library 160 + map 320 + inspector 260 = 940.
-    static let minSize = NSSize(width: 1000, height: 640)
+    /// Smallest content size. Below the roomy layouts the view adapts: Details moves under the map, toolbars fall back to icons.
+    static let minSize = NSSize(width: 560, height: 420)
 
     private var window: NSWindow?
     private let model = ProfileStudioModel()

@@ -255,7 +255,7 @@ struct StudioMapHost: View {
         VStack(spacing: 0) {
             ProfileMapCanvas(model: map)
             Divider()
-            studioBottomBar { MapLegendView(showsStatus: map.status != nil) }
+            studioBottomBar { MapLegendView(showsStatus: map.status != nil, showsStageStrip: map.usesStageManager) }
         }
     }
 

@@ -6,13 +6,14 @@ enum CaptureCommand {
     static let help = "Capture every display, Space and window into a profile (--name --json --out FILE)"
 
     static let usage = """
-        Usage: spaceslab capture [--name NAME] [--json] [--out FILE]
+        Usage: spaceslab capture [--name NAME] [--json] [--out FILE] [--dump-windows]
 
           (no option)  Per display: the Spaces in Mission Control order with the windows on each
                        (app - title - frame - placement), then the warnings.
           --name NAME  Name of the profile (default "Captured workspace").
           --json       Print the profile as JSON instead of the summary (warnings go to stderr).
           --out FILE   Also write the profile JSON to FILE.
+          --dump-windows  Print one diagnostic line per window (bounds, layer, Stage Manager state) to stderr.
 
         Read-only: nothing is moved, shown, hidden, launched or quit. Needs Accessibility access for document
         paths and minimized windows, and an unlocked screen.
@@ -23,12 +24,16 @@ enum CaptureCommand {
         var profileName = "Captured workspace"
         var json = false
         var outPath: String?
+        var dumpWindows = false
 
         var index = 0
         while index < args.count {
             switch args[index] {
             case "--json":
                 json = true
+                index += 1
+            case "--dump-windows":
+                dumpWindows = true
                 index += 1
             case "--name", "--out":
                 guard index + 1 < args.count else {
@@ -47,6 +52,9 @@ enum CaptureCommand {
         }
 
         let scan = WorkspaceScanner.scan()
+        if dumpWindows {
+            for line in WindowDump.lines(for: scan) { fputs(line + "\n", stderr) }
+        }
         let (profile, warnings) = ProfileCapture.makeProfile(name: profileName, from: scan)
 
         do {

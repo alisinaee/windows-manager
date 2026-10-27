@@ -104,6 +104,15 @@ struct WindowTileView: View {
             if isSelected {
                 shape.strokeBorder(Color.accentColor, lineWidth: 3)
             }
+            if min(size.width, size.height) >= 56 {
+                let side = min(size.width, size.height) * 0.5
+                Image(nsImage: AppIconCache.icon(for: window.app))
+                    .resizable().interpolation(.high)
+                    .frame(width: side, height: side)
+                    .opacity(tile.isRestored ? 0.9 : 0.5)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .accessibilityHidden(true)
+            }
             label(roomy: roomy, width: size.width, height: size.height)
                 .padding(.leading, 5).padding(.top, 5)
                 .padding(.trailing, status == nil ? 5 : 26)

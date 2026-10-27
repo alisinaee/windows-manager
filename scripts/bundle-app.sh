@@ -24,6 +24,11 @@ if [ ! -d "$SPARKLE" ]; then
     echo "error: $SPARKLE not found; Sparkle must be built before bundling" >&2
     exit 1
 fi
+# SwiftPM resource bundles (KeyboardShortcuts localisations): the package accessor looks in Contents/Resources
+# and traps when the bundle is missing, which crashed the shortcut recorder.
+for b in "$BIN_DIR"/*.bundle; do
+    [ -e "$b" ] && cp -R "$b" "$APP/Contents/Resources/"
+done
 mkdir -p "$APP/Contents/Frameworks"
 cp -R "$SPARKLE" "$APP/Contents/Frameworks/"
 if ! otool -l "$APP/Contents/MacOS/$EXECUTABLE" | grep -q "@executable_path/../Frameworks"; then

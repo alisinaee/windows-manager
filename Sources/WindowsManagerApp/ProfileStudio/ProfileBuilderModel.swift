@@ -152,6 +152,11 @@ final class ProfileBuilderModel: ObservableObject {
         await loadLibrary()
     }
 
+    /// The background capture behind "New profile" could not run: the Edit pane shows the message and "Back to View".
+    func failCapture(_ message: String) {
+        fail(message)
+    }
+
     private func fail(_ message: String) {
         session = nil
         phase = .failed(message)

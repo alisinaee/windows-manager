@@ -81,8 +81,11 @@ final class ProfileStudioModel: ObservableObject {
 
     /// The Builder session of Edit mode; nil in View mode.
     @Published private(set) var builder: ProfileBuilderModel?
-    @Published var isStartSheetPresented = false
-    /// "Start from the current workspace": the background capture and the pick-what-to-keep step.
+    /// "Copy of a profile…" from the New profile menu.
+    @Published var isCopyPickerPresented = false
+    /// "Review capture" popover: unticking windows removes them from the new draft.
+    @Published var isReviewCapturePresented = false
+    /// The background capture behind a new profile ("New profile" starts it at once).
     let capture = CaptureChoiceModel()
     @Published var isSaveSheetPresented = false
     @Published var isLeaveConfirmPresented = false
@@ -191,38 +194,39 @@ final class ProfileStudioModel: ObservableObject {
         Task { await b.start(from: .editExisting(id)) }
     }
 
-    /// "New profile": shows the start sheet first.
-    func beginNewProfile() {
-        guard mode == .view else { return }
-        builder = ProfileBuilderModel()
+    /// A new draft session in Edit mode; the caller starts it.
+    private func enterNewDraft() -> ProfileBuilderModel {
+        let b = ProfileBuilderModel()
+        builder = b
         mode = .edit
         setCompare(false)
-        isStartSheetPresented = true
+        return b
     }
 
-    func chooseStart(_ choice: StudioStartChoice) {
-        guard let b = builder else { return }
-        if choice == .currentWorkspace {
-            // The start sheet stays up and turns into the selection step once the capture is done.
-            Task { await capture.run(builder: b) }
-            return
-        }
-        isStartSheetPresented = false
-        Task { await b.start(from: choice) }
+    /// "New profile": captures the current workspace at once and opens the map with everything kept (no start sheet).
+    /// The map pane shows progress until the capture is done. "Review capture" in the New profile menu unticks windows.
+    func beginNewProfile() {
+        guard mode == .view else { return }
+        DebugLog.log("studio", "new profile: from current workspace")
+        let b = enterNewDraft()
+        Task { await capture.run(builder: b) }
     }
 
-    /// "Create draft" in the selection step: the draft starts from the ticked items only.
-    func createFromCapture() {
-        guard let b = builder, let (profile, notes) = capture.filtered() else { return }
-        isStartSheetPresented = false
-        capture.reset()
-        Task { await b.start(fromCapture: profile, notes: notes) }
+    /// "Blank on these monitors" from the New profile menu.
+    func beginBlankProfile() {
+        guard mode == .view else { return }
+        DebugLog.log("studio", "new profile: blank")
+        let b = enterNewDraft()
+        Task { await b.start(from: .blank) }
     }
 
-    func cancelStart() {
-        capture.reset()
-        isStartSheetPresented = false
-        if builder?.phase == .idle { leaveEdit() }
+    /// "Copy of a profile…": the picked saved profile opens as a draft.
+    func beginCopy(of id: UUID) {
+        guard mode == .view else { return }
+        DebugLog.log("studio", "new profile: copy")
+        isCopyPickerPresented = false
+        let b = enterNewDraft()
+        Task { await b.start(from: .copyOf(id)) }
     }
 
     /// Leaving Edit mode: asks first when there are unsaved changes.
@@ -256,7 +260,7 @@ final class ProfileStudioModel: ObservableObject {
         builder?.discard()
         builder = nil
         capture.reset()
-        isStartSheetPresented = false
+        isReviewCapturePresented = false
         isSaveSheetPresented = false
         isLeaveConfirmPresented = false
         afterSave = nil

@@ -1,27 +1,26 @@
 import SwiftUI
 import WMCore
 
-// "Start from the current workspace" (P6.47): the capture runs in the background into a draft capture, then this
-// step lets people tick the monitors, Desktops and windows to keep. Nothing is saved or started until "Create draft".
+// "New profile" starts from the current workspace (P6.54): the capture runs in the background and the draft opens
+// with everything kept. "Review capture" (from the New profile menu) unticks what to leave out; each change is an
+// undoable edit on the draft, so nothing waits for a button.
 
-/// The capture and the ticked boxes. Owned by `ProfileStudioModel`; the sheet observes it.
+/// The capture behind the draft. Owned by `ProfileStudioModel`.
 @MainActor
 final class CaptureChoiceModel: ObservableObject {
     enum Stage: Equatable {
         case idle
         case capturing
-        case failed(String)
-        case choosing
+        case ready
     }
 
     @Published private(set) var stage: Stage = .idle
-    @Published var selection: CaptureSelection?
-    private var captured: Profile?
-    private var notes: [String] = []
-    /// A cancelled or restarted capture cannot be stopped; its late result is ignored instead.
+    /// The whole capture as read, before any untick. Nil when no capture is behind the draft.
+    private(set) var captured: Profile?
+    /// A cancelled or left draft cannot stop its capture; its late result is ignored instead.
     private var generation = 0
 
-    /// Captures in the background, then moves to the selection step.
+    /// Captures the workspace, then starts the draft with everything kept so the map can show it.
     func run(builder: ProfileBuilderModel) async {
         generation += 1
         let mine = generation
@@ -30,40 +29,46 @@ final class CaptureChoiceModel: ObservableObject {
         guard mine == generation else { return }
         switch result {
         case .failure(let failure):
-            stage = .failed(failure.message)
-        case .success(let (profile, captureNotes)):
+            stage = .idle
+            builder.failCapture(failure.message)
+        case .success(let (profile, notes)):
             captured = profile
-            notes = captureNotes
-            let sel = CaptureSelection(tree: CaptureSelectionTree(profile: profile))
-            selection = sel
-            stage = .choosing
-            DebugLog.log("studio", "capture selection: \(sel.selectedWindows) of \(sel.totalWindows) windows selected")
+            await builder.start(fromCapture: profile, notes: notes)
+            guard mine == generation else { return }
+            stage = .ready
+            DebugLog.log("studio", "capture ready: \(profile.windows.count) windows, \(profile.displays.count) monitors")
         }
     }
 
-    /// Back to the start sheet (also ignores a capture that is still running).
+    /// Back to View: a capture that is still running is ignored when it ends.
     func reset() {
         generation += 1
         stage = .idle
-        selection = nil
         captured = nil
-        notes = []
     }
 
-    /// The captured profile reduced to what is ticked, with the capture notes; nil when nothing is ticked.
-    func filtered() -> (Profile, [String])? {
-        guard let captured, let selection, selection.hasSelection else { return nil }
-        let profile = selection.applying(to: captured)
-        DebugLog.log("studio", "capture create: \(selection.selectedWindows) of \(selection.totalWindows) windows, "
-            + "\(profile.displays.count) monitors, \(profile.spaces.count) spaces")
-        return (profile, notes)
+    /// The ticks as the draft has them now: a captured window is ticked while it is still in the draft.
+    func selection(for builder: ProfileBuilderModel) -> CaptureSelection? {
+        guard let captured else { return nil }
+        var sel = CaptureSelection(tree: CaptureSelectionTree(profile: captured))
+        let inDraft = Set(builder.profile?.windows.map(\.id) ?? [])
+        for id in sel.tree.allWindowIDs where !inDraft.contains(id) { sel.toggle(window: id) }
+        return sel
     }
 
-    func update(_ change: (inout CaptureSelection) -> Void) {
-        guard var sel = selection else { return }
+    /// One tick change in "Review capture". Windows left out by the result of `CaptureSelection.applying(to:)` leave the
+    /// draft as one undoable edit. A window that already left stays out: Undo brings it back, a tick does not.
+    func review(builder: ProfileBuilderModel, _ change: (inout CaptureSelection) -> Void) {
+        guard let captured, var sel = selection(for: builder) else { return }
         change(&sel)
-        selection = sel
-        DebugLog.log("studio", "capture selection: \(sel.selectedWindows) of \(sel.totalWindows) windows selected")
+        let kept = Set(sel.applying(to: captured).windows.map(\.id))
+        let capturedIDs = Set(captured.windows.map(\.id))
+        let removed = (builder.profile?.windows.map(\.id) ?? []).filter { capturedIDs.contains($0) && !kept.contains($0) }
+        guard !removed.isEmpty else { return }
+        builder.edit(kind: "reviewCapture") { editor in
+            for id in removed { try editor.removeWindow(id) }
+        }
+        DebugLog.log("studio", "capture review: removed \(removed.count) windows, \(kept.count) of \(capturedIDs.count) kept")
     }
 
     var windowsByID: [UUID: WindowSnapshot] {
@@ -71,58 +76,55 @@ final class CaptureChoiceModel: ObservableObject {
     }
 }
 
-/// The content of the start sheet: the three starting points, then (for the current workspace) progress and selection.
-struct StudioStartFlow: View {
+/// The New profile chevron: the other starting points, and "Review capture" while a capture is behind the draft.
+struct NewProfileMenu: View {
+    @ObservedObject var model: ProfileStudioModel
     @ObservedObject var capture: CaptureChoiceModel
-    let profiles: [ProfileStudioRow]
-    let onChoose: (StudioStartChoice) -> Void
-    let onCreate: () -> Void
-    let onCancel: () -> Void
+
+    private var canReview: Bool { model.mode == .edit && capture.stage == .ready }
 
     var body: some View {
-        switch capture.stage {
-        case .idle:
-            StudioStartSheet(profiles: profiles, onChoose: onChoose, onCancel: onCancel)
-        case .capturing:
-            VStack(spacing: 14) {
-                ProgressView()
-                Text("Reading your workspace…").font(.headline)
-                Text("This can take a few seconds. You will choose what to include next.")
-                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                Button("Cancel") { capture.reset() }.keyboardShortcut(.cancelAction)
+        Menu {
+            if model.mode == .view {
+                Button("From current workspace") { model.beginNewProfile() }
+                Button("Blank on these monitors") { model.beginBlankProfile() }
+                Button("Copy of a profile…") { model.isCopyPickerPresented = true }
             }
-            .padding(20)
-            .frame(minWidth: 300, maxWidth: 480)
-        case .failed(let message):
-            VStack(alignment: .leading, spacing: 12) {
-                Text("New profile").font(.title2.bold())
-                Text(message).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-                HStack { Spacer(); Button("Back") { capture.reset() }.keyboardShortcut(.cancelAction) }
+            if canReview {
+                Button("Review capture…") { model.isReviewCapturePresented = true }
             }
-            .padding(20)
-            .frame(minWidth: 300, maxWidth: 480)
-        case .choosing:
-            CaptureSelectionSheet(capture: capture, onCreate: onCreate, onBack: { capture.reset() }, onCancel: onCancel)
+        } label: {
+            Image(systemName: "chevron.down").font(.caption).foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(model.mode == .edit && !canReview)
+        .help("More ways to start: blank, a copy of a profile, or review the captured windows")
+        .accessibilityLabel("More ways to start a profile")
+        .popover(isPresented: $model.isReviewCapturePresented, arrowEdge: .bottom) {
+            if let builder = model.builder {
+                CaptureReviewPanel(capture: capture, builder: builder, onDone: { model.isReviewCapturePresented = false })
+            }
         }
     }
 }
 
-/// Tree of monitors > Desktops > windows with check boxes, "Select all / none" and the count.
-struct CaptureSelectionSheet: View {
+/// "Review capture": monitors > Desktops > windows of the capture, ticked as the draft has them. Unticking a window
+/// removes it from the draft; a window already gone is shown unticked and cannot be ticked back (Undo does that).
+struct CaptureReviewPanel: View {
     @ObservedObject var capture: CaptureChoiceModel
-    let onCreate: () -> Void
-    let onBack: () -> Void
-    let onCancel: () -> Void
-
-    private var selection: CaptureSelection? { capture.selection }
+    @ObservedObject var builder: ProfileBuilderModel
+    let onDone: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Choose what to include").font(.title2.bold())
-            if let selection {
-                Text("Tick the monitors, Desktops and windows the new profile should start with.")
+            Text("Review capture").font(.headline)
+            if let selection = capture.selection(for: builder) {
+                Text("Untick what this profile should leave out. Undo takes a change back.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                toolbar(selection)
+                Text("\(selection.selectedWindows) of \(selection.totalWindows) windows kept")
+                    .font(.callout).foregroundStyle(.secondary).monospacedDigit()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(selection.tree.monitors) { monitorView($0, selection) }
@@ -132,42 +134,11 @@ struct CaptureSelectionSheet: View {
                 }
                 .frame(minHeight: 160, maxHeight: .infinity)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.06)))
-                footer(selection)
             }
+            HStack { Spacer(); Button("Done", action: onDone).keyboardShortcut(.defaultAction) }
         }
-        .padding(20)
-        .frame(minWidth: 320, idealWidth: 460, maxWidth: 480, minHeight: 280, idealHeight: 480)
-    }
-
-    private func toolbar(_ selection: CaptureSelection) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) { toolbarContent(selection) }
-            VStack(alignment: .leading, spacing: 6) { toolbarContent(selection) }
-        }
-    }
-
-    @ViewBuilder private func toolbarContent(_ selection: CaptureSelection) -> some View {
-        Button("Select all") { capture.update { $0.selectAll() } }
-        Button("Select none") { capture.update { $0.selectNone() } }
-        Spacer(minLength: 8)
-        Text("\(selection.selectedWindows) of \(selection.totalWindows) windows selected")
-            .font(.callout).foregroundStyle(.secondary).monospacedDigit()
-    }
-
-    private func footer(_ selection: CaptureSelection) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack { Spacer(); footerButtons(selection) }
-            VStack(alignment: .trailing, spacing: 6) { footerButtons(selection) }
-        }
-    }
-
-    @ViewBuilder private func footerButtons(_ selection: CaptureSelection) -> some View {
-        Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction)
-        Button("Back", action: onBack)
-        Button("Create draft", action: onCreate)
-            .keyboardShortcut(.defaultAction)
-            .buttonStyle(.borderedProminent)
-            .disabled(!selection.hasSelection)
+        .padding(16)
+        .frame(width: 380, height: 420)
     }
 
     // MARK: Tree
@@ -175,10 +146,12 @@ struct CaptureSelectionSheet: View {
     private func monitorView(_ monitor: CaptureSelectionTree.Monitor, _ selection: CaptureSelection) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             checkRow(selection.state(of: monitor), icon: "display", title: monitor.display?.name ?? "Monitor", bold: true,
-                     indent: 0) { capture.update { $0.toggle(monitor: monitor) } }
+                     indent: 0, enabled: !monitor.windowIDs.isEmpty) { capture.review(builder: builder) { $0.toggle(monitor: monitor) } }
             ForEach(monitor.groups) { group in
                 checkRow(selection.state(of: group), icon: icon(for: group), title: title(for: group), bold: false,
-                         indent: 1, detail: group.windowIDs.isEmpty ? "empty" : nil) { capture.update { $0.toggle(group: group) } }
+                         indent: 1, detail: group.windowIDs.isEmpty ? "empty" : nil, enabled: !group.windowIDs.isEmpty) {
+                    capture.review(builder: builder) { $0.toggle(group: group) }
+                }
                 ForEach(group.windowIDs, id: \.self) { windowRow($0, selection) }
             }
         }
@@ -187,8 +160,11 @@ struct CaptureSelectionSheet: View {
 
     @ViewBuilder private func windowRow(_ id: UUID, _ selection: CaptureSelection) -> some View {
         if let window = capture.windowsByID[id] {
-            checkRow(selection.isSelected(window: id) ? .on : .off, icon: nil, title: window.app.name, bold: false, indent: 2,
-                     detail: window.title.flatMap { $0.isEmpty ? nil : $0 }) { capture.update { $0.toggle(window: id) } }
+            let inDraft = selection.isSelected(window: id)
+            checkRow(inDraft ? .on : .off, icon: nil, title: window.app.name, bold: false, indent: 2,
+                     detail: window.title.flatMap { $0.isEmpty ? nil : $0 }, enabled: inDraft) {
+                capture.review(builder: builder) { $0.toggle(window: id) }
+            }
         }
     }
 
@@ -211,7 +187,7 @@ struct CaptureSelectionSheet: View {
     }
 
     private func checkRow(_ state: CaptureCheckState, icon: String?, title: String, bold: Bool, indent: Int,
-                          detail: String? = nil, action: @escaping () -> Void) -> some View {
+                          detail: String? = nil, enabled: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: state == .on ? "checkmark.square.fill" : state == .mixed ? "minus.square.fill" : "square")
@@ -227,6 +203,7 @@ struct CaptureSelectionSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!enabled)
         .accessibilityElement(children: .combine)
         .accessibilityValue(state == .on ? "checked" : state == .mixed ? "partly checked" : "unchecked")
     }

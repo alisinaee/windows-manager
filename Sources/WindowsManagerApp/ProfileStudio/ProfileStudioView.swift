@@ -30,10 +30,9 @@ struct ProfileStudioView: View {
                     .onAppear { model.contentWidthChanged(geo.size.width) }
                     .onChange(of: geo.size.width) { _, width in model.contentWidthChanged(width) }
                 }
-                .sheet(isPresented: $model.isStartSheetPresented) {
-                    StudioStartFlow(capture: model.capture, profiles: model.rows,
-                                    onChoose: { model.chooseStart($0) }, onCreate: { model.createFromCapture() },
-                                    onCancel: { model.cancelStart() })
+                .sheet(isPresented: $model.isCopyPickerPresented) {
+                    StudioCopyPickerSheet(profiles: model.rows, onCopy: { model.beginCopy(of: $0) },
+                                          onCancel: { model.isCopyPickerPresented = false })
                 }
                 .sheet(isPresented: $model.isSaveSheetPresented) {
                     if let builder = model.builder {
@@ -79,7 +78,8 @@ struct ProfileStudioView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.accentColor)
                 .disabled(model.mode == .edit)
-                .help("Start a new profile from a blank layout, the current workspace or a copy")
+                .help("Start a new profile from the current workspace. The chevron has blank, copy and Review capture.")
+                NewProfileMenu(model: model, capture: model.capture)
             }
             .padding(.horizontal, 6).padding(.top, 8)
             List(model.rows, selection: selection) { row in
@@ -325,9 +325,11 @@ struct StudioEditDetail: View {
     var body: some View {
         switch builder.phase {
         case .idle:
-            VStack(spacing: 12) {
-                Text("Choose how to start the new profile.").foregroundStyle(.secondary)
-                Button("Choose…") { model.isStartSheetPresented = true }
+            // A new profile reads the workspace before there is a draft to show: progress until the map can open.
+            VStack(spacing: 14) {
+                ProgressView()
+                Text("Reading your windows…").font(.headline)
+                Text("This can take a few seconds.").font(.callout).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .starting:

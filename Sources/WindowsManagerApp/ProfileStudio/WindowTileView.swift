@@ -89,7 +89,7 @@ struct WindowTileView: View {
 
     var body: some View {
         let size = tile.rect.size
-        let roomy = size.width >= 90 && size.height >= 44
+        let roomy = size.width >= 80 && size.height >= 40
         ZStack(alignment: .topLeading) {
             shape.fill(tint.opacity(tile.isRestored ? 0.22 : 0.10))
             if !tile.isRestored {
@@ -104,8 +104,11 @@ struct WindowTileView: View {
             if isSelected {
                 shape.strokeBorder(Color.accentColor, lineWidth: 3)
             }
-            label(roomy: roomy)
-                .padding(5)
+            label(roomy: roomy, width: size.width, height: size.height)
+                .padding(.leading, 5).padding(.top, 5)
+                .padding(.trailing, status == nil ? 5 : 26)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .clipped()
             if let status {
                 Image(systemName: WindowStatusStyle.symbol(status))
                     .font(.system(size: 12, weight: .semibold))
@@ -135,15 +138,22 @@ struct WindowTileView: View {
         .accessibilityAction(named: "Select", onSelect)
     }
 
-    @ViewBuilder private func label(roomy: Bool) -> some View {
+    @ViewBuilder private func label(roomy: Bool, width: CGFloat, height: CGFloat) -> some View {
+        let fontSize: CGFloat = (width < 120 || height < 56) ? 10 : 11
+        let showIcon = width >= 30 && height >= 26
+        let hasTitle = !(window.title ?? "").isEmpty
         HStack(alignment: .top, spacing: 4) {
-            Image(nsImage: AppIconCache.icon(for: window.app))
-                .resizable().frame(width: 16, height: 16)
+            if showIcon {
+                Image(nsImage: AppIconCache.icon(for: window.app))
+                    .resizable().frame(width: 16, height: 16)
+            }
             if roomy {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(window.app.name).font(.system(size: 11, weight: .semibold)).lineLimit(1)
-                    if let title = window.title, !title.isEmpty {
-                        Text(title).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(window.app.name).font(.system(size: fontSize, weight: .semibold))
+                        .lineLimit(1).truncationMode(.tail)
+                    if hasTitle, let title = window.title {
+                        Text(title).font(.system(size: fontSize)).foregroundStyle(.secondary)
+                            .lineLimit(height >= 80 ? 2 : 1).truncationMode(.tail)
                     }
                 }
                 .foregroundStyle(.primary)

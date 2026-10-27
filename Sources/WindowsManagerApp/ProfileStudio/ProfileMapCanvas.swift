@@ -223,15 +223,14 @@ struct ProfileMapCanvas: View {
 
     private func monitorTitle(_ monitor: ProfileMapLayout.Monitor, shownLabel: String?) -> some View {
         HStack(spacing: 4) {
-            if monitor.isMain { Image(systemName: "star.fill").font(.system(size: 10)) }
-            Text(monitor.name).font(.system(size: 11, weight: .semibold)).lineLimit(1)
-            if let shownLabel {
-                Text("· " + shownLabel).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-            }
+            if monitor.isMain { Image(systemName: "star.fill").font(.system(size: 9)) }
+            (Text(monitor.name).fontWeight(.semibold)
+                + Text(shownLabel.map { " · " + $0 } ?? "").foregroundColor(.secondary))
+                .font(.system(size: 10))
+                .lineLimit(1).truncationMode(.tail)
         }
-        .padding(.horizontal, 6).padding(.vertical, 1)
-        .background(.regularMaterial, in: Capsule())
-        .frame(maxWidth: max(monitor.frame.width - 12, 20), alignment: .leading)
+        .padding(.horizontal, 4)
+        .frame(width: max(monitor.frame.width - 12, 20), height: ProfileMapLayout.headerHeight - 4, alignment: .leading)
         .accessibilityHidden(true)
     }
 

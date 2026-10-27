@@ -25,6 +25,8 @@ public struct ProfileMapLayout: Equatable, Sendable {
     public static let stripHeight: CGFloat = 32
     /// Inset of the strip band from the tile edges (sides and bottom).
     public static let stripInset: CGFloat = 8
+    /// Band at the top of each monitor tile reserved for the monitor label; windows never draw there.
+    public static let headerHeight: CGFloat = 22
     /// Allowed zoom factors: 50 % to 200 %. 1.0 means "fit".
     public static let zoomRange: ClosedRange<Double> = 0.5...2.0
 
@@ -226,7 +228,9 @@ public struct ProfileMapLayout: Equatable, Sendable {
     // MARK: Helpers
 
     /// The visible part of the display, inside its tile, using the same fractions as the real screen.
-    private static func contentRect(for display: DisplayIdentity, tile: CGRect) -> CGRect {
+    private static func contentRect(for display: DisplayIdentity, tile fullTile: CGRect) -> CGRect {
+        let band = min(headerHeight, fullTile.height / 4)
+        let tile = CGRect(x: fullTile.minX, y: fullTile.minY + band, width: fullTile.width, height: fullTile.height - band)
         let frame = display.frame
         let visible = display.visibleFrame
         guard visible.width > 0, visible.height > 0 else { return tile }

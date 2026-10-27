@@ -67,77 +67,119 @@ public enum StageManager {
     }
 
     /// Works out where one window sits. macOS has no public Stage Manager API, so this reads side effects:
-    ///  0. A strip thumbnail (`isStripThumbnail`) is never active: it is the strip's picture of a real window.
-    ///  1. Primary: a window that is NOT on screen (`kCGWindowIsOnscreen` false) although it is not minimized, its
-    ///     app is not hidden and it is on the current Space can only be in the strip or in another stage.
-    ///  2. On screen -> active. A window on screen is visible, so the frame fallback below does not apply to it.
-    ///  3. Fallback: a frame almost entirely off every monitor (older macOS versions park windows there).
-    ///  4. Anything else (other Space, hidden app, no on-screen flag) -> unknown.
+    ///  0. A strip thumbnail (`isStripThumbnail`) is the strip's picture of a real window: certainly in the strip.
+    ///  1. A window that is minimized, full-screen or whose app is hidden is excluded (unknown).
+    ///  2. On screen -> active, whatever Space it is on: a window on screen is visible, so the frame fallback below
+    ///     does not apply to it.
+    ///  3. Not on screen although it is on the current Space (and not minimized or hidden) -> in the strip or in
+    ///     another stage, but only a guess.
+    ///  4. Fallback: a frame almost entirely off every monitor (older macOS versions park windows there).
+    ///  5. Anything else (other Space, no on-screen flag) -> unknown.
     /// Stage Manager keeps the original frames of strip windows, so the frame alone is not enough.
-    /// `appHasThumbnail` says the app has a strip thumbnail: its real windows that are not on screen are strip windows
-    /// (`annotate` passes it).
-    public static func classify(_ window: LiveWindow, displays: [DisplayIdentity], appHasThumbnail: Bool = false) -> Verdict {
-        if window.isStripThumbnail { return Verdict(state: .strip, isHeuristic: true) }
+    public static func classify(_ window: LiveWindow, displays: [DisplayIdentity]) -> Verdict {
+        if window.isStripThumbnail { return Verdict(state: .strip, isHeuristic: false) }
         if window.isMinimized || window.isFullScreen || window.isAppHidden { return Verdict(state: .unknown, isHeuristic: false) }
-        if window.isOnCurrentSpace, window.isOnScreen == false { return Verdict(state: .strip, isHeuristic: false) }
-        if window.isOnCurrentSpace, window.isOnScreen == true { return Verdict(state: .active, isHeuristic: false) }
-        if window.isOnCurrentSpace, appHasThumbnail { return Verdict(state: .strip, isHeuristic: false) }
+        if window.isOnScreen == true { return Verdict(state: .active, isHeuristic: false) }
+        if window.isOnCurrentSpace, window.isOnScreen == false { return Verdict(state: .strip, isHeuristic: true) }
         if isParkedOffscreen(window.frame, displays: displays) { return Verdict(state: .strip, isHeuristic: true) }
         return Verdict(state: .unknown, isHeuristic: false)
     }
+
+    /// How far apart two thumbnails may sit (along the strip) and still belong to the same stage, in points.
+    static let stageGapLimit: CGFloat = 30
 
     /// Records the Stage Manager state in `scan` and, when it is on, marks the windows that sit in the strip or
     /// in another stage (`LiveWindow.isInStageStrip`) and fills `LiveWindow.stage`. Minimized and full-screen
     /// windows are never marked.
     ///
-    /// Strip thumbnails (`LiveWindow.isStripThumbnail`, set by the scanner) are not windows of their own: when the
-    /// app has a real window that is not on screen, the thumbnail is dropped from `windows` and that window is the
-    /// strip window. An app whose only strip picture is the thumbnail keeps it, as a strip window.
-    ///
-    /// Limits: strip windows are grouped by app (Stage Manager's default, one stage per app), numbered 1... in scan
-    /// order, and always flagged heuristic, because stages the user assembled by hand cannot be told apart from
-    /// the API side. Active windows are group 0.
+    /// A strip thumbnail (`LiveWindow.isStripThumbnail`) is the real window drawn small, with the same window id,
+    /// so it stays in `windows` as a strip window. Thumbnails are grouped into stages by position
+    /// (`clusterThumbnails`) and those groups are certain. Other strip windows (off screen on the current Space,
+    /// or parked off every monitor) are grouped by app, as a guess, and are flagged heuristic. Groups are numbered
+    /// 1... with the thumbnail stages first, top to bottom. Active windows are group 0.
     public static func annotate(_ scan: WorkspaceScan, provider: StageManagerProvider = .live) -> WorkspaceScan {
         var result = scan
         let enabled = provider.isEnabled()
         result.stageManagerOn = enabled
         guard enabled == true else { return result }
-        let thumbnailKeys = Set(scan.windows.filter(\.isStripThumbnail).map { appKey($0) })
+        var groupOfThumbnail: [Int: Int] = [:]
+        for (position, cluster) in clusterThumbnails(result.windows, displays: scan.displays).enumerated() {
+            for index in cluster { groupOfThumbnail[index] = position + 1 }
+        }
+        var nextGroup = (groupOfThumbnail.values.max() ?? 0) + 1
         var groupOfApp: [String: Int] = [:]
-        var dropped = Set<Int>()
         for index in result.windows.indices {
             let window = result.windows[index]
-            let key = appKey(window)
-            if window.isStripThumbnail, scan.windows.contains(where: { hasRealStripWindow($0, key: key) }) {
-                dropped.insert(index)
-                continue
-            }
-            let verdict = classify(window, displays: scan.displays, appHasThumbnail: thumbnailKeys.contains(key))
+            let verdict = classify(window, displays: scan.displays)
             switch verdict.state {
             case .unknown: continue
             case .active:
                 result.windows[index].stage = SavedStage(group: 0, isActive: true, isHeuristic: verdict.isHeuristic)
             case .strip:
-                let group = groupOfApp[key] ?? groupOfApp.count + 1
-                groupOfApp[key] = group
+                let group: Int
+                if window.isStripThumbnail {
+                    group = groupOfThumbnail[index] ?? 1
+                } else {
+                    let key = appKey(window)
+                    if let known = groupOfApp[key] {
+                        group = known
+                    } else {
+                        group = nextGroup
+                        nextGroup += 1
+                        groupOfApp[key] = group
+                    }
+                }
                 result.windows[index].isInStageStrip = true
-                // Only a strip window confirmed by the app's thumbnail is certain; the rest stay heuristic.
-                let confirmed = thumbnailKeys.contains(key) && !window.isStripThumbnail && verdict.isHeuristic == false
-                result.windows[index].stage = SavedStage(group: group, isActive: false, isHeuristic: !confirmed)
+                result.windows[index].stage = SavedStage(group: group, isActive: false, isHeuristic: verdict.isHeuristic)
             }
         }
-        result.windows = result.windows.indices.filter { !dropped.contains($0) }.map { result.windows[$0] }
         return result
+    }
+
+    /// Groups the strip thumbnails of `windows` into stages, by index into `windows`. Two thumbnails on the same
+    /// display share a stage when their rectangles overlap or sit less than `stageGapLimit` apart along the strip:
+    /// vertically, or horizontally when the strip is on the right edge of its display. Thumbnails on different
+    /// displays never share a stage. Stages come back top to bottom. Uses the window-server bounds, which the
+    /// thumbnail keeps (`serverBounds`), and falls back to `frame`.
+    static func clusterThumbnails(_ windows: [LiveWindow], displays: [DisplayIdentity]) -> [[Int]] {
+        let items = windows.indices.filter { windows[$0].isStripThumbnail }.map { index -> (index: Int, rect: CGRect, display: Int?) in
+            let rect = windows[index].serverBounds ?? windows[index].frame
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+            return (index, rect, displays.firstIndex { $0.frame.contains(center) })
+        }
+        var parent = Array(items.indices)
+        func root(_ i: Int) -> Int {
+            var i = i
+            while parent[i] != i { parent[i] = parent[parent[i]]; i = parent[i] }
+            return i
+        }
+        for a in items.indices {
+            for b in items.indices where b > a {
+                guard let display = items[a].display, items[b].display == display else { continue }
+                let first = items[a].rect, second = items[b].rect
+                let onRightEdge = first.midX > displays[display].frame.midX
+                let gap = onRightEdge
+                    ? max(first.minX, second.minX) - min(first.maxX, second.maxX)
+                    : max(first.minY, second.minY) - min(first.maxY, second.maxY)
+                if gap < stageGapLimit {
+                    let (rootA, rootB) = (root(a), root(b))
+                    parent[rootB] = rootA
+                }
+            }
+        }
+        var clusters: [Int: (top: CGFloat, members: [Int])] = [:]
+        for (position, item) in items.enumerated() {
+            let key = root(position)
+            var cluster = clusters[key] ?? (top: .infinity, members: [])
+            cluster.top = min(cluster.top, item.rect.minY)
+            cluster.members.append(item.index)
+            clusters[key] = cluster
+        }
+        return clusters.values.sorted { $0.top < $1.top }.map(\.members)
     }
 
     /// The key that is the same for all windows of one app: the lowercased bundle id, else the lowercased name.
     private static func appKey(_ window: LiveWindow) -> String {
         window.app.bundleID?.lowercased() ?? window.app.name.lowercased()
-    }
-
-    /// A real window of the app that is not a thumbnail and is not on screen (so it is the one the strip stands for).
-    private static func hasRealStripWindow(_ window: LiveWindow, key: String) -> Bool {
-        !window.isStripThumbnail && appKey(window) == key && window.isOnScreen != true
-            && !window.isMinimized && !window.isAppHidden
     }
 }

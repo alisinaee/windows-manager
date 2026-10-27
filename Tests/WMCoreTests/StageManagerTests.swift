@@ -183,9 +183,12 @@ import Testing
     static let bigTerminal = CGRect(x: 100, y: 100, width: 500, height: 500)
 
     /// The Terminal thumbnail as the scanner builds it: on screen, flagged, window-server bounds.
-    static func thumbnail(_ id: UInt32, _ app: AppRef, title: String? = "ali — ali@al…") -> LiveWindow {
-        LiveWindow(windowID: id, app: app, title: title, frame: thumbnailBounds, isOnCurrentSpace: true,
-                   isOnScreen: true, isStripThumbnail: true)
+    static func thumbnail(_ id: UInt32, _ app: AppRef, at bounds: CGRect = thumbnailBounds,
+                          title: String? = "ali — ali@al…") -> LiveWindow {
+        var window = LiveWindow(windowID: id, app: app, title: title, frame: bounds, isOnCurrentSpace: true,
+                                isOnScreen: true, isStripThumbnail: true)
+        window.serverBounds = bounds
+        return window
     }
 
     static func real(_ id: UInt32, _ app: AppRef, onScreen: Bool?, frame: CGRect = bigTerminal) -> LiveWindow {
@@ -204,35 +207,73 @@ import Testing
                                                      displays: displays))
     }
 
-    @Test func terminalThumbnailMakesTerminalTheStripAndNotActive() {
-        let scan = F.scan([Self.thumbnail(9, Self.terminal), Self.real(1, Self.terminal, onScreen: nil),
-                           Self.real(2, Self.terminal, onScreen: false)])
+    @Test func terminalThumbnailIsTheStripAndCertain() {
+        let scan = F.scan([Self.thumbnail(9, Self.terminal)], displays: [Self.phl, Self.builtIn])
         let result = StageManager.annotate(scan, provider: .fixed(true))
-        // The thumbnail is dropped: the real windows stand for the app in the strip.
-        #expect(result.windows.map(\.windowID) == [1, 2])
-        for window in result.windows {
-            #expect(window.isInStageStrip)
-            #expect(window.stage == SavedStage(group: 1, isActive: false, isHeuristic: false))
-        }
+        #expect(result.windows.map(\.windowID) == [9])
+        #expect(result.windows[0].isInStageStrip)
+        #expect(result.windows[0].stage == SavedStage(group: 1, isActive: false, isHeuristic: false))
+    }
+
+    @Test func thumbnailsOfOneStageShareAGroupAndAFarOneGetsTheNext() {
+        // Stage 1 is two overlapping thumbnails. The far one lies lower on the same strip, so it is stage 2.
+        let far = Self.thumbnail(3, Self.v2box, at: CGRect(x: -393, y: -400, width: 118, height: 97))
+        let top = Self.thumbnail(1, Self.terminal)
+        let overlapping = Self.thumbnail(2, Self.terminal, at: CGRect(x: -393, y: -560, width: 118, height: 97))
+        let scan = F.scan([far, top, overlapping], displays: [Self.phl, Self.builtIn])
+        let result = StageManager.annotate(scan, provider: .fixed(true))
+        #expect(result.windows.map(\.stage?.group) == [2, 1, 1])
+        #expect(result.windows.allSatisfy { $0.stage?.isHeuristic == false && $0.isInStageStrip })
+    }
+
+    @Test func thumbnailsFortyPointsApartAreTwoStages() {
+        // 40 pt between the rectangles is more than the 30 pt limit, so they are two stages.
+        let upper = Self.thumbnail(1, Self.terminal, at: CGRect(x: -393, y: -574, width: 118, height: 97))
+        let lower = Self.thumbnail(2, Self.v2box, at: CGRect(x: -393, y: -437, width: 118, height: 97))
+        let result = StageManager.annotate(F.scan([lower, upper], displays: [Self.phl, Self.builtIn]), provider: .fixed(true))
+        #expect(result.windows.map(\.stage?.group) == [2, 1])
+    }
+
+    @Test func thumbnailsOnDifferentDisplaysNeverShareAGroup() {
+        // The two rectangles overlap in y, but one is on PHL and the other on the built-in display.
+        let phlThumb = Self.thumbnail(1, Self.terminal, at: CGRect(x: 1300, y: -60, width: 118, height: 97))
+        let builtInThumb = Self.thumbnail(2, Self.v2box, at: CGRect(x: 1300, y: 20, width: 118, height: 97))
+        let result = StageManager.annotate(F.scan([phlThumb, builtInThumb], displays: [Self.phl, Self.builtIn]),
+                                           provider: .fixed(true))
+        #expect(result.windows.map(\.stage?.group) == [1, 2])
     }
 
     @Test func thumbnailOfOneAppDoesNotMarkOtherApps() {
-        let scan = F.scan([Self.thumbnail(9, Self.terminal), Self.real(1, Self.terminal, onScreen: nil),
-                           Self.real(3, Self.v2box, onScreen: nil)])
+        let scan = F.scan([Self.thumbnail(9, Self.terminal), Self.real(3, Self.v2box, onScreen: nil)])
         let result = StageManager.annotate(scan, provider: .fixed(true))
         #expect(result.windows.first { $0.windowID == 3 }?.stage == nil)
-        #expect(result.windows.first { $0.windowID == 1 }?.isInStageStrip == true)
+        #expect(result.windows.first { $0.windowID == 9 }?.isInStageStrip == true)
     }
 
     @Test func visibleWindowsOfOtherAppsAreActive() {
-        let scan = F.scan([Self.thumbnail(9, Self.terminal), Self.real(1, Self.terminal, onScreen: nil),
+        let scan = F.scan([Self.thumbnail(9, Self.terminal),
                            Self.real(2, Self.v2box, onScreen: true, frame: CGRect(x: 40, y: 40, width: 600, height: 500)),
                            Self.real(3, F.finder, onScreen: true, frame: CGRect(x: 700, y: 40, width: 600, height: 500)),
                            Self.real(4, F.finder, onScreen: true, frame: CGRect(x: 700, y: 560, width: 600, height: 400))])
         let result = StageManager.annotate(scan, provider: .fixed(true))
-        #expect(result.windows.map(\.windowID) == [1, 2, 3, 4])
+        #expect(result.windows.map(\.windowID) == [9, 2, 3, 4])
         #expect(result.windows[1...].allSatisfy { $0.stage == SavedStage(group: 0, isActive: true, isHeuristic: false) })
         #expect(result.windows[0].stage == SavedStage(group: 1, isActive: false, isHeuristic: false))
+    }
+
+    @Test func onScreenWindowOnAnotherSpaceIsStillActive() {
+        let window = LiveWindow(windowID: 1, app: F.finder, frame: F.defaultFrame, isOnCurrentSpace: false, isOnScreen: true)
+        #expect(StageManager.classify(window, displays: [F.displayA()]) == .init(state: .active, isHeuristic: false))
+        let result = StageManager.annotate(F.scan([window]), provider: .fixed(true))
+        #expect(result.windows[0].stage == SavedStage(group: 0, isActive: true, isHeuristic: false))
+    }
+
+    @Test func offscreenWindowOnCurrentSpaceWithoutThumbnailIsAGuessedStrip() {
+        let window = Self.real(1, Self.terminal, onScreen: false)
+        #expect(StageManager.classify(window, displays: [Self.builtIn]) == .init(state: .strip, isHeuristic: true))
+        let result = StageManager.annotate(F.scan([window]), provider: .fixed(true))
+        #expect(result.windows[0].isInStageStrip)
+        #expect(result.windows[0].stage == SavedStage(group: 1, isActive: false, isHeuristic: true))
     }
 
     @Test func appWithoutThumbnailAndNoOnScreenFlagIsUnknown() {
@@ -241,13 +282,6 @@ import Testing
         #expect(result.windows.allSatisfy { $0.stage == nil && !$0.isInStageStrip })
         #expect(StageManager.classify(Self.real(1, Self.terminal, onScreen: nil), displays: [Self.builtIn])
             == .init(state: .unknown, isHeuristic: false))
-    }
-
-    @Test func thumbnailWithoutRealWindowStaysAsStripWindow() {
-        let result = StageManager.annotate(F.scan([Self.thumbnail(9, Self.terminal)]), provider: .fixed(true))
-        #expect(result.windows.map(\.windowID) == [9])
-        #expect(result.windows[0].isInStageStrip)
-        #expect(result.windows[0].stage == SavedStage(group: 1, isActive: false, isHeuristic: true))
     }
 
     @Test func onScreenWindowIsNotParkedEvenWhenItsFrameIsOffEveryMonitor() {

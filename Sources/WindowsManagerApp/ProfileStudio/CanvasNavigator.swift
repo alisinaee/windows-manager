@@ -52,7 +52,10 @@ struct CanvasNavigator: NSViewRepresentable {
         /// Returns nil when the event was used (it never reaches the tiles), else the event.
         private func handle(_ event: NSEvent) -> NSEvent? {
             guard let model, event.window === window else { return event }
-            let point = convert(event.locationInWindow, from: nil)
+            // Key events carry no pointer position: use where the pointer is now.
+            let location = (event.type == .keyDown || event.type == .keyUp)
+                ? (window?.mouseLocationOutsideOfEventStream ?? .zero) : event.locationInWindow
+            let point = convert(location, from: nil)
             let inside = bounds.contains(point)
             switch event.type {
             case .keyDown:

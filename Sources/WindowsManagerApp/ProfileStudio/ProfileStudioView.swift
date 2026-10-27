@@ -199,7 +199,7 @@ struct StudioMapHost: View {
     @StateObject private var map = ProfileMapModel()
 
     /// Map 360 + inspector 220 + dividers and padding: below this the inspector moves under the map.
-    private static let sideBySideWidth: CGFloat = 760
+    private static let sideBySideWidth: CGFloat = 1000
 
     private var mapPane: some View {
         VStack(spacing: 0) {
@@ -319,7 +319,7 @@ struct StudioEditDetail: View {
     }
 
     /// Library 160 + map 320 + inspector 260 + dividers: below this the inspector moves under the map.
-    private static let sideBySideWidth: CGFloat = 780
+    private static let sideBySideWidth: CGFloat = 1100
 
     private var libraryAndMap: some View {
         HSplitView {

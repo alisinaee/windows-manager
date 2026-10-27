@@ -294,30 +294,32 @@ import Testing
         #expect(StageManager.classify(thumb, displays: [Self.builtIn]).state != .active)
     }
 
-    @Test func scannerKeepsThumbnailOnlyWithStageManagerOn() {
+    @Test func scannerFlagsThumbnailOnlyWithStageManagerOn() {
         let display = Self.phl
         let catalog = [CatalogWindow(windowID: 9, pid: 500, appName: "Terminal", title: "ali — ali@al…",
-                                     bounds: Self.thumbnailBounds, isOnScreen: true, spaceIDs: [])]
+                                     bounds: Self.thumbnailBounds, isOnScreen: true, spaceIDs: [4])]
+        // The thumbnail is the real window drawn small: Accessibility reports its normal frame.
+        let ax: [UInt32: AXWindowDetails] = [9: AXWindowDetails(title: nil, documentPath: nil, isMinimized: false,
+                                                                frame: Self.bigTerminal)]
         let apps: (Int32) -> AppRef? = { _ in Self.terminal }
-        let on = WorkspaceScanner.assemble(displays: [display], skyLight: [], catalog: catalog, activeSpaceID: 0,
-                                           appRef: apps, ax: [:], stageManagerOn: true)
+        let on = WorkspaceScanner.assemble(displays: [display], skyLight: [], catalog: catalog, activeSpaceID: 4,
+                                           appRef: apps, ax: ax, stageManagerOn: true)
         #expect(on.windows.map(\.isStripThumbnail) == [true])
-        #expect(on.windows[0].frame == Self.thumbnailBounds)
-        let off = WorkspaceScanner.assemble(displays: [display], skyLight: [], catalog: catalog, activeSpaceID: 0,
-                                            appRef: apps, ax: [:], stageManagerOn: false)
-        #expect(off.windows.isEmpty)
+        let off = WorkspaceScanner.assemble(displays: [display], skyLight: [], catalog: catalog, activeSpaceID: 4,
+                                            appRef: apps, ax: ax, stageManagerOn: false)
+        #expect(off.windows.map(\.isStripThumbnail) == [false])
     }
 
-    @Test func thumbnailFrameIsNotReplacedByAccessibilityFrame() {
+    @Test func thumbnailKeepsTheAccessibilityFrame() {
         let display = Self.phl
         let catalog = [CatalogWindow(windowID: 9, pid: 500, appName: "Terminal", title: nil,
                                      bounds: Self.thumbnailBounds, isOnScreen: true, spaceIDs: [4])]
-        // Accessibility hands the thumbnail's id the real window's frame; the thumbnail keeps its own bounds.
         let ax: [UInt32: AXWindowDetails] = [9: AXWindowDetails(title: nil, documentPath: nil, isMinimized: false,
                                                                 frame: Self.bigTerminal)]
         let scan = WorkspaceScanner.assemble(displays: [display], skyLight: [], catalog: catalog, activeSpaceID: 4,
                                              appRef: { _ in Self.terminal }, ax: ax, stageManagerOn: true)
-        #expect(scan.windows.first?.frame == Self.thumbnailBounds)
+        #expect(scan.windows.first?.frame == Self.bigTerminal)
+        #expect(scan.windows.first?.serverBounds == Self.thumbnailBounds)
         #expect(scan.windows.first?.isStripThumbnail == true)
     }
 }

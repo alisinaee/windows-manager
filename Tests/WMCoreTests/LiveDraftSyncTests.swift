@@ -90,6 +90,15 @@ private let right = CGRect(x: 900, y: 0, width: 800, height: 600)
         #expect(out.added == 0 && out.removed == 0)
     }
 
+    @Test func unknownStageInTheScanKeepsWhatTheDraftKnew() {
+        // The user switched to another Desktop: the scan cannot see these windows, so their stage is nil.
+        let known = SavedStage(group: 1, isActive: false, isHeuristic: false)
+        let draft = win(safari, title: "Home", frame: left, stage: known)
+        let scanned = profile([win(safari, title: "Home", frame: left, stage: nil)], stage: true)
+        let out = LiveDraftSync.outcome(draft: profile([draft]), scanned: scanned)
+        #expect(out.profile.windows[0].stage == known)
+    }
+
     @Test func stageInfoAndDisplaysComeFromTheScan() {
         let draft = win(safari, title: "Home", frame: left)
         let stage = SavedStage(group: 1, isActive: false, isHeuristic: true)

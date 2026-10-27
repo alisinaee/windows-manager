@@ -122,7 +122,7 @@ public enum LiveDraftSync {
         u.isFullScreen = live.isFullScreen
         u.isMinimized = live.isMinimized
         u.zIndex = live.zIndex
-        u.stage = live.stage
+        u.stage = live.stage ?? window.stage   // the scan cannot see windows on another Desktop: keep what we knew
         if live.frame != window.frame || live.displayUUID != window.displayUUID { u.zoneName = nil }
         return u
     }

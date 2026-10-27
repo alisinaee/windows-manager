@@ -61,6 +61,15 @@ public struct DraftSession {
         history.record(p, kind: "icon")
     }
 
+    /// A live refresh (P6.67): the draft takes `profile` without an undo entry. A clean draft follows the desktop (its
+    /// baseline moves too, so the refresh alone never makes it dirty); a draft the user changed keeps its baseline.
+    public mutating func refreshLive(_ profile: Profile) {
+        guard profile != history.current else { return }
+        let wasClean = !isDirty
+        history.replaceCurrent(profile)
+        if wasClean { baseline = profile }
+    }
+
     @discardableResult public mutating func undo() -> Bool { history.undo() }
     @discardableResult public mutating func redo() -> Bool { history.redo() }
 

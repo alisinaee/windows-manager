@@ -55,9 +55,17 @@ final class ProfileBuilderModel: ObservableObject {
     /// The map showing this draft, if any. Set by the owner so Space selection follows structural edits.
     weak var mapModel: ProfileMapModel?
 
+    /// Live sync (P6.67): the draft follows the real windows every 2 s. On for a draft that started from a capture.
+    @Published private(set) var isLive = false
+
     private let store: ProfileStore
     private var connectedDisplays: [DisplayIdentity] = []
     private var installed: [InstalledApp]?
+    private var liveTask: Task<Void, Never>?
+    /// Windows the user changed or removed by hand: live sync leaves them as the user left them.
+    private var manuallyEdited: Set<UUID> = []
+    /// Captured windows the user deleted. The scan still sees them while their app is open, so live sync skips them.
+    private var dismissedWindows: [WindowSnapshot] = []
 
     init(store: ProfileStore? = nil) {
         self.store = store ?? AppState.current?.store ?? ProfileStore()
@@ -109,7 +117,7 @@ final class ProfileBuilderModel: ObservableObject {
             case .failure(let failure): return fail(failure.message)
             case .success(let (captured, notes)):
                 startNotes = notes
-                begin(DraftSession.capturedDraft(captured, existingNames: existingNames), isNew: true)
+                begin(DraftSession.capturedDraft(captured, existingNames: existingNames), isNew: true, live: true)
             }
         case .copyOf(let id):
             do {
@@ -150,7 +158,7 @@ final class ProfileBuilderModel: ObservableObject {
         let existingNames = store.list().map(\.name)
         connectedDisplays = await Task.detached { DisplayMap.current() }.value
         startNotes = notes
-        begin(DraftSession.capturedDraft(captured, existingNames: existingNames), isNew: true)
+        begin(DraftSession.capturedDraft(captured, existingNames: existingNames), isNew: true, live: true)
         await loadLibrary()
     }
 
@@ -164,13 +172,16 @@ final class ProfileBuilderModel: ObservableObject {
         phase = .failed(message)
     }
 
-    private func begin(_ initial: Profile, isNew: Bool) {
+    private func begin(_ initial: Profile, isNew: Bool, live: Bool = false) {
         session = DraftSession(initial: initial, isNew: isNew)
         selectedDisplayUUID = initial.displays.first?.uuid
         selectedDesktop = initial.spaces.first { $0.displayUUID == selectedDisplayUUID && $0.kind == .desktop }?.desktopNumber
         selectedWindowID = nil
+        manuallyEdited = []
+        dismissedWindows = []
         phase = .ready
         refresh()
+        setLive(live)
     }
 
     // MARK: Library
@@ -224,9 +235,11 @@ final class ProfileBuilderModel: ObservableObject {
     @discardableResult
     func edit<T>(kind: String? = nil, _ body: (inout ProfileDraftEditor) throws -> T) -> T? {
         guard var s = session else { return nil }
+        let before = s.profile
         do {
             let result = try s.edit(kind: kind, body)
             session = s
+            noteManualEdits(from: before, to: s.profile)
             lastError = nil
             refresh()
             return result
@@ -346,6 +359,7 @@ final class ProfileBuilderModel: ObservableObject {
     func undo() {
         guard var s = session, s.undo() else { return }
         session = s
+        forgetDismissedRestored()
         keepSelectionValid()
         refresh()
         syncMapSelection()
@@ -354,6 +368,7 @@ final class ProfileBuilderModel: ObservableObject {
     func redo() {
         guard var s = session, s.redo() else { return }
         session = s
+        forgetDismissedRestored()
         keepSelectionValid()
         refresh()
         syncMapSelection()
@@ -385,6 +400,9 @@ final class ProfileBuilderModel: ObservableObject {
 
     /// Throws the draft away (the caller asks first when `isDirty`).
     func discard() {
+        setLive(false)
+        manuallyEdited = []
+        dismissedWindows = []
         session = nil
         phase = .idle
         draftIssues = []
@@ -395,6 +413,65 @@ final class ProfileBuilderModel: ObservableObject {
         selectedWindowID = nil
         selectedDesktop = nil
         selectedDisplayUUID = nil
+    }
+
+    // MARK: Live sync (P6.67)
+
+    /// Turns the live loop on or off. Turning it on takes one scan at once, then one every 2 s while the draft is ready.
+    func setLive(_ on: Bool) {
+        guard on || isLive else { return }
+        liveTask?.cancel()
+        liveTask = nil
+        isLive = on
+        DebugLog.log("studio", "live \(on ? "on" : "off")")
+        guard on else { return }
+        liveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let model = self else { return }
+                await model.liveTick()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    /// One pass of the loop. The scan and the capture-to-profile step run off the main thread; the merge runs here.
+    /// The loop awaits each pass before it sleeps, so a slow scan is never overlapped by the next one.
+    private func liveTick() async {
+        guard isLive, phase == .ready, session != nil else { return }
+        // A click or drag in progress: the next pass catches up, so the drag is never disturbed.
+        guard NSEvent.pressedMouseButtons == 0 else { return }
+        let scan = await CaptureSession.scanNow()
+        let scanned = await Task.detached { ProfileCapture.makeProfile(name: "Live", from: scan).0 }.value
+        guard isLive, phase == .ready, let draft = session?.profile else { return }
+        let outcome = LiveDraftSync.outcome(draft: draft, scanned: scanned, manuallyEdited: manuallyEdited,
+                                            dismissed: dismissedWindows)
+        dismissedWindows = outcome.stillDismissed
+        guard outcome.profile != draft else { return }
+        session?.refreshLive(outcome.profile)
+        if outcome.changed {
+            DebugLog.log("studio", "live sync: +\(outcome.added) -\(outcome.removed) ~\(outcome.updated)")
+        }
+        refresh()
+        mapModel?.load(outcome.profile)
+    }
+
+    /// Records what one edit did to the windows: a changed window is the user's now, a removed captured window is
+    /// remembered as deleted (so the scan does not bring it back while its app is open).
+    private func noteManualEdits(from before: Profile, to after: Profile) {
+        guard before != after else { return }
+        for window in after.windows where before.windows.first(where: { $0.id == window.id }) != window {
+            manuallyEdited.insert(window.id)
+        }
+        for window in before.windows where !after.windows.contains(where: { $0.id == window.id }) {
+            manuallyEdited.remove(window.id)
+            if window.origin != .planned { dismissedWindows.append(window) }
+        }
+    }
+
+    /// Undo or redo can bring a deleted window back: it is no longer dismissed.
+    private func forgetDismissedRestored() {
+        guard let p = profile else { return }
+        dismissedWindows.removeAll { window in p.windows.contains { $0.id == window.id } }
     }
 
     // MARK: Derived state

@@ -1,5 +1,7 @@
+import AppKit
 import Combine
 import Foundation
+import SwiftUI
 import WMCore
 
 /// One sidebar row: the summary plus what only the full profile knows.
@@ -100,6 +102,25 @@ final class ProfileStudioModel: ObservableObject {
     private var pendingSelectID: UUID?
     private var cancellable: AnyCancellable?
     private var observed: ObjectIdentifier?
+    /// Compare refreshes itself every 3 s while the Studio is key (P6.67).
+    private var compareTimer: Task<Void, Never>?
+    /// A comparison scan is running (the spinner shows only for the ones a person asked for).
+    private var compareInFlight = false
+    private var closeCancellable: AnyCancellable?
+
+    init() {
+        // Closing the Studio stops the Live sync of its draft (the draft itself stays, as the window is reopened).
+        closeCancellable = NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)
+            .compactMap { $0.object as? NSWindow }
+            .filter { Self.isStudioWindow($0) }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.builder?.setLive(false) }
+    }
+
+    /// True for the Profile Studio window itself (its content is the Studio view).
+    static func isStudioWindow(_ window: NSWindow?) -> Bool {
+        window?.contentViewController is NSHostingController<ProfileStudioView>
+    }
 
     var selectedRow: ProfileStudioRow? { rows.first { $0.id == selectedID } }
 
@@ -273,7 +294,29 @@ final class ProfileStudioModel: ObservableObject {
         guard on != isCompareOn else { return }
         isCompareOn = on
         DebugLog.log("studio", "compare \(on ? "on" : "off")")
-        if on { scheduleCompare(delay: .milliseconds(150)) } else { cancelCompare(clear: true) }
+        if on {
+            scheduleCompare(delay: .milliseconds(150))
+            startCompareTimer()
+        } else {
+            compareTimer?.cancel()
+            compareTimer = nil
+            cancelCompare(clear: true)
+        }
+    }
+
+    /// While Compare is on and the Studio is the key window, the comparison is redone every 3 s, quietly (no spinner).
+    /// A comparison still running is left to finish.
+    private func startCompareTimer() {
+        compareTimer?.cancel()
+        compareTimer = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                guard let self, !Task.isCancelled, self.isCompareOn else { return }
+                if !self.compareInFlight, !self.isPreviewPresented, Self.isStudioWindow(NSApp.keyWindow) {
+                    self.scheduleCompare(delay: .milliseconds(0), showsProgress: false)
+                }
+            }
+        }
     }
 
     /// Cmd+R, and when the window becomes key again. Does nothing while Compare is off.
@@ -291,6 +334,7 @@ final class ProfileStudioModel: ObservableObject {
         compareTask?.cancel()
         compareTask = nil
         isComparing = false
+        compareInFlight = false
         if clear {
             liveStatus = nil
             comparePlan = nil
@@ -300,8 +344,9 @@ final class ProfileStudioModel: ObservableObject {
 
     /// Debounced: a burst of selection changes or refreshes runs one scan. The scan itself runs off the main
     /// thread inside the live environment, exactly the one `AppState.run` uses.
-    private func scheduleCompare(delay: Duration) {
+    private func scheduleCompare(delay: Duration, showsProgress: Bool = true) {
         compareTask?.cancel()
+        compareInFlight = false
         guard let id = selectedID else { return }
         guard AppState.current?.isAccessibilityTrusted ?? false else {
             compareTask = nil
@@ -312,7 +357,8 @@ final class ProfileStudioModel: ObservableObject {
             return
         }
         compareError = nil
-        isComparing = true
+        if showsProgress { isComparing = true }
+        compareInFlight = true
         compareTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled, let self, let app = AppState.current else { return }
@@ -326,12 +372,14 @@ final class ProfileStudioModel: ObservableObject {
                 self.liveStatus = ProfileLiveStatus(profile: profile, plan: plan)
                 self.compareError = nil
                 self.isComparing = false
+                self.compareInFlight = false
             } catch {
                 guard !Task.isCancelled, self.selectedID == id else { return }
                 self.liveStatus = nil
                 self.comparePlan = nil
                 self.compareError = "Could not compare: \(error.localizedDescription)"
                 self.isComparing = false
+                self.compareInFlight = false
             }
         }
     }

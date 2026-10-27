@@ -33,6 +33,12 @@ enum CaptureSession {
         return scan
     }
 
+    /// One scan for Live sync (P6.67), off the main thread and without hiding anything: the Studio stays where it is and
+    /// `scanWorkspace` leaves our own windows out. Only the first capture hides the windows (`run`).
+    static func scanNow() async -> WorkspaceScan {
+        await Task.detached(priority: .utility) { scanWorkspace() }.value
+    }
+
     // MARK: Hiding and showing
 
     /// Orders out our visible windows. Returns them with the window that had keyboard focus (nil when it was not ours).

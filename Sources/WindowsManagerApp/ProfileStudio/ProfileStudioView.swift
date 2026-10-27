@@ -462,6 +462,13 @@ struct StudioEditDetail: View {
                 .disabled(!builder.canRedo)
                 .help("Redo (Shift+Cmd+Z)")
                 .accessibilityLabel("Redo")
+            Toggle(isOn: Binding(get: { builder.isLive }, set: { builder.setLive($0) })) {
+                Label("Live", systemImage: builder.isLive ? "circle.fill" : "circle")
+            }
+            .toggleStyle(.button)
+            .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
+            .help("Keep the draft in sync with your real windows (updates every 2 s)")
+            .accessibilityLabel("Live sync")
             if !iconOnly {
                 Text(statusText)
                     .font(.callout).lineLimit(1).truncationMode(.tail)

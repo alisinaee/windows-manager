@@ -72,6 +72,12 @@ public struct EditHistory<State> {
         return true
     }
 
+    /// Replaces the current value without an undo entry (a live refresh from the desktop, P6.67). The undo and redo
+    /// stacks are kept.
+    public mutating func replaceCurrent(_ state: State) {
+        current = state
+    }
+
     /// Starts over with `state` and no history (after a save, for example).
     public mutating func reset(to state: State) {
         current = state

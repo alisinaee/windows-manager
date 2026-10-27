@@ -314,7 +314,7 @@ final class StudioEditLocalState: ObservableObject {
     @Published var tab: StudioInspectorTab = .inspector
 }
 
-/// Edit mode: header and edit bar, app library, the builder map and the inspector tabs.
+/// Edit mode: header and edit bar, the builder map and the inspector tabs.
 struct StudioEditDetail: View {
     @ObservedObject var model: ProfileStudioModel
     @ObservedObject var builder: ProfileBuilderModel
@@ -352,21 +352,17 @@ struct StudioEditDetail: View {
         }
     }
 
-    /// Library 160 + map 320 + inspector 260 + dividers: below this the inspector moves under the map.
+    /// Map 320 + inspector 260 + dividers: below this the inspector moves under the map.
     private static let sideBySideWidth: CGFloat = 1100
 
     private var libraryAndMap: some View {
-        HSplitView {
-            AppLibraryView(builder: builder)
+        VStack(spacing: 0) {
+            BuilderMapCanvas(map: map, builder: builder)
                 .onAppear { builder.mapModel = map }
-                .frame(minWidth: 160, idealWidth: 210, maxWidth: 300)
-            VStack(spacing: 0) {
-                BuilderMapCanvas(map: map, builder: builder)
-                Divider()
-                studioBottomBar { MapLegendView(showsStatus: false) }
-            }
-            .frame(minWidth: 320)
+            Divider()
+            studioBottomBar { MapLegendView(showsStatus: false) }
         }
+        .frame(minWidth: 320)
     }
 
     /// One compact row: name, mode, Undo / Redo, draft status, Add App, Cancel and Save.
@@ -414,8 +410,12 @@ struct StudioEditDetail: View {
             Divider().frame(height: 18)
             Button { model.isAddAppPresented = true } label: { Label("Add App", systemImage: "plus") }
                 .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
-                .help("Add an app to the profile")
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .help("Add an app to the profile (Shift+Cmd+A)")
                 .accessibilityLabel("Add App")
+                .popover(isPresented: $model.isAddAppPresented, arrowEdge: .bottom) {
+                    AppLibraryView(builder: builder, onClose: { model.isAddAppPresented = false })
+                }
             Button { model.requestLeaveEdit() } label: { Label("Cancel", systemImage: "xmark") }
                 .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
                 .help("Leave Edit mode, asking first if there are unsaved changes")

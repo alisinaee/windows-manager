@@ -22,17 +22,28 @@ final class AppLibraryUIModel: ObservableObject {
     @Published var selection: String?
 }
 
-/// Left panel of Edit mode: search, Running / Installed / Added to this profile, with drag and an Add button.
+/// Content of the Add App popover: target Desktop, search, Running / Installed / Added to this profile.
+/// Return adds the highlighted app and the popover stays open so several apps can be added in a row.
 struct AppLibraryView: View {
     @ObservedObject var builder: ProfileBuilderModel
+    /// Closes the popover (Esc).
+    var onClose: () -> Void = {}
     @StateObject private var ui = AppLibraryUIModel()
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
+            targetPicker
             TextField("Search apps", text: $builder.librarySearch)
                 .textFieldStyle(.roundedBorder)
-                .padding(8)
+                .padding(.horizontal, 8).padding(.bottom, 8)
+                .focused($searchFocused)
+                .onSubmit { addHighlighted() }
+                .onKeyPress(.downArrow) { moveSelection(1); return .handled }
+                .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
+                .onKeyPress(.escape) { onClose(); return .handled }
                 .accessibilityLabel("Search apps")
+                .help("Type to filter. Up / Down choose an app, Return adds it to the chosen Desktop, Esc closes")
             Divider()
             if builder.isLoadingLibrary && builder.library.isEmpty {
                 ProgressView("Reading installed apps").padding()
@@ -43,11 +54,72 @@ struct AppLibraryView: View {
             Divider()
             footer
         }
+        .frame(width: 360, height: 420)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("App library")
+        .onAppear {
+            searchFocused = true
+            if ui.selection == nil { ui.selection = flatKeys.first }
+            DebugLog.log("studio", "add-app popover opened (\(builder.library.count) apps)")
+        }
+        .onChange(of: builder.librarySearch) { _, _ in ui.selection = flatKeys.first }
+    }
+
+    /// "Add to: Desktop N · monitor" as a menu over every Desktop of the profile.
+    private var targetPicker: some View {
+        let options = targetOptions
+        let current = target().map { "\($0.display)|\($0.desktop)" } ?? ""
+        return HStack(spacing: 6) {
+            Text("Add to").foregroundStyle(.secondary)
+            Picker("Add to", selection: Binding(
+                get: { current },
+                set: { value in
+                    let parts = value.split(separator: "|", maxSplits: 1).map(String.init)
+                    guard parts.count == 2, let n = Int(parts[1]) else { return }
+                    builder.selectedDisplayUUID = parts[0]
+                    builder.selectedDesktop = n
+                })) {
+                ForEach(options, id: \.id) { Text($0.title).tag($0.id) }
+            }
+            .labelsHidden()
+            .disabled(options.isEmpty)
+            .help("The Desktop new apps are added to")
+            .accessibilityLabel("Add to Desktop")
+        }
+        .padding(8)
+    }
+
+    private var targetOptions: [(id: String, title: String)] {
+        guard let profile = builder.profile else { return [] }
+        return profile.displays.flatMap { display in
+            desktopNumbers(of: display.uuid, in: profile).map { (id: "\(display.uuid)|\($0)", title: "Desktop \($0) · \(display.name)") }
+        }
+    }
+
+    /// Keyboard order: the rows that can be added (Running, then Installed).
+    private var flatKeys: [String] { (builder.runningLibrary + builder.installedLibrary).map { "lib:" + $0.bundleID } }
+
+    private func moveSelection(_ delta: Int) {
+        let keys = flatKeys
+        guard !keys.isEmpty else { return }
+        let index = ui.selection.flatMap { keys.firstIndex(of: $0) } ?? (delta > 0 ? -1 : keys.count)
+        ui.selection = keys[min(max(index + delta, 0), keys.count - 1)]
+    }
+
+    private func addHighlighted() {
+        guard let key = ui.selection, let entry = builder.library.first(where: { "lib:" + $0.bundleID == key }) else { return }
+        place(entry)
     }
 
     private var list: some View {
+        ScrollViewReader { proxy in
+            listBody.onChange(of: ui.selection) { _, key in
+                if let key { proxy.scrollTo(key) }
+            }
+        }
+    }
+
+    private var listBody: some View {
         List(selection: $ui.selection) {
             if !builder.runningLibrary.isEmpty {
                 Section("Running") {
@@ -75,17 +147,18 @@ struct AppLibraryView: View {
         }
         .listStyle(.sidebar)
         .onKeyPress(.return) {
-            guard let key = ui.selection, let entry = builder.library.first(where: { "lib:" + $0.bundleID == key })
-            else { return .ignored }
-            place(entry)
+            guard ui.selection != nil else { return .ignored }
+            addHighlighted()
             return .handled
         }
+        .onKeyPress(.escape) { onClose(); return .handled }
     }
 
     private func row(for entry: LibraryEntry) -> some View {
         let payload = LibraryDragPayload(bundleID: entry.bundleID, name: entry.name, path: entry.url?.path)
         return LibraryRow(entry: entry, canPlace: canPlace, onAdd: { place(entry) })
             .tag("lib:" + entry.bundleID)
+            .id("lib:" + entry.bundleID)
             .draggable(payload) {
                 HStack(spacing: 6) {
                     Image(nsImage: AppIconCache.icon(for: builder.appRef(for: entry))).resizable().frame(width: 20, height: 20)
@@ -97,7 +170,7 @@ struct AppLibraryView: View {
     }
 
     @ViewBuilder private func contextMenu(for entry: LibraryEntry) -> some View {
-        Button("Add to the selected Desktop") { place(entry) }.disabled(!canPlace)
+        Button("Add to the chosen Desktop") { place(entry) }.disabled(!canPlace)
         if let profile = builder.profile {
             Menu("Add to") {
                 ForEach(profile.displays, id: \.uuid) { display in
@@ -110,7 +183,10 @@ struct AppLibraryView: View {
             }
         }
         Divider()
-        Button("Launch only, no window") { builder.addLaunchOnly(app: builder.appRef(for: entry)) }
+        Button("Launch only, no window") {
+            DebugLog.log("studio", "add-app popover: \(entry.name) added as launch only")
+            builder.addLaunchOnly(app: builder.appRef(for: entry))
+        }
     }
 
     private var footer: some View {
@@ -150,6 +226,7 @@ struct AppLibraryView: View {
     private func place(_ entry: LibraryEntry, display: String? = nil, desktop: Int? = nil) {
         guard let spot = display.flatMap({ d in desktop.map { (d, $0) } }) ?? target().map({ ($0.display, $0.desktop) })
         else { return }
+        DebugLog.log("studio", "add-app popover: \(entry.name) added to Desktop \(spot.1)")
         builder.addWindow(app: builder.appRef(for: entry), onDisplay: spot.0, desktop: spot.1)
     }
 
@@ -200,11 +277,11 @@ private struct LibraryRow: View {
             Button(action: onAdd) { Image(systemName: "plus.circle") }
                 .buttonStyle(.borderless)
                 .disabled(!canPlace)
-                .accessibilityLabel("Add \(entry.name) to the selected Desktop")
-                .help("Add to the selected Desktop (or drag onto the map)")
+                .accessibilityLabel("Add \(entry.name) to the chosen Desktop")
+                .help("Add to the Desktop chosen above (or drag onto the map)")
         }
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Press Return to add it to the selected Desktop, or drag it onto the map.")
+        .accessibilityHint("Press Return to add it to the chosen Desktop, or drag it onto the map.")
         .accessibilityValue(entry.isRunning ? "running" : "")
     }
 }

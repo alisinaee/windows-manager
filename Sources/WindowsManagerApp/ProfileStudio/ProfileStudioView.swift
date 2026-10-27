@@ -5,6 +5,11 @@ import SwiftUI
 struct ProfileStudioView: View {
     @ObservedObject var model: ProfileStudioModel
     @Environment(\.openSettings) private var openSettings
+    /// Width of the full profile sidebar: dragged between 200 and 340 points and remembered between launches.
+    @AppStorage("studioSidebarWidth") private var storedSidebarWidth: Double = 240
+    @State private var sidebarDragStart: Double?
+
+    private static let sidebarWidthRange: ClosedRange<Double> = 200...340
 
     var body: some View {
         Group {
@@ -14,17 +19,23 @@ struct ProfileStudioView: View {
             case .failed(let message):
                 messageView(icon: "exclamationmark.triangle", text: message, action: ("Try Again", { model.reload() }))
             case .empty:
-                messageView(icon: "rectangle.3.group", text: "No profiles yet: capture your workspace from the menu bar",
-                            action: ("Capture…", { model.beginCapture() }))
+                emptyState(icon: "rectangle.3.group", title: "No profiles yet",
+                           subtitle: "Capture the windows you have open now to make your first profile.") {
+                    Button("Capture…") { model.beginCapture() }
+                        .buttonStyle(.borderedProminent).controlSize(.large)
+                        .help("Capture the windows you have open now as a new profile")
+                        .accessibilityLabel("Capture profile from open windows")
+                }
             case .loaded:
                 GeometryReader { geo in
                     HStack(spacing: 0) {
                         if model.isSidebarShown {
-                            sidebar.frame(width: 240)
+                            sidebar.frame(width: CGFloat(storedSidebarWidth.clamped(to: Self.sidebarWidthRange)))
+                            sidebarHandle
                         } else {
                             SidebarRailView(model: model)
+                            Divider()
                         }
-                        Divider()
                         detail.frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     .onAppear { model.contentWidthChanged(geo.size.width) }
@@ -58,10 +69,54 @@ struct ProfileStudioView: View {
             Image(systemName: icon).font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
             Text(text).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Button(action.0, action: action.1)
+                .help(action.0)
+                .accessibilityLabel(action.0)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
+    }
+
+    /// Centred icon, title and one line of help, with the state's action below them.
+    private func emptyState<Actions: View>(icon: String, title: String, subtitle: String,
+                                           @ViewBuilder actions: () -> Actions) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon).font(.system(size: 40, weight: .light)).foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(title).font(.title3.weight(.semibold))
+            Text(subtitle).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+            actions().padding(.top, 6)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+    }
+
+    /// 1pt divider centred in a 9pt drag area, like the Details split: drag to resize the sidebar.
+    private var sidebarHandle: some View {
+        Color.clear
+            .frame(width: 9)
+            .overlay(Divider())
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    let start = sidebarDragStart ?? storedSidebarWidth
+                    sidebarDragStart = start
+                    storedSidebarWidth = (start + value.translation.width).clamped(to: Self.sidebarWidthRange)
+                }
+                .onEnded { _ in sidebarDragStart = nil })
+            .help("Drag to resize the sidebar")
+            .accessibilityElement()
+            .accessibilityLabel("Resize sidebar")
+            .accessibilityValue("\(Int(storedSidebarWidth.clamped(to: Self.sidebarWidthRange))) points")
+            .accessibilityAdjustableAction { direction in
+                let step: Double = direction == .increment ? 10 : -10
+                storedSidebarWidth = (storedSidebarWidth + step).clamped(to: Self.sidebarWidthRange)
+            }
     }
 
     private var sidebar: some View {
@@ -115,7 +170,14 @@ struct ProfileStudioView: View {
                 if (note.object as? NSWindow)?.isKeyWindow == true, !model.isPreviewPresented { model.refreshCompare() }
             }
         } else {
-            Text("Select a profile").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            emptyState(icon: "rectangle.3.group", title: "Select a profile",
+                       subtitle: "Choose one on the left, or create a new one") {
+                Button { model.beginNewProfile() } label: { Label("New profile", systemImage: "plus") }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
+                    .disabled(model.mode == .edit)
+                    .help("Start a new profile from the current workspace")
+                    .accessibilityLabel("New profile")
+            }
         }
     }
 
@@ -487,6 +549,11 @@ struct StudioEditDetail: View {
             }
         }
     }
+}
+
+private extension Double {
+    /// Keeps a remembered sidebar width inside its allowed range.
+    func clamped(to range: ClosedRange<Double>) -> Double { Swift.min(Swift.max(self, range.lowerBound), range.upperBound) }
 }
 
 struct ProfileStudioRowView: View {

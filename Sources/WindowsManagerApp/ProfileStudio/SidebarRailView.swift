@@ -3,47 +3,64 @@ import SwiftUI
 /// Slim icon rail shown instead of the profile sidebar when it is collapsed: toggle, New profile, one icon per profile.
 struct SidebarRailView: View {
     @ObservedObject var model: ProfileStudioModel
-    static let width: CGFloat = 48
+    static let width: CGFloat = 52
 
     var body: some View {
         VStack(spacing: 6) {
-            SidebarToggleButton(model: model)
+            HStack { SidebarToggleButton(model: model) }
             Button { model.beginNewProfile() } label: {
-                Image(systemName: "plus").frame(width: 32, height: 28).contentShape(Rectangle())
+                tile(icon: "plus", tint: .accentColor, selected: false)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
             .disabled(model.mode == .edit)
             .help("New profile")
             .accessibilityLabel("New profile")
-            Divider().padding(.horizontal, 8)
             ScrollView {
-                VStack(spacing: 4) {
+                VStack(spacing: 6) {
                     ForEach(model.rows) { row in railIcon(row) }
                 }
-                .padding(.horizontal, 6)
             }
+            .scrollIndicators(.hidden)
             .disabled(model.mode == .edit)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
         .frame(width: Self.width)
         .frame(maxHeight: .infinity)
         .background(.bar)
     }
 
+    /// Same icon and tint as the profile's row in the full sidebar, in a rounded tile like a pro-app rail.
+    private func tile(icon: String, tint: Color, selected: Bool) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(tint)
+            .frame(width: 36, height: 36)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(selected ? tint.opacity(0.30) : tint.opacity(0.14)))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(selected ? tint.opacity(0.9) : Color.clear, lineWidth: 1.5))
+            .contentShape(Rectangle())
+    }
+
     private func railIcon(_ row: ProfileStudioRow) -> some View {
         let selected = row.id == model.selectedID
         return Button { model.selectedID = row.id } label: {
-            Image(systemName: row.icon)
-                .frame(width: 32, height: 30)
-                .foregroundStyle(selected ? Color.white : Color.accentColor)
-                .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.accentColor : Color.clear))
-                .contentShape(Rectangle())
+            tile(icon: row.icon, tint: ProfileRowTint.color(for: row.id), selected: selected)
         }
         .buttonStyle(.plain)
         .help(row.name)
         .accessibilityLabel(row.name)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// A stable colour per profile, shared by the full sidebar row and the collapsed rail.
+enum ProfileRowTint {
+    private static let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .red, .indigo]
+
+    static func color(for id: UUID) -> Color {
+        let sum = id.uuid.0 &+ id.uuid.5 &+ id.uuid.10 &+ id.uuid.15
+        return palette[Int(sum) % palette.count]
     }
 }
 

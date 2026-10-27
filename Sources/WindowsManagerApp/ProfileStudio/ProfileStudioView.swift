@@ -436,7 +436,7 @@ struct ProfileStudioRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: row.icon).frame(width: 22).foregroundStyle(Color.accentColor).accessibilityHidden(true)
+            Image(systemName: row.icon).frame(width: 22).foregroundStyle(ProfileRowTint.color(for: row.id)).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name).lineLimit(1).truncationMode(.tail)
                 Text(Self.subtitle(row)).font(.caption).foregroundStyle(.secondary)

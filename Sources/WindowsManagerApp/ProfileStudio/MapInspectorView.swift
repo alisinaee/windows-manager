@@ -9,16 +9,10 @@ struct MapInspectorView: View {
     /// The plan behind the live status, when Compare is on and done.
     var plan: RestorePlan?
     var isCompareOn: Bool
-    /// The saved profile whose run shortcut can be set here (View mode only).
-    var shortcutProfile: (id: UUID, name: String)?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                if let shortcutProfile {
-                    ProfileShortcutView(profileID: shortcutProfile.id, profileName: shortcutProfile.name)
-                    Divider()
-                }
                 if let id = map.selectedWindowID, let window = map.window(id) {
                     windowDetails(window)
                 } else if let profile = map.profile, let space = focusedSpace(profile) {

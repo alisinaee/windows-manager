@@ -1,3 +1,4 @@
+import KeyboardShortcuts
 import SwiftUI
 
 /// Profile Studio shell: profile list on the left, map placeholder and toolbar on the right.
@@ -102,9 +103,7 @@ struct ProfileStudioView: View {
                 .id(ObjectIdentifier(builder))
         } else if let row = model.selectedRow {
             VStack(spacing: 0) {
-                header(row)
-                Divider()
-                controlBar(row)
+                toolbar(row)
                 Divider()
                 StudioMapHost(row: row, model: model)
             }
@@ -120,86 +119,113 @@ struct ProfileStudioView: View {
         }
     }
 
-    /// Name and actions. Falls back to icon-only buttons, then a single-line subtitle, so it never grows past the pane.
-    private func header(_ row: ProfileStudioRow) -> some View {
-        ViewThatFits(in: .horizontal) {
-            headerRow(row, iconOnly: false, truncating: false)
-            headerRow(row, iconOnly: true, truncating: false)
-            headerRow(row, iconOnly: true, truncating: true)
-        }
-        .padding(16)
-    }
-
-    private func headerRow(_ row: ProfileStudioRow, iconOnly: Bool, truncating: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.name).font(.title2.bold()).lineLimit(1).truncationMode(.tail)
-                Text(ProfileStudioRowView.subtitle(row))
-                    .font(.callout).foregroundStyle(.secondary)
-                    .lineLimit(truncating ? 1 : nil).truncationMode(.tail)
-            }
-            .frame(maxWidth: truncating ? .infinity : nil, alignment: .leading)
-            Spacer(minLength: 8)
-            StudioModePicker(model: model)
-            Group {
-                Button { model.beginNewProfile() } label: { Label("New profile", systemImage: "plus") }
-                    .help("Start a new profile from a blank layout, the current workspace or a copy")
-                Button { model.startEditing(row.id) } label: { Label("Edit this profile", systemImage: "pencil") }
-                    .help("Open this profile in the Builder")
-                Button { NSApp.activate(); openSettings() } label: { Label("Reveal in Settings", systemImage: "gearshape") }
-                    .help("Reveal in Settings (Profiles tab)")
-                    .accessibilityHint("Opens Settings, Profiles tab")
-            }
-            .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
-        }
-    }
-
-    /// Compare toggle, Preview restore and Run, with the compare / run status below them.
-    private func controlBar(_ row: ProfileStudioRow) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    /// One compact row: name, mode, compare, preview and Run with its shortcut chip. Falls back to icon-only
+    /// buttons, then a shorter name, so it never grows past the pane. Compare / run problems sit in a banner below.
+    private func toolbar(_ row: ProfileStudioRow) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             ViewThatFits(in: .horizontal) {
-                controlRow(row, iconOnly: false)
-                controlRow(row, iconOnly: true)
+                toolbarRow(row, iconOnly: false, truncating: false)
+                toolbarRow(row, iconOnly: true, truncating: false)
+                toolbarRow(row, iconOnly: true, truncating: true)
             }
             if let error = model.compareError {
                 Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.callout).foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .font(.callout).foregroundStyle(.orange).lineLimit(1).truncationMode(.tail)
                     .accessibilityLabel("Compare problem: \(error)")
             }
-            if let app = AppState.current { RunStatusLine(app: app).fixedSize(horizontal: false, vertical: true) }
+            if let app = AppState.current { RunStatusLine(app: app).lineLimit(1) }
         }
-        .padding(.horizontal, 16).padding(.vertical, 8)
+        .padding(.horizontal, 12).padding(.vertical, 6)
     }
 
-    private func controlRow(_ row: ProfileStudioRow, iconOnly: Bool) -> some View {
-        HStack(spacing: 12) {
+    private func toolbarRow(_ row: ProfileStudioRow, iconOnly: Bool, truncating: Bool) -> some View {
+        HStack(spacing: 10) {
+            Text(row.name).font(.title3.bold()).lineLimit(1).truncationMode(.tail)
+                .frame(maxWidth: truncating ? .infinity : nil, alignment: .leading)
+                .help(ProfileStudioRowView.subtitle(row))
+                .accessibilityLabel("\(row.name), \(ProfileStudioRowView.subtitle(row))")
+            Spacer(minLength: 8)
+            StudioModePicker(model: model)
+            Divider().frame(height: 18)
             Toggle(isOn: Binding(get: { model.isCompareOn }, set: { model.setCompare($0) })) {
-                Label(iconOnly ? "Compare" : "Show what is missing now", systemImage: "arrow.triangle.2.circlepath")
+                Label("Compare", systemImage: "arrow.triangle.2.circlepath")
             }
             .toggleStyle(.button)
+            .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
             .keyboardShortcut("l", modifiers: .command)
-            .help("Compare this profile with your Mac (Cmd+L). Only scans: nothing is moved.")
+            .help("Show what is missing now: compare this profile with your Mac (Cmd+L). Only scans: nothing is moved.")
+            .accessibilityLabel("Compare with your Mac")
             if model.isComparing {
                 ProgressView().controlSize(.small)
-                if !iconOnly { Text("Comparing with your Mac…").font(.callout).foregroundStyle(.secondary) }
             } else if model.isCompareOn, model.compareError == nil {
                 Button { model.refreshCompare() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                    .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
+                    .labelStyle(StudioActionLabelStyle(iconOnly: true))
                     .keyboardShortcut("r", modifiers: .command)
                     .help("Compare again (Cmd+R)")
+                    .accessibilityLabel("Refresh comparison")
             }
-            Spacer(minLength: 8)
+            Divider().frame(height: 18)
             Button { DebugLog.log("studio", "preview restore opened: \(row.name)"); model.isPreviewPresented = true } label: { Label("Preview restore", systemImage: "list.bullet.rectangle") }
                 .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
                 .keyboardShortcut("p", modifiers: [.command, .shift])
-                .help("See what a restore would do, step by step (Cmd+Shift+P)")
+                .help("Preview restore: see what a restore would do, step by step (Cmd+Shift+P)")
+                .accessibilityLabel("Preview restore")
+            Divider().frame(height: 18)
             if let app = AppState.current {
-                RunProfileButton(app: app, profileID: row.id, profileName: row.name)
-                    .keyboardShortcut(.defaultAction)
+                StudioRunControl(app: app, profileID: row.id, profileName: row.name, iconOnly: iconOnly)
             }
         }
     }
+}
+
+/// Run button (Cmd+Return, so Return on the canvas never runs a profile) with the shortcut chip at its right.
+/// The chip opens the recorder popover; it re-reads the stored shortcut when the popover closes.
+struct StudioRunControl: View {
+    @ObservedObject var app: AppState
+    let profileID: UUID
+    let profileName: String
+    var iconOnly: Bool
+
+    @State private var shortcut: KeyboardShortcuts.Shortcut?
+    @State private var showEditor = false
+
+    private var isSaved: Bool { app.savedProfiles.contains { $0.id == profileID } }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button {
+                DebugLog.log("studio", "run clicked: \(profileName)")
+                app.run(id: profileID)
+            } label: { Label("Run", systemImage: "play.fill") }
+                .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!app.canAct)
+                .help((studioRunBlockReason(app) ?? "Restore \(profileName) now") + " (Cmd+Return)")
+                .accessibilityLabel("Run profile \(profileName)")
+            Button {
+                DebugLog.log("studio", "shortcut chip opened: \(profileName)")
+                showEditor = true
+            } label: {
+                Text(shortcut.map { $0.description } ?? "Set shortcut")
+                    .font(.callout.monospaced()).lineLimit(1)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.15)))
+                    .foregroundStyle(shortcut == nil ? .tertiary : .primary)
+            }
+            .buttonStyle(.plain)
+            .disabled(!isSaved)
+            .help(isSaved ? "Run shortcut: click to set or change it" : "Save the profile to set a run shortcut")
+            .accessibilityLabel(shortcut.map { "Run shortcut \($0.description), change" } ?? "Set run shortcut")
+            .popover(isPresented: $showEditor, arrowEdge: .bottom) {
+                ProfileShortcutView(profileID: profileID, profileName: profileName).padding(12).frame(width: 280)
+            }
+        }
+        .onAppear(perform: reload)
+        .onChange(of: profileID) { _, _ in reload() }
+        .onChange(of: showEditor) { _, _ in reload() }
+    }
+
+    private func reload() { shortcut = KeyboardShortcuts.getShortcut(for: .profile(profileID)) }
 }
 
 /// Title and icon, or the icon alone when the row is short of room (the button keeps its help text).
@@ -234,9 +260,7 @@ struct StudioMapHost: View {
     }
 
     private var inspectorPane: MapInspectorView {
-        // Only a saved profile has a hotkey name; a draft or an unsaved capture does not.
-        let saved = map.profile.flatMap { p in AppState.current?.savedProfiles.contains { $0.id == p.id } == true ? (id: p.id, name: p.name) : nil }
-        return MapInspectorView(map: map, plan: model.comparePlan, isCompareOn: model.isCompareOn, shortcutProfile: saved)
+        return MapInspectorView(map: map, plan: model.comparePlan, isCompareOn: model.isCompareOn)
     }
 
     var body: some View {
@@ -296,6 +320,7 @@ struct StudioEditDetail: View {
     @ObservedObject var builder: ProfileBuilderModel
     @StateObject private var map = ProfileMapModel()
     @StateObject private var local = StudioEditLocalState()
+    @State private var bannerDismissed = false
 
     var body: some View {
         switch builder.phase {
@@ -315,10 +340,9 @@ struct StudioEditDetail: View {
             .padding().frame(maxWidth: .infinity, maxHeight: .infinity)
         case .ready:
             VStack(spacing: 0) {
-                header
+                editToolbar
                 Divider()
-                editBar
-                Divider()
+                if hasBanner { banner; Divider() }
                 StudioInspectorSplit(sideBySideWidth: Self.sideBySideWidth, minMainWidth: 480) {
                     libraryAndMap
                 } inspector: {
@@ -345,54 +369,92 @@ struct StudioEditDetail: View {
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(builder.nameText.isEmpty ? "Untitled profile" : builder.nameText).font(.title2.bold())
-                    .lineLimit(1).truncationMode(.tail)
-                Text(builder.isNewProfile ? "New profile (not saved yet)" : "Editing a saved profile")
-                    .font(.callout).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            StudioModePicker(model: model)
+    /// One compact row: name, mode, Undo / Redo, draft status, Add App, Cancel and Save.
+    private var editToolbar: some View {
+        ViewThatFits(in: .horizontal) {
+            editRow(iconOnly: false, truncating: false)
+            editRow(iconOnly: true, truncating: false)
+            editRow(iconOnly: true, truncating: true)
         }
-        .padding(16)
+        .padding(.horizontal, 12).padding(.vertical, 6)
     }
 
-    private var editBar: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                Button { builder.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
-                    .keyboardShortcut("z", modifiers: .command)
-                    .disabled(!builder.canUndo)
-                    .help("Undo the last change (Cmd+Z)")
-                Button { builder.redo() } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
-                    .keyboardShortcut("z", modifiers: [.command, .shift])
-                    .disabled(!builder.canRedo)
-                    .help("Redo (Shift+Cmd+Z)")
-                Spacer(minLength: 8)
+    private func editRow(iconOnly: Bool, truncating: Bool) -> some View {
+        let title = builder.nameText.isEmpty ? "Untitled profile" : builder.nameText
+        return HStack(spacing: 10) {
+            Text(title).font(.title3.bold()).lineLimit(1).truncationMode(.tail)
+                .frame(maxWidth: truncating ? .infinity : nil, alignment: .leading)
+                .help(builder.isNewProfile ? "New profile (not saved yet)" : "Editing a saved profile")
+                .accessibilityLabel("\(title), \(builder.isNewProfile ? "new profile, not saved yet" : "editing a saved profile")")
+            Spacer(minLength: 8)
+            StudioModePicker(model: model)
+            Divider().frame(height: 18)
+            Button { builder.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
+                .labelStyle(StudioActionLabelStyle(iconOnly: true))
+                .keyboardShortcut("z", modifiers: .command)
+                .disabled(!builder.canUndo)
+                .help("Undo the last change (Cmd+Z)")
+                .accessibilityLabel("Undo")
+            Button { builder.redo() } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
+                .labelStyle(StudioActionLabelStyle(iconOnly: true))
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(!builder.canRedo)
+                .help("Redo (Shift+Cmd+Z)")
+                .accessibilityLabel("Redo")
+            if !iconOnly {
                 Text(statusText)
                     .font(.callout).lineLimit(1).truncationMode(.tail)
                     .foregroundStyle(builder.errorCount > 0 ? Color.red : (builder.warningCount > 0 ? Color.orange : Color.secondary))
                     .accessibilityLabel("Draft check: \(statusText)")
-                Button { model.saveThen(nil) } label: { Label("Save", systemImage: "square.and.arrow.down") }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut("s", modifiers: .command)
-                    .disabled(builder.blocksSaving)
-                    .help(builder.blocksSaving ? "Fix the problems marked in red first" : "Save the profile (Cmd+S)")
+            } else if builder.errorCount > 0 || builder.warningCount > 0 {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(builder.errorCount > 0 ? Color.red : Color.orange)
+                    .help(statusText).accessibilityLabel("Draft check: \(statusText)")
             }
-            if let message = builder.lastError {
-                Label(message, systemImage: "exclamationmark.triangle")
-                    .font(.callout).foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !builder.startNotes.isEmpty {
-                Text(builder.startNotes.joined(separator: " "))
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Divider().frame(height: 18)
+            Button { model.isAddAppPresented = true } label: { Label("Add App", systemImage: "plus") }
+                .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
+                .help("Add an app to the profile")
+                .accessibilityLabel("Add App")
+            Button { model.requestLeaveEdit() } label: { Label("Cancel", systemImage: "xmark") }
+                .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
+                .help("Leave Edit mode, asking first if there are unsaved changes")
+                .accessibilityLabel("Cancel editing")
+            Button { model.saveThen(nil) } label: { Label("Save", systemImage: "square.and.arrow.down") }
+                .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut("s", modifiers: .command)
+                .disabled(builder.blocksSaving)
+                .help(builder.blocksSaving ? "Fix the problems marked in red first" : "Save the profile (Cmd+S)")
+                .accessibilityLabel("Save profile")
         }
-        .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+
+    private var hasBanner: Bool {
+        guard !bannerDismissed else { return false }
+        return builder.lastError != nil || !builder.startNotes.isEmpty
+    }
+
+    /// Start notes and the last error on one dismissible line, so the toolbar never grows.
+    private var banner: some View {
+        let isError = builder.lastError != nil
+        let text = builder.lastError ?? builder.startNotes.joined(separator: " ")
+        return HStack(spacing: 8) {
+            Image(systemName: isError ? "exclamationmark.triangle" : "info.circle")
+                .foregroundStyle(isError ? Color.orange : Color.secondary)
+            Text(text).font(.callout).lineLimit(1).truncationMode(.tail)
+                .foregroundStyle(isError ? Color.orange : Color.secondary)
+                .help(text)
+            Spacer(minLength: 8)
+            Button { bannerDismissed = true } label: { Image(systemName: "xmark") }
+                .buttonStyle(.plain)
+                .help("Dismiss")
+                .accessibilityLabel("Dismiss message")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(isError ? "Problem: \(text)" : "Note: \(text)")
+        .onChange(of: text) { _, _ in bannerDismissed = false }
     }
 
     private var statusText: String {

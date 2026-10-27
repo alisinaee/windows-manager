@@ -86,6 +86,8 @@ final class ProfileStudioModel: ObservableObject {
     let capture = CaptureChoiceModel()
     @Published var isSaveSheetPresented = false
     @Published var isLeaveConfirmPresented = false
+    /// "+ Add App" in the Edit toolbar was pressed; the app library UI observes this.
+    @Published var isAddAppPresented = false
     /// Runs once after the next successful save (leave Edit mode, close the window).
     private var afterSave: (() -> Void)?
 

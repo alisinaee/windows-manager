@@ -15,6 +15,7 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
 
     /// Shows the studio (or brings the open one forward). With `profileID` it selects that profile.
     func show(profileID: UUID? = nil) {
+        DebugLog.log("studio", "window open")
         if let profileID { model.open(profileID: profileID) } else { model.reload() }
         if let window {
             present(window)

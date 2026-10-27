@@ -18,7 +18,7 @@ struct ProfileStudioView: View {
             case .loaded:
                 NavigationSplitView {
                     sidebar
-                        .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 360)
+                        .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)
                 } detail: {
                     detail
                 }
@@ -59,7 +59,9 @@ struct ProfileStudioView: View {
         return VStack(spacing: 0) {
             List(model.rows, selection: selection) { row in
                 ProfileStudioRowView(row: row).tag(row.id)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10))
             }
+            .listStyle(.sidebar)
             .accessibilityLabel("Profiles")
             .disabled(model.mode == .edit)
             if !model.skipped.isEmpty {
@@ -132,7 +134,7 @@ struct ProfileStudioView: View {
                         .help("Compare again (Cmd+R)")
                 }
                 Spacer()
-                Button { model.isPreviewPresented = true } label: { Label("Preview restore", systemImage: "list.bullet.rectangle") }
+                Button { DebugLog.log("studio", "preview restore opened: \(row.name)"); model.isPreviewPresented = true } label: { Label("Preview restore", systemImage: "list.bullet.rectangle") }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
                     .help("See what a restore would do, step by step (Cmd+Shift+P)")
                 if let app = AppState.current {
@@ -164,7 +166,7 @@ struct StudioMapHost: View {
             VStack(spacing: 0) {
                 ProfileMapCanvas(model: map)
                 Divider()
-                MapLegendView(showsStatus: map.status != nil)
+                studioBottomBar { MapLegendView(showsStatus: map.status != nil) }
             }
             .frame(minWidth: 420)
             MapInspectorView(map: map, plan: model.comparePlan, isCompareOn: model.isCompareOn)
@@ -173,6 +175,16 @@ struct StudioMapHost: View {
         .task(id: row) { map.load(try? AppState.current?.store.load(row.id)) }
         .onChange(of: model.liveStatus) { _, newValue in map.status = newValue }
         .onAppear { map.status = model.liveStatus }
+    }
+}
+
+/// Legend on the left, the Debug log switch at the right end.
+@MainActor @ViewBuilder
+func studioBottomBar<Legend: View>(@ViewBuilder _ legend: () -> Legend) -> some View {
+    HStack(spacing: 12) {
+        legend()
+        Spacer(minLength: 8)
+        DebugLogToggle().padding(.trailing, 12)
     }
 }
 
@@ -241,7 +253,7 @@ struct StudioEditDetail: View {
                     VStack(spacing: 0) {
                         BuilderMapCanvas(map: map, builder: builder)
                         Divider()
-                        MapLegendView(showsStatus: false)
+                        studioBottomBar { MapLegendView(showsStatus: false) }
                     }
                     .frame(minWidth: 380)
                     inspector
@@ -340,13 +352,16 @@ struct ProfileStudioRowView: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .top, spacing: 8) {
             Image(systemName: row.icon).frame(width: 22).foregroundStyle(Color.accentColor).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(row.name).lineLimit(1)
-                Text(Self.subtitle(row)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.name).lineLimit(1).truncationMode(.tail)
+                Text(Self.subtitle(row)).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(row.name), \(Self.subtitle(row))")

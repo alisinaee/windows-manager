@@ -29,8 +29,8 @@ enum ProfileStudioLoadState: Equatable {
 final class ProfileStudioModel: ObservableObject {
     @Published private(set) var rows: [ProfileStudioRow] = []
     @Published private(set) var state: ProfileStudioLoadState = .loading
-    @Published var selectedID: UUID? { didSet { if oldValue != selectedID { titleChanged(); selectionChangedForCompare() } } }
-    @Published var mode: ProfileStudioMode = .view
+    @Published var selectedID: UUID? { didSet { if oldValue != selectedID { DebugLog.log("studio", "profile selected: \(selectedRow?.name ?? "none")"); titleChanged(); selectionChangedForCompare() } } }
+    @Published var mode: ProfileStudioMode = .view { didSet { if oldValue != mode { DebugLog.log("studio", "mode: \(mode == .edit ? "Edit" : "View")") } } }
     /// Names of profiles that could not be read (shown as a warning, the rest still load).
     @Published private(set) var skipped: [String] = []
 
@@ -194,6 +194,7 @@ final class ProfileStudioModel: ObservableObject {
     }
 
     func didSave(_ profile: Profile) {
+        DebugLog.log("studio", "save profile: \(profile.name)")
         isSaveSheetPresented = false
         reload()
         selectedID = profile.id
@@ -218,6 +219,7 @@ final class ProfileStudioModel: ObservableObject {
     func setCompare(_ on: Bool) {
         guard on != isCompareOn else { return }
         isCompareOn = on
+        DebugLog.log("studio", "compare \(on ? "on" : "off")")
         if on { scheduleCompare(delay: .milliseconds(150)) } else { cancelCompare(clear: true) }
     }
 

@@ -34,13 +34,13 @@ struct MenuBarContent: View {
             Divider().padding(.vertical, 2)
 
             MenuRow(title: "Setup…") {
-                OnboardingWindowController.shared.show()
+                Self.closePopup(); OnboardingWindowController.shared.show()
             }
             MenuRow(title: "Layouts…") {
-                LayoutEditorWindowController.shared.show()
+                Self.closePopup(); LayoutEditorWindowController.shared.show()
             }
             MenuRow(title: "Profiles…") {
-                ProfileStudioWindowController.shared.show()
+                Self.closePopup(); ProfileStudioWindowController.shared.show()
             }
             MenuRow(title: "Check for Updates…") {
                 UpdateController.shared.checkForUpdates()
@@ -52,6 +52,7 @@ struct MenuBarContent: View {
                     .padding(.horizontal, 10)
             }
             MenuRow(title: "Settings…") {
+                Self.closePopup()
                 NSApp.activate()
                 openSettings()
             }
@@ -62,6 +63,13 @@ struct MenuBarContent: View {
         .padding(6)
         .frame(width: 280)
         .onAppear { appState.refreshPermissions() }
+    }
+
+    /// Hides the menu bar popup (a MenuBarExtra window-style panel) before another window opens.
+    private static func closePopup() {
+        for window in NSApp.windows where window is NSPanel && window.className.contains("MenuBarExtra") {
+            window.orderOut(nil)
+        }
     }
 
     @ViewBuilder private var profilesSection: some View {

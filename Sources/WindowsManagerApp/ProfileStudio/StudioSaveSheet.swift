@@ -30,17 +30,20 @@ struct StudioCopyPickerSheet: View {
                 Picker("Profile", selection: Binding(get: { local.copySourceID ?? profiles.first?.id }, set: { local.copySourceID = $0 })) {
                     ForEach(profiles) { Text($0.name).tag(Optional($0.id)) }
                 }
+                .help("Choose the saved profile to copy")
             }
 
             HStack {
                 Spacer()
                 Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction)
+                    .help("Close without copying (Esc)")
                 Button("Copy") {
                     if let id = local.copySourceID ?? profiles.first?.id { onCopy(id) }
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .disabled(profiles.isEmpty)
+                .help("Open a draft copy of the chosen profile (Return)")
             }
         }
         .padding(20)
@@ -72,6 +75,7 @@ struct StudioSaveSheet: View {
             TextField("Name", text: Binding(get: { shownName }, set: { draft.text = $0 }))
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(save)
+                .help("Name the profile (Return saves)")
 
             if shownName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 issueRow("exclamationmark.octagon.fill", .red, "Give the profile a name.")
@@ -100,10 +104,12 @@ struct StudioSaveSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction)
+                    .help("Close without saving (Esc)")
                 Button("Save", action: save)
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(builder.blocksSaving || shownName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .help(builder.blocksSaving ? "Fix the problems marked in red first" : "Save the profile (Return)")
             }
         }
         .padding(20)

@@ -363,6 +363,7 @@ struct RestorePreviewSheet: View {
             Spacer()
             Button("Close", role: .cancel, action: onClose)
                 .keyboardShortcut(.cancelAction)
+                .help("Close the preview (Esc)")
             if let app = AppState.current {
                 RunProfileButton(app: app, profileID: profileID, profileName: profileName, title: "Run now")
                     .keyboardShortcut(.defaultAction)

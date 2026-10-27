@@ -73,6 +73,7 @@ struct LaunchOrderEditor: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .accessibilityLabel("Launch mode")
+            .help("Launch apps one after another, or all at once")
             Button { moveSelected(by: -1, plan) } label: { Image(systemName: "arrow.up") }
                 .keyboardShortcut(.upArrow, modifiers: [.command, .option])
                 .help("Move the selected app up (Command-Option-Up)")
@@ -135,6 +136,7 @@ struct LaunchOrderEditor: View {
             let item = LaunchItem(app: builder.appRef(for: entry), wait: .appReady, withoutWindows: true)
             commit { var p = $0; if !p.items.contains(where: { $0.id == item.id }) { p.items.append(item) }; return p }
         }
+        .help("Add \(entry.name) as a launch-only app")
     }
 
     private var emptyState: some View {
@@ -175,6 +177,7 @@ struct LaunchOrderEditor: View {
                     set: { _ in commit { LaunchSequence.toggled($0, id: item.id) } }))
                     .labelsHidden()
                     .toggleStyle(.checkbox)
+                    .help("Launch \(item.app.name) when the profile runs (untick to skip it)")
                 Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     .frame(minWidth: 16, alignment: .trailing)
                 Image(nsImage: AppIconCache.icon(for: item.app)).resizable().frame(width: 20, height: 20)
@@ -189,9 +192,11 @@ struct LaunchOrderEditor: View {
                 Button { move(index, by: -1) } label: { Image(systemName: "chevron.up") }
                     .buttonStyle(.borderless).disabled(index == 0)
                     .accessibilityLabel("Move \(item.app.name) up")
+                    .help("Move \(item.app.name) up in the launch order")
                 Button { move(index, by: 1) } label: { Image(systemName: "chevron.down") }
                     .buttonStyle(.borderless).disabled(index == plan.items.count - 1)
                     .accessibilityLabel("Move \(item.app.name) down")
+                    .help("Move \(item.app.name) down in the launch order")
             }
             HStack(spacing: 10) {
                 if item.withoutWindows {
@@ -205,6 +210,7 @@ struct LaunchOrderEditor: View {
                     }
                     .controlSize(.small)
                     .fixedSize()
+                    .help("Wait for the first window, or until the app is ready")
                 }
                 Stepper(value: Binding(
                     get: { item.delayAfter },
@@ -225,6 +231,7 @@ struct LaunchOrderEditor: View {
                 }
                 .controlSize(.small)
                 .accessibilityLabel("Timeout for \(item.app.name)")
+                .help("Longest wait for \(item.app.name) before moving on")
             }
             .opacity(item.enabled ? 1 : 0.5)
             ForEach(itemIssues, id: \.message) { issue in
@@ -236,11 +243,13 @@ struct LaunchOrderEditor: View {
         .contextMenu {
             if item.timeout != nil {
                 Button("Use default timeout") { commit { LaunchSequence.settingTimeout($0, id: item.id, nil) } }
+                    .help("Use the default timeout for \(item.app.name)")
             }
             if item.withoutWindows {
                 Button("Remove from launch order", role: .destructive) {
                     commit { var p = $0; p.items.removeAll { $0.id == item.id }; return p }
                 }
+                .help("Remove this launch-only app from the order")
             }
         }
         .accessibilityElement(children: .contain)

@@ -77,6 +77,7 @@ struct ProfileOptionsPanel: View {
                 Text("Hide").tag(OtherAppsPolicy.hide)
                 Text("Ask before quitting").tag(OtherAppsPolicy.quit)
             }
+            .help("Choose what a restore does with apps outside this profile")
             Text(otherAppsCaption(options.otherApps))
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -100,6 +101,7 @@ struct ProfileOptionsPanel: View {
             Toggle(title, isOn: Binding(
                 get: { builder.profile?.options[keyPath: keyPath] ?? false },
                 set: { value in builder.setOptions { $0[keyPath: keyPath] = value } }))
+                .help("Turn \(title) on or off")
             Text(caption)
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

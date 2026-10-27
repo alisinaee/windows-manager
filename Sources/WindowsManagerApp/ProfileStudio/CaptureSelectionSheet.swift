@@ -86,12 +86,12 @@ struct NewProfileMenu: View {
     var body: some View {
         Menu {
             if model.mode == .view {
-                Button("From current workspace") { model.beginNewProfile() }
-                Button("Blank on these monitors") { model.beginBlankProfile() }
-                Button("Copy of a profile…") { model.isCopyPickerPresented = true }
+                Button("From current workspace") { model.beginNewProfile() }.help("Start a profile from the windows open now")
+                Button("Blank on these monitors") { model.beginBlankProfile() }.help("Start an empty profile on these monitors")
+                Button("Copy of a profile…") { model.isCopyPickerPresented = true }.help("Start from a copy of a saved profile")
             }
             if canReview {
-                Button("Review capture…") { model.isReviewCapturePresented = true }
+                Button("Review capture…") { model.isReviewCapturePresented = true }.help("Untick the captured windows to leave out")
             }
         } label: {
             Image(systemName: "chevron.down").font(.caption).foregroundStyle(.secondary)
@@ -135,7 +135,7 @@ struct CaptureReviewPanel: View {
                 .frame(minHeight: 160, maxHeight: .infinity)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.06)))
             }
-            HStack { Spacer(); Button("Done", action: onDone).keyboardShortcut(.defaultAction) }
+            HStack { Spacer(); Button("Done", action: onDone).keyboardShortcut(.defaultAction).help("Close the review (Return)") }
         }
         .padding(16)
         .frame(width: 380, height: 420)
@@ -204,6 +204,7 @@ struct CaptureReviewPanel: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
+        .help(state == .off ? "Tick to keep \(title) in the profile" : "Untick to leave \(title) out of the profile")
         .accessibilityElement(children: .combine)
         .accessibilityValue(state == .on ? "checked" : state == .mixed ? "partly checked" : "unchecked")
     }

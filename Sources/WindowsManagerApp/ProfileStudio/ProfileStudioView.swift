@@ -400,6 +400,7 @@ struct StudioEditDetail: View {
             VStack(spacing: 12) {
                 Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                 Button("Back to View") { model.leaveEdit() }
+                    .help("Leave Edit mode and go back to viewing the profile")
             }
             .padding().frame(maxWidth: .infinity, maxHeight: .infinity)
         case .ready:
@@ -540,6 +541,8 @@ struct StudioEditDetail: View {
                 ForEach(StudioInspectorTab.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented).labelsHidden()
+            .help("Switch between the Inspector, Options and Launch order tabs")
+            .accessibilityLabel("Inspector tab")
             .padding(8)
             Divider()
             switch local.tab {

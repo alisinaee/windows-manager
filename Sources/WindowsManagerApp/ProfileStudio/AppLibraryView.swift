@@ -171,22 +171,26 @@ struct AppLibraryView: View {
 
     @ViewBuilder private func contextMenu(for entry: LibraryEntry) -> some View {
         Button("Add to the chosen Desktop") { place(entry) }.disabled(!canPlace)
+            .help("Add \(entry.name) to the Desktop chosen above")
         if let profile = builder.profile {
             Menu("Add to") {
                 ForEach(profile.displays, id: \.uuid) { display in
                     Menu(display.name) {
                         ForEach(desktopNumbers(of: display.uuid, in: profile), id: \.self) { number in
                             Button("Desktop \(number)") { place(entry, display: display.uuid, desktop: number) }
+                                .help("Add \(entry.name) to Desktop \(number) on \(display.name)")
                         }
                     }
                 }
             }
+            .help("Choose the Desktop to add \(entry.name) to")
         }
         Divider()
         Button("Launch only, no window") {
             DebugLog.log("studio", "add-app popover: \(entry.name) added as launch only")
             builder.addLaunchOnly(app: builder.appRef(for: entry))
         }
+        .help("Add \(entry.name) to the launch order without placing a window")
     }
 
     private var footer: some View {

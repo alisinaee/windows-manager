@@ -26,6 +26,7 @@ struct ProfileShortcutView: View {
                     DebugLog.log("studio", shortcut.map { "shortcut set for \(profileName): \($0)" } ?? "shortcut cleared for \(profileName)")
                 }
                 .id(recorderRevision)
+                .help("Click here, then press the shortcut to use for this profile")
                 Button { showSuggestions = true } label: { Image(systemName: "lightbulb") }
                     .help("Suggested shortcuts")
                     .accessibilityLabel("Suggested shortcuts")
@@ -59,6 +60,7 @@ struct ProfileShortcutView: View {
                 suggestionGroup("Lighter", ShortcutAdvice.lightSuggestions, taken: taken, own: own)
                 if current != nil {
                     Button("Clear shortcut", role: .destructive) { assign(nil) }
+                        .help("Remove this profile's run shortcut")
                 }
             }
             .padding(12)

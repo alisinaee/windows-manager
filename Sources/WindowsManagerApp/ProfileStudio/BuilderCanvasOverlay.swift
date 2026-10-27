@@ -550,6 +550,7 @@ struct BuilderCanvasOverlay: View {
                 .contentShape(Rectangle().inset(by: -3))
                 .position(x: c.x, y: c.y)
                 .pointerStyle(Self.pointer(for: handle))
+                .help("Drag to resize the window")
                 .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
                     .onChanged { value in
                         requestFocus()
@@ -619,11 +620,15 @@ struct BuilderCanvasOverlay: View {
 
     @ViewBuilder private func spaceMenu(_ space: ProfileSpaceIndex.Space) -> some View {
         Button("Move left") { controller.move(space, by: -1) }.disabled(!controller.canMove(space, by: -1))
+            .help("Move this Desktop one place left")
         Button("Move right") { controller.move(space, by: 1) }.disabled(!controller.canMove(space, by: 1))
+            .help("Move this Desktop one place right")
         Divider()
         Button(space.kind == .desktop ? "Delete Desktop…" : "Remove full-screen Space…", role: .destructive) {
             controller.delete(space)
-        }.disabled(!controller.canDelete(space))
+        }
+        .disabled(!controller.canDelete(space))
+        .help(space.kind == .desktop ? "Delete this Desktop from the profile" : "Remove this full-screen Space from the profile")
     }
 
     // MARK: Desktop strip controls
@@ -665,10 +670,12 @@ struct BuilderCanvasOverlay: View {
             Button { controller.chooseLayout(nil, on: monitor.id) } label: {
                 if active == nil { Label("No layout", systemImage: "checkmark") } else { Text("No layout") }
             }
+            .help("Stop snapping to layout zones on this monitor")
             ForEach(matching) { layout in
                 Button { controller.chooseLayout(layout.id, on: monitor.id) } label: {
                     if active?.id == layout.id { Label(layout.name, systemImage: "checkmark") } else { Text(layout.name) }
                 }
+                .help("Snap to the \(layout.name) zones on this monitor")
             }
             if matching.isEmpty { Text("No saved Layouts for this monitor") }
         } label: {

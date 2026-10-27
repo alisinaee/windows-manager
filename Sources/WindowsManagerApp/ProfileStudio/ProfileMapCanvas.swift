@@ -91,7 +91,6 @@ struct ProfileMapCanvas: View {
                 .onChange(of: geo.size) { _, size in model.setViewport(size) }
             }
             .background(Color(nsColor: .underPageBackgroundColor))
-            .help("Hold Space and drag to pan, pinch or Cmd+scroll to zoom")
             if !model.index.tray.isEmpty {
                 Divider()
                 trayRow
@@ -144,6 +143,7 @@ struct ProfileMapCanvas: View {
                 .frame(width: 100)
                 .accessibilityLabel("Zoom")
                 .accessibilityValue("\(Int((model.zoom * 100).rounded())) percent")
+                .help("Hold Space and drag to pan, pinch or Cmd+scroll to zoom")
             Button { model.zoomBy(1.25) } label: { Image(systemName: "plus.magnifyingglass") }
                 .keyboardShortcut("=", modifiers: .command)
                 .accessibilityLabel("Zoom in").help("Zoom in (Cmd+=)")
@@ -156,7 +156,7 @@ struct ProfileMapCanvas: View {
             .accessibilityLabel("Reset zoom to 100 percent").help("Reset zoom to 100% (Cmd+0)")
             Button("Fit") { model.fit() }
                 .keyboardShortcut("1", modifiers: .command)
-                .help("Fit the map to the window (Cmd+1). Hold Space and drag to pan, pinch or Cmd+scroll to zoom")
+                .help("Fit the map to the window (Cmd+1)")
             Button { model.zoomToSelection() } label: { Image(systemName: "scope") }
                 .keyboardShortcut("2", modifiers: .command)
                 .accessibilityLabel("Zoom to selection").help("Zoom to the selected window or Space (Cmd+2)")
@@ -391,6 +391,7 @@ struct ProfileMapCanvas: View {
                             .overlay(Capsule().strokeBorder(selected ? Color.accentColor : Color.clear, lineWidth: 2))
                         }
                         .buttonStyle(.plain)
+                        .help("Select \(trayText(window)) on the map")
                         .accessibilityLabel("\(trayText(window)), \(title.lowercased())")
                         .accessibilityAddTraits(selected ? .isSelected : [])
                     }

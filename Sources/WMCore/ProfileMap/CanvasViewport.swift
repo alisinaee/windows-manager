@@ -62,4 +62,41 @@ public struct CanvasViewport: Equatable, Sendable {
     public func contentPoint(atScreen screen: CGPoint) -> CGPoint {
         CGPoint(x: (screen.x - offset.x) / CGFloat(zoom), y: (screen.y - offset.y) / CGFloat(zoom))
     }
+
+    // MARK: Canvas <-> screen
+    // The one conversion pair for the map. Canvas coordinates are the zoom-1 layout (what snapping and edits use);
+    // screen coordinates are viewport points, where the vector map is drawn at its real size.
+    // A viewport with a zero offset converts to and from the canvas's own local space (drawing origin at the map's corner).
+
+    /// The viewport point where canvas point `canvas` shows.
+    public func toScreen(_ canvas: CGPoint) -> CGPoint {
+        CGPoint(x: canvas.x * CGFloat(zoom) + offset.x, y: canvas.y * CGFloat(zoom) + offset.y)
+    }
+
+    /// The canvas point shown at viewport point `screen` (same as `contentPoint(atScreen:)`).
+    public func toCanvas(_ screen: CGPoint) -> CGPoint { contentPoint(atScreen: screen) }
+
+    /// A canvas distance or size in screen points (no offset).
+    public func toScreen(_ size: CGSize) -> CGSize { CGSize(width: size.width * CGFloat(zoom), height: size.height * CGFloat(zoom)) }
+
+    /// A screen distance or size (a drag translation, say) in canvas points (no offset).
+    public func toCanvas(_ size: CGSize) -> CGSize { CGSize(width: size.width / CGFloat(zoom), height: size.height / CGFloat(zoom)) }
+
+    public func toScreen(_ canvas: CGRect) -> CGRect { CGRect(origin: toScreen(canvas.origin), size: toScreen(canvas.size)) }
+
+    public func toCanvas(_ screen: CGRect) -> CGRect { CGRect(origin: toCanvas(screen.origin), size: toCanvas(screen.size)) }
+}
+
+extension ProfileMapLayout {
+    /// The same layout with every frame multiplied by `factor` (the map zoom). The map is vector, so views are laid
+    /// out at this size and drawn sharp, instead of scaling a bitmap.
+    public func scaled(by factor: Double) -> ProfileMapLayout {
+        let f = CGFloat(factor)
+        func s(_ r: CGRect) -> CGRect { CGRect(x: r.minX * f, y: r.minY * f, width: r.width * f, height: r.height * f) }
+        return ProfileMapLayout(
+            canvasSize: CGSize(width: canvasSize.width * f, height: canvasSize.height * f), zoom: zoom,
+            monitors: monitors.map { var m = $0; m.frame = s(m.frame); m.contentRect = s(m.contentRect); m.stripRect = s(m.stripRect); return m },
+            thumbnails: thumbnails.map { var t = $0; t.rect = s(t.rect); return t },
+            windows: windows.map { var w = $0; w.rect = s(w.rect); return w })
+    }
 }

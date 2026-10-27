@@ -62,4 +62,51 @@ import Testing
     @Test func degenerateInputsFallBack() {
         #expect(CanvasViewport.fitting(.zero, in: CGSize(width: 800, height: 600)) == CanvasViewport())
     }
+
+    @Test func canvasScreenRoundTrip() {
+        let v = CanvasViewport(zoom: 2.5, offset: CGPoint(x: -120, y: 33))
+        let p = CGPoint(x: 41.5, y: 300)
+        let back = v.toCanvas(v.toScreen(p))
+        #expect(abs(back.x - p.x) < 1e-9 && abs(back.y - p.y) < 1e-9)
+        let r = CGRect(x: 10, y: 20, width: 100, height: 50)
+        let rr = v.toCanvas(v.toScreen(r))
+        #expect(abs(rr.minX - r.minX) < 1e-9 && abs(rr.width - r.width) < 1e-9 && abs(rr.height - r.height) < 1e-9)
+        #expect(v.toScreen(r).width == 250)
+        #expect(v.toScreen(CGPoint.zero) == v.offset)
+    }
+
+    @Test func zeroOffsetIsLocalSpaceAndDeltasIgnoreOffset() {
+        let local = CanvasViewport(zoom: 4)
+        #expect(local.toCanvas(CGPoint(x: 400, y: 80)) == CGPoint(x: 100, y: 20))
+        let v = CanvasViewport(zoom: 0.5, offset: CGPoint(x: 999, y: -999))
+        #expect(v.toCanvas(CGSize(width: 10, height: -4)) == CGSize(width: 20, height: -8))
+        #expect(v.toScreen(CGSize(width: 20, height: -8)) == CGSize(width: 10, height: -4))
+    }
+
+    @Test func dragRectStaysCorrectAtEveryZoom() {
+        // A drag of `screenDelta` moves the canvas rect by screenDelta / zoom, and its screen rect by exactly screenDelta.
+        let start = CGRect(x: 50, y: 60, width: 200, height: 100)
+        for zoom in [0.1, 0.5, 1, 1.7, 4] {
+            let v = CanvasViewport(zoom: zoom, offset: CGPoint(x: 31, y: -17))
+            let delta = CGSize(width: 37, height: -21)
+            let moved = start.offsetBy(dx: v.toCanvas(delta).width, dy: v.toCanvas(delta).height)
+            let shift = v.toScreen(moved).minX - v.toScreen(start).minX
+            #expect(abs(shift - 37) < 1e-9)
+            // The pointer over the moved rect's centre in screen space hits it in canvas space.
+            #expect(moved.contains(v.toCanvas(v.toScreen(CGPoint(x: moved.midX, y: moved.midY)))))
+        }
+    }
+
+    @Test func scaledLayoutMultipliesEveryFrame() {
+        let profile = ProfileMapLayoutTests.profile(
+            displays: [ProfileMapLayoutTests.display(ProfileMapLayoutTests.uuidA, CGRect(x: 0, y: 0, width: 1000, height: 600), main: true)],
+            windows: [ProfileMapLayoutTests.window(1)])
+        let index = ProfileSpaceIndex(profile: profile)
+        let base = ProfileMapLayout.make(profile: profile, index: index, selection: [:], viewport: CGSize(width: 800, height: 500))
+        let big = base.scaled(by: 3)
+        #expect(big.canvasSize.width == base.canvasSize.width * 3)
+        #expect(big.monitors.first?.frame.width == (base.monitors.first?.frame.width ?? 0) * 3)
+        #expect(big.monitors.first?.contentRect.minY == (base.monitors.first?.contentRect.minY ?? 0) * 3)
+        #expect(big.thumbnails.count == base.thumbnails.count)
+    }
 }

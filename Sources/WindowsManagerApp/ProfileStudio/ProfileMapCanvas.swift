@@ -58,6 +58,9 @@ struct ProfileMapCanvas: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
 
+    private var displayLayout: ProfileMapLayout { model.displayLayout }
+    private var metrics: MapMetrics { MapMetrics(zoom: CGFloat(model.zoom)) }
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -65,12 +68,12 @@ struct ProfileMapCanvas: View {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     CanvasGridBackground(zoom: model.zoom, offset: model.offset)
+                    // Laid out at the zoomed size (no scaleEffect), so text and strokes render at native resolution.
                     canvasContent
-                        .frame(width: model.layout.canvasSize.width, height: model.layout.canvasSize.height,
+                        .frame(width: displayLayout.canvasSize.width, height: displayLayout.canvasSize.height,
                                alignment: .topLeading)
                         .environment(\.layoutDirection, .leftToRight)   // physical geometry, never mirrored
                         .allowsHitTesting(!model.panModeActive)
-                        .scaleEffect(model.zoom, anchor: .topLeading)
                         .offset(x: model.offset.x, y: model.offset.y)
                 }
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
@@ -171,7 +174,7 @@ struct ProfileMapCanvas: View {
     // MARK: Canvas
 
     @ViewBuilder private var canvasContent: some View {
-        let layout = model.layout
+        let layout = displayLayout
         if layout.monitors.isEmpty {
             noDisplays
         } else {
@@ -193,7 +196,7 @@ struct ProfileMapCanvas: View {
     }
 
     private func monitorView(_ monitor: ProfileMapLayout.Monitor) -> some View {
-        let layout = model.layout
+        let layout = displayLayout
         let windowsByID = Dictionary((model.profile?.windows ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let thumbs = layout.thumbnails.filter { $0.displayUUID == monitor.id }
         let shown = model.shownSpace(onDisplay: monitor.id)
@@ -223,6 +226,7 @@ struct ProfileMapCanvas: View {
                                    status: model.status?.windows[tile.windowID],
                                    isSelected: model.selectedWindowID == tile.windowID,
                                    isHovered: model.hoveredTileID == tile.id,
+                                   metrics: metrics,
                                    locationText: location(of: tile, monitor: monitor, shown: shown, among: tiles),
                                    onSelect: { model.selectWindow(tile.windowID); focused = true },
                                    onHover: { inside in
@@ -233,14 +237,14 @@ struct ProfileMapCanvas: View {
             }
             if let shown, shown.windowIDs.isEmpty {
                 Text("No windows on this Space")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .font(.system(size: metrics.font(11))).foregroundStyle(.secondary)
                     .frame(width: monitor.contentRect.width, height: monitor.contentRect.height)
                     .offset(x: monitor.contentRect.minX, y: monitor.contentRect.minY)
             }
             SpaceStripView(thumbnails: thumbs, index: model.index, windows: windowsByID,
                            spaceStatus: model.status?.spaces ?? [:],
                            spaceName: { model.spaceName($0) },
-                           onSelect: { model.selectSpace($0); focused = true })
+                           onSelect: { model.selectSpace($0); focused = true }, metrics: metrics)
         }
         .frame(width: layout.canvasSize.width, height: layout.canvasSize.height, alignment: .topLeading)
         .accessibilityElement(children: .contain)
@@ -250,14 +254,14 @@ struct ProfileMapCanvas: View {
 
     private func monitorTitle(_ monitor: ProfileMapLayout.Monitor, shownLabel: String?) -> some View {
         HStack(spacing: 4) {
-            if monitor.isMain { Image(systemName: "star.fill").font(.system(size: 9)) }
+            if monitor.isMain { Image(systemName: "star.fill").font(.system(size: metrics.font(9))) }
             (Text(monitor.name).fontWeight(.semibold)
                 + Text(shownLabel.map { " · " + $0 } ?? "").foregroundColor(.secondary))
-                .font(.system(size: 10))
+                .font(.system(size: metrics.font(10)))
                 .lineLimit(1).truncationMode(.tail)
         }
         .padding(.horizontal, 4)
-        .frame(width: max(monitor.frame.width - 12, 20), height: ProfileMapLayout.headerHeight - 4, alignment: .leading)
+        .frame(width: max(monitor.frame.width - 12, 20), height: max(ProfileMapLayout.headerHeight * CGFloat(model.zoom) - 4, 10), alignment: .leading)
         .accessibilityHidden(true)
     }
 

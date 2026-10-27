@@ -10,13 +10,14 @@ struct SpaceStripView: View {
     let spaceStatus: [SpaceKey: SpaceLiveStatus]
     let spaceName: (ProfileSpaceIndex.Space) -> String
     let onSelect: (String) -> Void
+    var metrics = MapMetrics()
 
     var body: some View {
         ForEach(thumbnails) { thumb in
             if let space = index.space(id: thumb.id) {
                 SpaceThumbnailView(space: space, rect: thumb.rect, isSelected: thumb.isSelected,
                                    windows: windows, missing: missingStatus(for: space),
-                                   name: spaceName(space), onSelect: { onSelect(thumb.id) })
+                                   name: spaceName(space), metrics: metrics, onSelect: { onSelect(thumb.id) })
                     .offset(x: thumb.rect.minX, y: thumb.rect.minY)
             }
         }
@@ -35,6 +36,7 @@ struct SpaceThumbnailView: View {
     let windows: [UUID: WindowSnapshot]
     let missing: SpaceLiveStatus?
     let name: String
+    var metrics = MapMetrics()
     let onSelect: () -> Void
 
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 4, style: .continuous) }
@@ -51,17 +53,17 @@ struct SpaceThumbnailView: View {
                     if space.kind == .fullScreen {
                         ForEach(space.fullScreenWindowIDs.prefix(2), id: \.self) { id in
                             if let window = windows[id] {
-                                Image(nsImage: AppIconCache.icon(for: window.app)).resizable().frame(width: 14, height: 14)
+                                Image(nsImage: AppIconCache.icon(for: window.app)).resizable().frame(width: metrics.font(14), height: metrics.font(14))
                             }
                         }
                     } else {
                         Text("D\(space.desktopNumber ?? space.position + 1)")
-                            .font(.system(size: 11, weight: isSelected ? .bold : .regular))
+                            .font(.system(size: metrics.font(11), weight: isSelected ? .bold : .regular))
                             .foregroundStyle(.primary)
                             .minimumScaleFactor(0.7).lineLimit(1)
                     }
                     if missing != nil {
-                        Image(systemName: "circle.dashed").font(.system(size: 10)).foregroundStyle(.orange)
+                        Image(systemName: "circle.dashed").font(.system(size: metrics.font(10))).foregroundStyle(.orange)
                     }
                 }
             }

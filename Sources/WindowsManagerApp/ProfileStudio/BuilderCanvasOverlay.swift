@@ -432,6 +432,8 @@ final class BuilderCanvasController: ObservableObject {
 // MARK: - Overlay
 
 /// Drawn over the monitors in the canvas. Fills the canvas size; empty areas fall through to the canvas.
+/// The controller works in canvas (zoom-1) coordinates; this view draws at the zoomed size, so every rect goes
+/// through `local.toScreen` and every gesture location or translation through `local.toCanvas`.
 struct BuilderCanvasOverlay: View {
     @ObservedObject var controller: BuilderCanvasController
     @ObservedObject private var map: ProfileMapModel
@@ -440,6 +442,9 @@ struct BuilderCanvasOverlay: View {
     @Environment(\.canvasFitRequest) private var requestFit
 
     private static let space = "builderCanvas"
+
+    /// Canvas <-> local (zoomed, unpanned) drawing space.
+    private var local: CanvasViewport { map.canvasLocal }
 
     init(controller: BuilderCanvasController) {
         self.controller = controller
@@ -458,7 +463,8 @@ struct BuilderCanvasOverlay: View {
             ForEach(layout.thumbnails) { thumb in thumbnailHitArea(thumb) }
             ForEach(layout.monitors) { monitor in monitorControls(monitor) }
         }
-        .frame(width: layout.canvasSize.width, height: layout.canvasSize.height, alignment: .topLeading)
+        .frame(width: local.toScreen(layout.canvasSize).width, height: local.toScreen(layout.canvasSize).height,
+               alignment: .topLeading)
         .coordinateSpace(name: Self.space)
     }
 
@@ -473,15 +479,15 @@ struct BuilderCanvasOverlay: View {
             }
             .onTapGesture(count: 2) { requestFit() }
             .dropDestination(for: LibraryDragPayload.self) { items, location in
-                controller.handleDrop(items, at: location)
+                controller.handleDrop(items, at: local.toCanvas(location))
             } isTargeted: { controller.isDropTargeted = $0 }
             .overlay {
                 if controller.isDropTargeted {
                     ForEach(map.layout.monitors) { monitor in
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [6, 4]))
-                            .frame(width: monitor.frame.width, height: monitor.frame.height)
-                            .position(x: monitor.frame.midX, y: monitor.frame.midY)
+                            .frame(width: local.toScreen(monitor.frame).width, height: local.toScreen(monitor.frame).height)
+                            .position(x: local.toScreen(monitor.frame).midX, y: local.toScreen(monitor.frame).midY)
                     }
                 }
             }
@@ -499,12 +505,13 @@ struct BuilderCanvasOverlay: View {
            !controller.snapOptionDisabled || preview.zoneName != nil {
             ForEach(Array(controller.zones(on: monitor).enumerated()), id: \.offset) { _, zone in
                 let active = zone.name == preview.zoneName
+                let rect = local.toScreen(zone.rect)
                 Rectangle()
                     .fill(Color.accentColor.opacity(active ? 0.25 : 0.06))
                     .overlay(Rectangle().strokeBorder(Color.accentColor.opacity(active ? 0.9 : 0.4),
                                                       style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-                    .frame(width: zone.rect.width, height: zone.rect.height)
-                    .position(x: zone.rect.midX, y: zone.rect.midY)
+                    .frame(width: rect.width, height: rect.height)
+                    .position(x: rect.midX, y: rect.midY)
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -512,10 +519,11 @@ struct BuilderCanvasOverlay: View {
     }
 
     private func tileHitArea(_ tile: ProfileMapLayout.WindowTile) -> some View {
-        Color.clear
+        let rect = local.toScreen(tile.rect)
+        return Color.clear
             .contentShape(Rectangle())
-            .frame(width: tile.rect.width, height: tile.rect.height)
-            .position(x: tile.rect.midX, y: tile.rect.midY)
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
             .onTapGesture {
                 controller.select(tile.windowID, display: tile.displayUUID)
                 requestFocus()
@@ -524,14 +532,15 @@ struct BuilderCanvasOverlay: View {
             .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.space))
                 .onChanged { value in
                     requestFocus()
-                    controller.moveChanged(tile: tile, translation: value.translation, pointer: value.location)
+                    controller.moveChanged(tile: tile, translation: local.toCanvas(value.translation),
+                                           pointer: local.toCanvas(value.location))
                 }
                 .onEnded { _ in controller.dragEnded() })
             .accessibilityHidden(true)
     }
 
     private func handles(for tile: ProfileMapLayout.WindowTile) -> some View {
-        let rect = controller.drag?.windowID == tile.windowID ? (controller.drag?.rect ?? tile.rect) : tile.rect
+        let rect = local.toScreen(controller.drag?.windowID == tile.windowID ? (controller.drag?.rect ?? tile.rect) : tile.rect)
         return ForEach(ResizeHandle.allCases, id: \.self) { handle in
             let c = ResizeHandles.center(of: handle, in: rect)
             RoundedRectangle(cornerRadius: 2)
@@ -544,7 +553,7 @@ struct BuilderCanvasOverlay: View {
                 .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
                     .onChanged { value in
                         requestFocus()
-                        controller.resizeChanged(tile: tile, handle: handle, translation: value.translation)
+                        controller.resizeChanged(tile: tile, handle: handle, translation: local.toCanvas(value.translation))
                     }
                     .onEnded { _ in controller.dragEnded() })
                 .accessibilityHidden(true)
@@ -568,8 +577,8 @@ struct BuilderCanvasOverlay: View {
         if let thumbID = preview.thumbnailSpaceID, let thumb = map.layout.thumbnails.first(where: { $0.id == thumbID }) {
             RoundedRectangle(cornerRadius: 5)
                 .strokeBorder(Color.accentColor, lineWidth: 3)
-                .frame(width: thumb.rect.width, height: thumb.rect.height)
-                .position(x: thumb.rect.midX, y: thumb.rect.midY)
+                .frame(width: local.toScreen(thumb.rect).width, height: local.toScreen(thumb.rect).height)
+                .position(x: local.toScreen(thumb.rect).midX, y: local.toScreen(thumb.rect).midY)
                 .allowsHitTesting(false)
         } else {
             let showsGhost = preview.kind == .move
@@ -585,18 +594,19 @@ struct BuilderCanvasOverlay: View {
                         .padding(5)
                 }
             }
-            .frame(width: preview.rect.width, height: preview.rect.height)
-            .position(x: preview.rect.midX, y: preview.rect.midY)
+            .frame(width: local.toScreen(preview.rect).width, height: local.toScreen(preview.rect).height)
+            .position(x: local.toScreen(preview.rect).midX, y: local.toScreen(preview.rect).midY)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
     }
 
     private func thumbnailHitArea(_ thumb: ProfileMapLayout.SpaceThumbnail) -> some View {
-        Color.clear
+        let rect = local.toScreen(thumb.rect)
+        return Color.clear
             .contentShape(Rectangle())
-            .frame(width: thumb.rect.width, height: thumb.rect.height)
-            .position(x: thumb.rect.midX, y: thumb.rect.midY)
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
             .onTapGesture {
                 if let space = map.index.space(id: thumb.id) { controller.selectSpace(space) }
                 requestFocus()
@@ -642,7 +652,7 @@ struct BuilderCanvasOverlay: View {
         .padding(.horizontal, 6).padding(.vertical, 2)
         .background(.regularMaterial, in: Capsule())
         .fixedSize()
-        .position(x: monitor.frame.maxX - 8, y: monitor.frame.minY + 14)
+        .position(x: local.toScreen(monitor.frame).maxX - 8, y: local.toScreen(monitor.frame).minY + 14)
         .alignmentGuide(.leading) { $0[.leading] }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Edit controls for \(monitor.name)")

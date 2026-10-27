@@ -72,6 +72,15 @@ enum WindowStatusStyle {
     }
 }
 
+/// Text and icon sizes for the map at a zoom. The map is redrawn at its real size, so text stays legible
+/// (never below 9pt, never gigantic) while strokes stay constant.
+struct MapMetrics: Equatable {
+    var zoom: CGFloat = 1
+
+    func font(_ base: CGFloat) -> CGFloat { min(max(base * zoom, 9), 15) }
+    var iconSide: CGFloat { min(max(16 * zoom, 12), 32) }
+}
+
 /// One window rectangle on the map. Size and position come from the parent; this view fills its frame.
 struct WindowTileView: View {
     let window: WindowSnapshot
@@ -79,6 +88,7 @@ struct WindowTileView: View {
     let status: WindowLiveStatus?
     let isSelected: Bool
     let isHovered: Bool
+    var metrics = MapMetrics()
     /// "Desktop 2 of Studio Display, window 3 of 6" style location text for VoiceOver.
     let locationText: String
     let onSelect: () -> Void
@@ -120,7 +130,7 @@ struct WindowTileView: View {
                 .clipped()
             if let status {
                 Image(systemName: WindowStatusStyle.symbol(status))
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: metrics.font(12), weight: .semibold))
                     .foregroundStyle(WindowStatusStyle.color(status))
                     .padding(3)
                     .background(.regularMaterial, in: Circle())
@@ -129,7 +139,7 @@ struct WindowTileView: View {
             }
             if tile.isFullScreen && size.width >= 90 {
                 Text(tile.isSplitHalf ? "Split View" : "Full screen")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: metrics.font(11), weight: .medium))
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(.regularMaterial, in: Capsule())
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
@@ -148,13 +158,13 @@ struct WindowTileView: View {
     }
 
     @ViewBuilder private func label(roomy: Bool, width: CGFloat, height: CGFloat) -> some View {
-        let fontSize: CGFloat = (width < 120 || height < 56) ? 10 : 11
+        let fontSize = metrics.font((width < 120 || height < 56) ? 10 : 11)
         let showIcon = width >= 30 && height >= 26
         let hasTitle = !(window.title ?? "").isEmpty
         HStack(alignment: .top, spacing: 4) {
             if showIcon {
                 Image(nsImage: AppIconCache.icon(for: window.app))
-                    .resizable().frame(width: 16, height: 16)
+                    .resizable().frame(width: metrics.iconSide, height: metrics.iconSide)
             }
             if roomy {
                 VStack(alignment: .leading, spacing: 0) {

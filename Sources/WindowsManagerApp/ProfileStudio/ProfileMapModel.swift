@@ -19,7 +19,8 @@ final class ProfileMapModel: ObservableObject {
     @Published private(set) var selectedWindowID: UUID?
     /// The monitor that keyboard Space navigation starts from.
     @Published private(set) var focusedDisplayUUID: String?
-    /// View scale of the whole map (1 = fitted). The layout itself is always built at zoom 1; the canvas scales it.
+    /// View scale of the whole map (1 = fitted). `layout` is always the zoom-1 canvas (edits, snapping and hit tests
+    /// work in it); `displayLayout` is the same geometry multiplied by the zoom, so the vector map is redrawn sharp.
     @Published private(set) var zoom: Double = 1
     /// Screen position of the canvas origin inside the viewport (pan). See `CanvasViewport`.
     @Published private(set) var offset: CGPoint = .zero
@@ -29,6 +30,9 @@ final class ProfileMapModel: ObservableObject {
     /// Optional live status ("Compare with now"). Nil hides every status badge.
     @Published var status: ProfileLiveStatus?
     @Published private(set) var layout: ProfileMapLayout = .empty(viewport: CGSize(width: 800, height: 500))
+    /// Bumped whenever `layout` is rebuilt; with the zoom it keys the `displayLayout` cache.
+    private var layoutRevision = 0
+    private var displayCache: (revision: Int, zoom: Double, layout: ProfileMapLayout)?
 
     /// `WindowTile.id` under the pointer (hover highlight only).
     @Published private(set) var hoveredTileID: String?
@@ -71,6 +75,22 @@ final class ProfileMapModel: ObservableObject {
     }
 
     // MARK: Layout
+
+    /// The canvas to screen transform. The ONE place canvas points and viewport points are converted:
+    /// `canvas.toScreen` / `canvas.toCanvas`.
+    var canvas: CanvasViewport { CanvasViewport(zoom: zoom, offset: offset) }
+
+    /// Same scale without the pan: converts to and from the canvas content's own local space (gesture and drop locations).
+    var canvasLocal: CanvasViewport { CanvasViewport(zoom: zoom) }
+
+    /// `layout` with every frame multiplied by the zoom, cached per (layout revision, zoom): a redraw at an unchanged
+    /// zoom (hover, selection) costs nothing, and a pinch step builds it once.
+    var displayLayout: ProfileMapLayout {
+        if let hit = displayCache, hit.revision == layoutRevision, hit.zoom == zoom { return hit.layout }
+        let scaled = layout.scaled(by: zoom)
+        displayCache = (layoutRevision, zoom, scaled)
+        return scaled
+    }
 
     func setViewport(_ size: CGSize) {
         guard size.width > 1, size.height > 1, size != viewport else { return }
@@ -122,6 +142,7 @@ final class ProfileMapModel: ObservableObject {
     }
 
     private func relayout() {
+        layoutRevision += 1
         guard let profile else {
             layout = .empty(viewport: viewport)
             return

@@ -23,7 +23,9 @@ struct ProfileStudioView: View {
                     detail
                 }
                 .sheet(isPresented: $model.isStartSheetPresented) {
-                    StudioStartSheet(profiles: model.rows, onChoose: { model.chooseStart($0) }, onCancel: { model.cancelStart() })
+                    StudioStartFlow(capture: model.capture, profiles: model.rows,
+                                    onChoose: { model.chooseStart($0) }, onCreate: { model.createFromCapture() },
+                                    onCancel: { model.cancelStart() })
                 }
                 .sheet(isPresented: $model.isSaveSheetPresented) {
                     if let builder = model.builder {

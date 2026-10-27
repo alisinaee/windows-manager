@@ -52,6 +52,8 @@ final class ProfileStudioModel: ObservableObject {
     /// The Builder session of Edit mode; nil in View mode.
     @Published private(set) var builder: ProfileBuilderModel?
     @Published var isStartSheetPresented = false
+    /// "Start from the current workspace": the background capture and the pick-what-to-keep step.
+    let capture = CaptureChoiceModel()
     @Published var isSaveSheetPresented = false
     @Published var isLeaveConfirmPresented = false
     /// Runs once after the next successful save (leave Edit mode, close the window).
@@ -167,12 +169,26 @@ final class ProfileStudioModel: ObservableObject {
     }
 
     func chooseStart(_ choice: StudioStartChoice) {
-        isStartSheetPresented = false
         guard let b = builder else { return }
+        if choice == .currentWorkspace {
+            // The start sheet stays up and turns into the selection step once the capture is done.
+            Task { await capture.run(builder: b) }
+            return
+        }
+        isStartSheetPresented = false
         Task { await b.start(from: choice) }
     }
 
+    /// "Create draft" in the selection step: the draft starts from the ticked items only.
+    func createFromCapture() {
+        guard let b = builder, let (profile, notes) = capture.filtered() else { return }
+        isStartSheetPresented = false
+        capture.reset()
+        Task { await b.start(fromCapture: profile, notes: notes) }
+    }
+
     func cancelStart() {
+        capture.reset()
         isStartSheetPresented = false
         if builder?.phase == .idle { leaveEdit() }
     }
@@ -207,6 +223,7 @@ final class ProfileStudioModel: ObservableObject {
     func leaveEdit() {
         builder?.discard()
         builder = nil
+        capture.reset()
         isStartSheetPresented = false
         isSaveSheetPresented = false
         isLeaveConfirmPresented = false

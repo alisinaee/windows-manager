@@ -12,6 +12,12 @@ enum StudioStartChoice: Equatable {
     case editExisting(UUID)
 }
 
+/// Why a capture produced nothing, as a sentence for people.
+struct CaptureFailure: Error, Equatable {
+    let message: String
+    init(_ message: String) { self.message = message }
+}
+
 enum ProfileBuilderPhase: Equatable {
     case idle
     case starting
@@ -97,10 +103,14 @@ final class ProfileBuilderModel: ObservableObject {
             let name = ProfileTransfer.uniqueName("New profile", among: existingNames)
             begin(DraftSession.blankProfile(name: name, displays: displays), isNew: true)
         case .currentWorkspace:
-            let (captured, notes) = await Task.detached { ProfileCapture.capture(name: "Current workspace") }.value
-            guard !captured.displays.isEmpty else { return fail("The workspace could not be read. Check the permissions in Settings.") }
-            startNotes = notes
-            begin(DraftSession.capturedDraft(captured, existingNames: existingNames), isNew: true)
+            // The Studio normally goes through `captureWorkspace` + `start(fromCapture:)` so people can pick what to keep;
+            // this path keeps everything.
+            switch await captureWorkspace() {
+            case .failure(let failure): return fail(failure.message)
+            case .success(let (captured, notes)):
+                startNotes = notes
+                begin(DraftSession.capturedDraft(captured, existingNames: existingNames), isNew: true)
+            }
         case .copyOf(let id):
             do {
                 let source = try await Task.detached { try store.load(id) }.value
@@ -116,6 +126,29 @@ final class ProfileBuilderModel: ObservableObject {
                 fail("That profile could not be opened: \(error.localizedDescription)")
             }
         }
+        await loadLibrary()
+    }
+
+    /// Reads the live workspace off the main thread into a draft capture. Nothing in the Builder changes.
+    func captureWorkspace() async -> Result<(Profile, [String]), CaptureFailure> {
+        DebugLog.log("studio", "capture start: current workspace")
+        let (captured, notes) = await Task.detached { ProfileCapture.capture(name: "Current workspace") }.value
+        guard !captured.displays.isEmpty else {
+            DebugLog.log("studio", "capture failed: no monitors read")
+            return .failure(CaptureFailure("The workspace could not be read. Check the permissions in Settings."))
+        }
+        DebugLog.log("studio", "capture done: \(captured.displays.count) monitors, \(captured.spaces.count) spaces, \(captured.windows.count) windows")
+        return .success((captured, notes))
+    }
+
+    /// Starts the draft from a capture the user has already filtered (`CaptureSelection.applying`).
+    func start(fromCapture captured: Profile, notes: [String]) async {
+        phase = .starting
+        lastError = nil
+        let existingNames = store.list().map(\.name)
+        connectedDisplays = await Task.detached { DisplayMap.current() }.value
+        startNotes = notes
+        begin(DraftSession.capturedDraft(captured, existingNames: existingNames), isNew: true)
         await loadLibrary()
     }
 

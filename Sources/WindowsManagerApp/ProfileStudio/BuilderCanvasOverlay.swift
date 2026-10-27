@@ -694,14 +694,17 @@ struct BuilderCanvasOverlay: View {
 struct BuilderMapCanvas: View {
     @ObservedObject var map: ProfileMapModel
     @StateObject private var controller: BuilderCanvasController
+    private let builder: ProfileBuilderModel
 
     init(map: ProfileMapModel, builder: ProfileBuilderModel) {
         self.map = map
+        self.builder = builder
         _controller = StateObject(wrappedValue: BuilderCanvasController(map: map, builder: builder))
     }
 
     var body: some View {
         ProfileMapCanvas(model: map,
+                         onSync: { Task { await builder.syncNow() } },
                          canvasOverlay: AnyView(BuilderCanvasOverlay(controller: controller)),
                          keyOverride: { controller.handleKey($0) })
     }

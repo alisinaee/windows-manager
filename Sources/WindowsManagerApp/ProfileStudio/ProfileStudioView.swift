@@ -315,7 +315,7 @@ struct StudioMapHost: View {
 
     private var mapPane: some View {
         VStack(spacing: 0) {
-            ProfileMapCanvas(model: map)
+            ProfileMapCanvas(model: map, onSync: { model.setCompare(true); model.refreshCompare() })
             Divider()
             studioBottomBar { MapLegendView(showsStatus: map.status != nil, showsStageStrip: map.usesStageManager) }
         }

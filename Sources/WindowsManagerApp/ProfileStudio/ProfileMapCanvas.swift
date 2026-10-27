@@ -52,13 +52,16 @@ extension EnvironmentValues {
 struct ProfileMapCanvas: View {
     @ObservedObject var model: ProfileMapModel
     /// Edit mode (UI5): drawn on top of the monitors, in canvas coordinates. Nil in View mode.
+    /// The Sync button at the top of the canvas: re-reads the real windows now. Nil hides the button.
+    var onSync: (() -> Void)?
     var canvasOverlay: AnyView?
     /// Edit mode (UI5): sees every handled key first; returns true when it used the key. Nil in View mode.
     var keyOverride: ((KeyPress) -> Bool)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
 
-    init(model: ProfileMapModel, canvasOverlay: AnyView? = nil, keyOverride: ((KeyPress) -> Bool)? = nil) {
+    init(model: ProfileMapModel, onSync: (() -> Void)? = nil, canvasOverlay: AnyView? = nil, keyOverride: ((KeyPress) -> Bool)? = nil) {
+        self.onSync = onSync
         self.model = model
         self.canvasOverlay = canvasOverlay
         self.keyOverride = keyOverride
@@ -121,6 +124,12 @@ struct ProfileMapCanvas: View {
 
     private var toolbar: some View {
         HStack(spacing: 8) {
+            if let onSync {
+                Button(action: onSync) { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .help("Read your real windows now and update the map")
+                    .accessibilityLabel("Sync with real windows")
+            }
             if let summary = model.summaryText {
                 Image(systemName: "checklist").foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(summaryWithParked(summary)).font(.callout).lineLimit(1).truncationMode(.tail)

@@ -436,13 +436,13 @@ final class ProfileBuilderModel: ObservableObject {
 
     /// One pass of the loop. The scan and the capture-to-profile step run off the main thread; the merge runs here.
     /// The loop awaits each pass before it sleeps, so a slow scan is never overlapped by the next one.
-    private func liveTick() async {
-        guard isLive, phase == .ready, session != nil else { return }
+    private func liveTick(force: Bool = false) async {
+        guard isLive || force, phase == .ready, session != nil else { return }
         // A click or drag in progress: the next pass catches up, so the drag is never disturbed.
-        guard NSEvent.pressedMouseButtons == 0 else { return }
+        guard force || NSEvent.pressedMouseButtons == 0 else { return }
         let scan = await CaptureSession.scanNow()
         let scanned = await Task.detached { ProfileCapture.makeProfile(name: "Live", from: scan).0 }.value
-        guard isLive, phase == .ready, let draft = session?.profile else { return }
+        guard isLive || force, phase == .ready, let draft = session?.profile else { return }
         let outcome = LiveDraftSync.outcome(draft: draft, scanned: scanned, manuallyEdited: manuallyEdited,
                                             dismissed: dismissedWindows)
         dismissedWindows = outcome.stillDismissed
@@ -453,6 +453,12 @@ final class ProfileBuilderModel: ObservableObject {
         }
         refresh()
         mapModel?.load(outcome.profile)
+    }
+
+    /// The Sync button: one scan and merge right now, whether or not Live is on.
+    func syncNow() async {
+        DebugLog.log("studio", "sync now")
+        await liveTick(force: true)
     }
 
     /// Records what one edit did to the windows: a changed window is the user's now, a removed captured window is

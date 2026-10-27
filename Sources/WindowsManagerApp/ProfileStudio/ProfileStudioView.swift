@@ -224,7 +224,9 @@ struct StudioMapHost: View {
     }
 
     private var inspectorPane: MapInspectorView {
-        MapInspectorView(map: map, plan: model.comparePlan, isCompareOn: model.isCompareOn)
+        // Only a saved profile has a hotkey name; a draft or an unsaved capture does not.
+        let saved = map.profile.flatMap { p in AppState.current?.savedProfiles.contains { $0.id == p.id } == true ? (id: p.id, name: p.name) : nil }
+        return MapInspectorView(map: map, plan: model.comparePlan, isCompareOn: model.isCompareOn, shortcutProfile: saved)
     }
 
     var body: some View {

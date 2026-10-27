@@ -57,6 +57,12 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
+    /// Never lets a drag take the window below the minimum, whatever the SwiftUI content reports.
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        let minFrame = sender.frameRect(forContentRect: NSRect(origin: .zero, size: Self.minSize)).size
+        return NSSize(width: max(frameSize.width, minFrame.width), height: max(frameSize.height, minFrame.height))
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         resolveUnsaved { [weak sender] in sender?.close() }
     }

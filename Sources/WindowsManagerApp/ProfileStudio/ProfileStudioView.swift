@@ -40,6 +40,7 @@ struct ProfileStudioView: View {
             }
         }
         .frame(minWidth: ProfileStudioWindowController.minSize.width, minHeight: ProfileStudioWindowController.minSize.height)
+        .clipped()
         .onAppear { model.reload() }
     }
 

@@ -341,6 +341,62 @@ public enum WorkspaceScanner {
         }
     }
 
+    /// The Spaces that are current now, one per monitor (ids are unique across monitors). SkyLight's answer is
+    /// not trusted alone: on a monitor where normal windows are on screen, the Space they sit on is the current one
+    /// (SkyLight can name a full-screen Space while the Desktop windows are the ones visible). Each on-screen window
+    /// votes for the single Space of that monitor it is on; a window on several Spaces (on all Desktops) does not vote.
+    /// SkyLight's `currentSpaceID` is used only on a monitor where no window is on screen. Pure.
+    static func currentSpaces(scanned: [ScannedSpaces], windows: [CatalogWindow]) -> Set<UInt64> {
+        var result = Set<UInt64>()
+        for list in scanned {
+            let order = list.spaces.map(\.id)
+            var votes: [UInt64: Int] = [:]
+            for window in windows where window.isOnScreen {
+                let onMonitor = Set(window.spaceIDs).intersection(order)
+                guard onMonitor.count == 1, let id = onMonitor.first else { continue }
+                votes[id, default: 0] += 1
+            }
+            guard !votes.isEmpty else {
+                result.insert(list.currentSpaceID)
+                continue
+            }
+            if votes[list.currentSpaceID] != nil {
+                result.insert(list.currentSpaceID)
+                continue
+            }
+            // Most votes wins; a tie goes to the Space first in Mission Control order.
+            var best: UInt64?
+            for id in order where votes[id] != nil {
+                if let current = best, votes[current, default: 0] >= votes[id, default: 0] { continue }
+                best = id
+            }
+            if let best { result.insert(best) }
+        }
+        return result
+    }
+
+    /// True for Windows Manager's own windows: by process id, bundle id or owner name. They are never a thumbnail.
+    static func isOwnWindow(pid: Int32, appName: String, bundleID: String?,
+                            ownPID: Int32 = ProcessInfo.processInfo.processIdentifier) -> Bool {
+        if pid == ownPID { return true }
+        if appName.caseInsensitiveCompare("Windows Manager") == .orderedSame { return true }
+        return bundleID?.caseInsensitiveCompare(ownBundleID) == .orderedSame
+    }
+
+    /// Share of the Accessibility frame that the window server's bounds may cover and still be a Stage Manager thumbnail.
+    static let stripThumbnailMaxShare: CGFloat = 0.25
+
+    /// True when a window is a Stage Manager strip thumbnail: Stage Manager is on, the window is on screen and has an
+    /// Accessibility frame, and the window server draws it at under a quarter of that frame's area (the real window
+    /// drawn small). Our own windows are never thumbnails. The thumbnail keeps the real frame: see `assemble`. Pure.
+    static func isStripThumbnail(serverBounds: CGRect, isOnScreen: Bool?, axFrame: CGRect?, stageManagerOn: Bool,
+                                 isOwnWindow: Bool) -> Bool {
+        guard stageManagerOn, !isOwnWindow, isOnScreen == true, let axFrame else { return false }
+        let full = area(axFrame)
+        guard full > 0, serverBounds.width > 0, serverBounds.height > 0 else { return false }
+        return area(serverBounds) < stripThumbnailMaxShare * full
+    }
+
     /// For each full-screen Space, the window(s) that own it, as CGWindowIDs: one normally, two for Split View.
     /// The ids come from SkyLight (`fullScreenWindowIDs`) when those windows are in `windows`. When none of them
     /// is, the biggest window on that Space (of the owner process when SkyLight names one) stands in.
@@ -383,8 +439,9 @@ public enum WorkspaceScanner {
     /// Builds a scan from raw readings. Nothing here touches the system.
     /// - `catalog` must be in front-to-back order, as `WindowCatalog.all()` returns it.
     /// - `ax` holds what Accessibility said about windows, by CGWindowID (empty when it was not read).
-    /// `stageManagerOn` lets the Stage Manager strip thumbnails through (`StageManager.isStripThumbnailShape`); they
-    /// keep their window-server bounds and are flagged `isStripThumbnail`. Without it they are dropped as before.
+    /// `stageManagerOn` lets Stage Manager strip thumbnails through (`isStripThumbnail`, judged against the
+    /// Accessibility frame): they keep the real frame, record their window-server bounds in `serverBounds` and are
+    /// flagged `isStripThumbnail`. Without it they are dropped as before.
     static func assemble(displays: [DisplayIdentity], skyLight: [DisplaySpaces], catalog: [CatalogWindow],
                          activeSpaceID: UInt64, appRef: (Int32) -> AppRef?, ax: [UInt32: AXWindowDetails],
                          options: ScanOptions = ScanOptions(), accessibilityTrusted: Bool = true,
@@ -413,7 +470,7 @@ public enum WorkspaceScanner {
 
         let allSpaces = scanned.flatMap(\.spaces)
         let fullScreenSpaceIDs = Set(allSpaces.filter { $0.kind == .fullscreen }.map(\.id))
-        let currentSpaceIDs = Set(scanned.map(\.currentSpaceID))
+        let currentSpaceIDs = currentSpaces(scanned: scanned, windows: catalog)
 
         // Which catalog windows are user windows.
         var accepted: [(window: CatalogWindow, app: AppRef?, isStripThumbnail: Bool)] = []
@@ -423,11 +480,13 @@ public enum WorkspaceScanner {
         var droppedThumbnailApps: [String] = []
         for window in catalog {
             let app = appRef(window.pid)
-            // A Stage Manager thumbnail is kept before the Accessibility check, which can hand it the real window's frame.
-            let thumbnail = stageManagerOn && !isExcludedApp(name: window.appName, bundleID: app?.bundleID, options: options)
-                && StageManager.isStripThumbnailShape(window.bounds, isOnScreen: window.isOnScreen, displays: displays)
+            let axFrame = ax[window.windowID]?.frame
+            let thumbnail = !isExcludedApp(name: window.appName, bundleID: app?.bundleID, options: options)
+                && isStripThumbnail(serverBounds: window.bounds, isOnScreen: window.isOnScreen, axFrame: axFrame,
+                                    stageManagerOn: stageManagerOn,
+                                    isOwnWindow: isOwnWindow(pid: window.pid, appName: window.appName, bundleID: app?.bundleID))
             if thumbnail || isUserWindow(window, bundleID: app?.bundleID, isMinimized: ax[window.windowID]?.isMinimized ?? false,
-                                         axFrame: ax[window.windowID]?.frame, options: options) {
+                                         axFrame: axFrame, options: options) {
                 accepted.append((window, app, thumbnail))
             } else if accessibilityRead, currentSpaceIDs.isDisjoint(with: window.spaceIDs),
                       isUnresolvedThumbnail(window, app: app, ax: ax, options: options) {
@@ -455,7 +514,12 @@ public enum WorkspaceScanner {
             let index = indexInApp[appKey(appRef), default: 0]
             indexInApp[appKey(appRef)] = index + 1
             let details = ax[window.windowID]
-            let frame = !isStripThumbnail && usesAccessibilityFrame(window, axFrame: details?.frame) ? details!.frame! : window.bounds
+            // The frame is the Accessibility frame whenever the window server shows a thumbnail of the window; the
+            // window server's bounds are the fallback only when Accessibility gave none.
+            var frame = window.bounds
+            if let axFrame = details?.frame, isStripThumbnail || usesAccessibilityFrame(window, axFrame: axFrame) {
+                frame = axFrame
+            }
             windows.append(LiveWindow(
                 windowID: window.windowID, pid: window.pid, app: appRef,
                 title: window.title ?? details?.title, documentPath: details?.documentPath,
@@ -465,7 +529,7 @@ public enum WorkspaceScanner {
                 isMinimized: details?.isMinimized ?? false, indexInApp: index,
                 isOnCurrentSpace: !currentSpaceIDs.isDisjoint(with: window.spaceIDs),
                 isOnScreen: window.isOnScreen, isAppHidden: hiddenPIDs.contains(window.pid),
-                isStripThumbnail: isStripThumbnail))
+                isStripThumbnail: isStripThumbnail, serverBounds: window.bounds))
         }
 
         return WorkspaceScan(displays: displays, spaces: scanned, windows: windows, activeSpaceID: activeSpaceID,

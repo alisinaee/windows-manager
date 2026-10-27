@@ -36,6 +36,10 @@ public struct LiveWindow: Hashable, Sendable, Identifiable {
     public var isStripThumbnail: Bool
     /// Stage Manager placement worked out by `StageManager.annotate`; nil when Stage Manager is off or unknown.
     public var stage: SavedStage?
+    /// Window-server (CGWindowList) bounds, as the window server draws the window now. They are thumbnail-sized for a
+    /// Stage Manager strip thumbnail and for a window on another Space; `frame` stays the Accessibility frame.
+    /// Nil when not known (hand-built windows).
+    public var serverBounds: CGRect?
 
     public var id: UInt32 { windowID }
 
@@ -43,7 +47,7 @@ public struct LiveWindow: Hashable, Sendable, Identifiable {
                 frame: CGRect, displayUUID: String? = nil, spaceIDs: [UInt64] = [], isFullScreen: Bool = false,
                 isMinimized: Bool = false, indexInApp: Int = 0, isOnCurrentSpace: Bool = true,
                 isInStageStrip: Bool = false, isOnScreen: Bool? = nil, isAppHidden: Bool = false,
-                isStripThumbnail: Bool = false, stage: SavedStage? = nil) {
+                isStripThumbnail: Bool = false, stage: SavedStage? = nil, serverBounds: CGRect? = nil) {
         self.windowID = windowID
         self.pid = pid
         self.app = app
@@ -61,5 +65,6 @@ public struct LiveWindow: Hashable, Sendable, Identifiable {
         self.isAppHidden = isAppHidden
         self.isStripThumbnail = isStripThumbnail
         self.stage = stage
+        self.serverBounds = serverBounds
     }
 }

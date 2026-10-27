@@ -31,6 +31,9 @@ public struct LiveWindow: Hashable, Sendable, Identifiable {
     public var isOnScreen: Bool?
     /// The owning app is hidden (Cmd-H), which also makes its windows not on screen.
     public var isAppHidden: Bool
+    /// True for the small thumbnail Stage Manager draws in its strip: a real window of the app, on screen, with
+    /// thumbnail-sized bounds at a display edge. It is not a window the person has in the active stage.
+    public var isStripThumbnail: Bool
     /// Stage Manager placement worked out by `StageManager.annotate`; nil when Stage Manager is off or unknown.
     public var stage: SavedStage?
 
@@ -40,7 +43,7 @@ public struct LiveWindow: Hashable, Sendable, Identifiable {
                 frame: CGRect, displayUUID: String? = nil, spaceIDs: [UInt64] = [], isFullScreen: Bool = false,
                 isMinimized: Bool = false, indexInApp: Int = 0, isOnCurrentSpace: Bool = true,
                 isInStageStrip: Bool = false, isOnScreen: Bool? = nil, isAppHidden: Bool = false,
-                stage: SavedStage? = nil) {
+                isStripThumbnail: Bool = false, stage: SavedStage? = nil) {
         self.windowID = windowID
         self.pid = pid
         self.app = app
@@ -56,6 +59,7 @@ public struct LiveWindow: Hashable, Sendable, Identifiable {
         self.isInStageStrip = isInStageStrip
         self.isOnScreen = isOnScreen
         self.isAppHidden = isAppHidden
+        self.isStripThumbnail = isStripThumbnail
         self.stage = stage
     }
 }

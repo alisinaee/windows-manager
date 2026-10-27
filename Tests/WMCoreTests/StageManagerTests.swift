@@ -171,6 +171,121 @@ import Testing
         #expect(plan.warnings.contains { $0.contains("was off when this profile was captured") })
         #expect(!plan.warnings.joined().lowercased().contains("turn"))
     }
+
+    // MARK: Strip thumbnails (P6.61)
+
+    /// The monitor layout of the reporting Mac: PHL at -408,-1080 (1920x1080) and the built-in at 0,0.
+    static let phl = DisplayIdentity(uuid: "PHL", name: "PHL", frame: CGRect(x: -408, y: -1080, width: 1920, height: 1080),
+                                     visibleFrame: CGRect(x: -408, y: -1080, width: 1920, height: 1055), isMain: false, isBuiltIn: false)
+    static let builtIn = DisplayIdentity(uuid: "BUILTIN", name: "Built-in", frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+                                         visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 957), isMain: true, isBuiltIn: true)
+    static let thumbnailBounds = CGRect(x: -393, y: -574, width: 118, height: 97)
+    static let bigTerminal = CGRect(x: 100, y: 100, width: 500, height: 500)
+
+    /// The Terminal thumbnail as the scanner builds it: on screen, flagged, window-server bounds.
+    static func thumbnail(_ id: UInt32, _ app: AppRef, title: String? = "ali — ali@al…") -> LiveWindow {
+        LiveWindow(windowID: id, app: app, title: title, frame: thumbnailBounds, isOnCurrentSpace: true,
+                   isOnScreen: true, isStripThumbnail: true)
+    }
+
+    static func real(_ id: UInt32, _ app: AppRef, onScreen: Bool?, frame: CGRect = bigTerminal) -> LiveWindow {
+        LiveWindow(windowID: id, app: app, frame: frame, isOnCurrentSpace: true, isOnScreen: onScreen)
+    }
+
+    @Test func thumbnailShapeMatchesTheMeasuredFacts() {
+        let displays = [Self.phl, Self.builtIn]
+        #expect(StageManager.isStripThumbnailShape(Self.thumbnailBounds, isOnScreen: true, displays: displays))
+        // The real Terminal window is not small, and it is not on screen.
+        #expect(!StageManager.isStripThumbnailShape(Self.bigTerminal, isOnScreen: true, displays: displays))
+        #expect(!StageManager.isStripThumbnailShape(Self.thumbnailBounds, isOnScreen: nil, displays: displays))
+        #expect(!StageManager.isStripThumbnailShape(Self.thumbnailBounds, isOnScreen: false, displays: displays))
+        // Small but in the middle of a monitor: an ordinary small window.
+        #expect(!StageManager.isStripThumbnailShape(CGRect(x: 600, y: 300, width: 150, height: 120), isOnScreen: true,
+                                                     displays: displays))
+    }
+
+    @Test func terminalThumbnailMakesTerminalTheStripAndNotActive() {
+        let scan = F.scan([Self.thumbnail(9, Self.terminal), Self.real(1, Self.terminal, onScreen: nil),
+                           Self.real(2, Self.terminal, onScreen: false)])
+        let result = StageManager.annotate(scan, provider: .fixed(true))
+        // The thumbnail is dropped: the real windows stand for the app in the strip.
+        #expect(result.windows.map(\.windowID) == [1, 2])
+        for window in result.windows {
+            #expect(window.isInStageStrip)
+            #expect(window.stage == SavedStage(group: 1, isActive: false, isHeuristic: false))
+        }
+    }
+
+    @Test func thumbnailOfOneAppDoesNotMarkOtherApps() {
+        let scan = F.scan([Self.thumbnail(9, Self.terminal), Self.real(1, Self.terminal, onScreen: nil),
+                           Self.real(3, Self.v2box, onScreen: nil)])
+        let result = StageManager.annotate(scan, provider: .fixed(true))
+        #expect(result.windows.first { $0.windowID == 3 }?.stage == nil)
+        #expect(result.windows.first { $0.windowID == 1 }?.isInStageStrip == true)
+    }
+
+    @Test func visibleWindowsOfOtherAppsAreActive() {
+        let scan = F.scan([Self.thumbnail(9, Self.terminal), Self.real(1, Self.terminal, onScreen: nil),
+                           Self.real(2, Self.v2box, onScreen: true, frame: CGRect(x: 40, y: 40, width: 600, height: 500)),
+                           Self.real(3, F.finder, onScreen: true, frame: CGRect(x: 700, y: 40, width: 600, height: 500)),
+                           Self.real(4, F.finder, onScreen: true, frame: CGRect(x: 700, y: 560, width: 600, height: 400))])
+        let result = StageManager.annotate(scan, provider: .fixed(true))
+        #expect(result.windows.map(\.windowID) == [1, 2, 3, 4])
+        #expect(result.windows[1...].allSatisfy { $0.stage == SavedStage(group: 0, isActive: true, isHeuristic: false) })
+        #expect(result.windows[0].stage == SavedStage(group: 1, isActive: false, isHeuristic: false))
+    }
+
+    @Test func appWithoutThumbnailAndNoOnScreenFlagIsUnknown() {
+        let scan = F.scan([Self.real(1, Self.terminal, onScreen: nil), Self.real(2, F.finder, onScreen: nil)])
+        let result = StageManager.annotate(scan, provider: .fixed(true))
+        #expect(result.windows.allSatisfy { $0.stage == nil && !$0.isInStageStrip })
+        #expect(StageManager.classify(Self.real(1, Self.terminal, onScreen: nil), displays: [Self.builtIn])
+            == .init(state: .unknown, isHeuristic: false))
+    }
+
+    @Test func thumbnailWithoutRealWindowStaysAsStripWindow() {
+        let result = StageManager.annotate(F.scan([Self.thumbnail(9, Self.terminal)]), provider: .fixed(true))
+        #expect(result.windows.map(\.windowID) == [9])
+        #expect(result.windows[0].isInStageStrip)
+        #expect(result.windows[0].stage == SavedStage(group: 1, isActive: false, isHeuristic: true))
+    }
+
+    @Test func onScreenWindowIsNotParkedEvenWhenItsFrameIsOffEveryMonitor() {
+        let onScreen = LiveWindow(windowID: 1, app: F.chrome, frame: Self.far, isOnScreen: true)
+        #expect(StageManager.classify(onScreen, displays: [F.displayA()]) == .init(state: .active, isHeuristic: false))
+    }
+
+    @Test func thumbnailIsNeverActive() {
+        let thumb = Self.thumbnail(9, Self.terminal)
+        #expect(StageManager.classify(thumb, displays: [Self.builtIn]).state != .active)
+    }
+
+    @Test func scannerKeepsThumbnailOnlyWithStageManagerOn() {
+        let display = Self.phl
+        let catalog = [CatalogWindow(windowID: 9, pid: 500, appName: "Terminal", title: "ali — ali@al…",
+                                     bounds: Self.thumbnailBounds, isOnScreen: true, spaceIDs: [])]
+        let apps: (Int32) -> AppRef? = { _ in Self.terminal }
+        let on = WorkspaceScanner.assemble(displays: [display], skyLight: [], catalog: catalog, activeSpaceID: 0,
+                                           appRef: apps, ax: [:], stageManagerOn: true)
+        #expect(on.windows.map(\.isStripThumbnail) == [true])
+        #expect(on.windows[0].frame == Self.thumbnailBounds)
+        let off = WorkspaceScanner.assemble(displays: [display], skyLight: [], catalog: catalog, activeSpaceID: 0,
+                                            appRef: apps, ax: [:], stageManagerOn: false)
+        #expect(off.windows.isEmpty)
+    }
+
+    @Test func thumbnailFrameIsNotReplacedByAccessibilityFrame() {
+        let display = Self.phl
+        let catalog = [CatalogWindow(windowID: 9, pid: 500, appName: "Terminal", title: nil,
+                                     bounds: Self.thumbnailBounds, isOnScreen: true, spaceIDs: [4])]
+        // Accessibility hands the thumbnail's id the real window's frame; the thumbnail keeps its own bounds.
+        let ax: [UInt32: AXWindowDetails] = [9: AXWindowDetails(title: nil, documentPath: nil, isMinimized: false,
+                                                                frame: Self.bigTerminal)]
+        let scan = WorkspaceScanner.assemble(displays: [display], skyLight: [], catalog: catalog, activeSpaceID: 4,
+                                             appRef: { _ in Self.terminal }, ax: ax, stageManagerOn: true)
+        #expect(scan.windows.first?.frame == Self.thumbnailBounds)
+        #expect(scan.windows.first?.isStripThumbnail == true)
+    }
 }
 
 private extension LiveWindow {

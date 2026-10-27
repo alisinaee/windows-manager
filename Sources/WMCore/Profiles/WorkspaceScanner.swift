@@ -178,7 +178,8 @@ public enum WorkspaceScanner {
 
         let scanned = assemble(displays: displays, skyLight: skyLight, catalog: catalog,
                                activeSpaceID: SpaceReader.activeSpaceID(), appRef: appRef, ax: ax, options: options,
-                               accessibilityTrusted: trusted, screenIsLocked: locked, notes: notes, hiddenPIDs: hiddenPIDs(catalog))
+                               accessibilityTrusted: trusted, screenIsLocked: locked, notes: notes, hiddenPIDs: hiddenPIDs(catalog),
+                               stageManagerOn: StageManagerProvider.live.isEnabled() == true)
         return StageManager.annotate(scanned)
     }
 
@@ -382,11 +383,13 @@ public enum WorkspaceScanner {
     /// Builds a scan from raw readings. Nothing here touches the system.
     /// - `catalog` must be in front-to-back order, as `WindowCatalog.all()` returns it.
     /// - `ax` holds what Accessibility said about windows, by CGWindowID (empty when it was not read).
+    /// `stageManagerOn` lets the Stage Manager strip thumbnails through (`StageManager.isStripThumbnailShape`); they
+    /// keep their window-server bounds and are flagged `isStripThumbnail`. Without it they are dropped as before.
     static func assemble(displays: [DisplayIdentity], skyLight: [DisplaySpaces], catalog: [CatalogWindow],
                          activeSpaceID: UInt64, appRef: (Int32) -> AppRef?, ax: [UInt32: AXWindowDetails],
                          options: ScanOptions = ScanOptions(), accessibilityTrusted: Bool = true,
                          screenIsLocked: Bool = false, notes: [String] = [], hiddenPIDs: Set<Int32> = [],
-                         scannedAt: Date = Date()) -> WorkspaceScan {
+                         stageManagerOn: Bool = false, scannedAt: Date = Date()) -> WorkspaceScan {
         var notes = notes
 
         // Spaces per monitor, in the order of `displays`.
@@ -413,16 +416,19 @@ public enum WorkspaceScanner {
         let currentSpaceIDs = Set(scanned.map(\.currentSpaceID))
 
         // Which catalog windows are user windows.
-        var accepted: [(window: CatalogWindow, app: AppRef?)] = []
+        var accepted: [(window: CatalogWindow, app: AppRef?, isStripThumbnail: Bool)] = []
         // Only when Accessibility was really read (otherwise every small window would be reported), and only for
         // windows on other Spaces: a thin toolbar strip on the active Space is not a lost window.
         let accessibilityRead = options.readAccessibility && accessibilityTrusted && !screenIsLocked
         var droppedThumbnailApps: [String] = []
         for window in catalog {
             let app = appRef(window.pid)
-            if isUserWindow(window, bundleID: app?.bundleID, isMinimized: ax[window.windowID]?.isMinimized ?? false,
-                            axFrame: ax[window.windowID]?.frame, options: options) {
-                accepted.append((window, app))
+            // A Stage Manager thumbnail is kept before the Accessibility check, which can hand it the real window's frame.
+            let thumbnail = stageManagerOn && !isExcludedApp(name: window.appName, bundleID: app?.bundleID, options: options)
+                && StageManager.isStripThumbnailShape(window.bounds, isOnScreen: window.isOnScreen, displays: displays)
+            if thumbnail || isUserWindow(window, bundleID: app?.bundleID, isMinimized: ax[window.windowID]?.isMinimized ?? false,
+                                         axFrame: ax[window.windowID]?.frame, options: options) {
+                accepted.append((window, app, thumbnail))
             } else if accessibilityRead, currentSpaceIDs.isDisjoint(with: window.spaceIDs),
                       isUnresolvedThumbnail(window, app: app, ax: ax, options: options) {
                 droppedThumbnailApps.append(window.appName)
@@ -444,12 +450,12 @@ public enum WorkspaceScanner {
 
         var indexInApp: [String: Int] = [:]
         var windows: [LiveWindow] = []
-        for (window, app) in accepted {
+        for (window, app, isStripThumbnail) in accepted {
             let appRef = app ?? AppRef(bundleID: nil, name: window.appName)
             let index = indexInApp[appKey(appRef), default: 0]
             indexInApp[appKey(appRef)] = index + 1
             let details = ax[window.windowID]
-            let frame = usesAccessibilityFrame(window, axFrame: details?.frame) ? details!.frame! : window.bounds
+            let frame = !isStripThumbnail && usesAccessibilityFrame(window, axFrame: details?.frame) ? details!.frame! : window.bounds
             windows.append(LiveWindow(
                 windowID: window.windowID, pid: window.pid, app: appRef,
                 title: window.title ?? details?.title, documentPath: details?.documentPath,
@@ -458,7 +464,8 @@ public enum WorkspaceScanner {
                 spaceIDs: window.spaceIDs, isFullScreen: ownerIDs.contains(window.windowID),
                 isMinimized: details?.isMinimized ?? false, indexInApp: index,
                 isOnCurrentSpace: !currentSpaceIDs.isDisjoint(with: window.spaceIDs),
-                isOnScreen: window.isOnScreen, isAppHidden: hiddenPIDs.contains(window.pid)))
+                isOnScreen: window.isOnScreen, isAppHidden: hiddenPIDs.contains(window.pid),
+                isStripThumbnail: isStripThumbnail))
         }
 
         return WorkspaceScan(displays: displays, spaces: scanned, windows: windows, activeSpaceID: activeSpaceID,

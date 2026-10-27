@@ -124,6 +124,25 @@ public enum WindowOrigin: String, Codable, Hashable, Sendable {
 }
 
 /// One window as it was when the profile was captured.
+/// Where a window sat under Stage Manager when it was captured. Best effort: macOS has no public Stage Manager
+/// API, so this is inferred from window-server flags (see `StageManager.classify`). Absent when Stage Manager was
+/// off or the state could not be told.
+public struct SavedStage: Codable, Hashable, Sendable {
+    /// 0 = the active stage; 1... = strip stages, numbered in the order their apps were first seen.
+    public var group: Int
+    /// True for a window in the active stage (on screen), false for one in the strip / another stage.
+    public var isActive: Bool
+    /// True when the state or the grouping is a guess. Grouping strip windows by app is always a guess:
+    /// stages the user built by hand cannot be detected, only Stage Manager's default one-stage-per-app layout.
+    public var isHeuristic: Bool
+
+    public init(group: Int, isActive: Bool, isHeuristic: Bool) {
+        self.group = group
+        self.isActive = isActive
+        self.isHeuristic = isHeuristic
+    }
+}
+
 public struct WindowSnapshot: Codable, Hashable, Sendable, Identifiable {
     /// Stable id inside this profile; `SpaceSnapshot.fullScreenWindowIDs` points at it.
     public var id: UUID
@@ -152,12 +171,14 @@ public struct WindowSnapshot: Codable, Hashable, Sendable, Identifiable {
     public var origin: WindowOrigin?
     /// Name of the Layout zone the window was snapped to ("Left half"), for display only; nil when not snapped.
     public var zoneName: String?
+    /// Stage Manager state at capture time; nil in older profiles, when Stage Manager was off, or when unknown.
+    public var stage: SavedStage?
 
     public init(id: UUID = UUID(), app: AppRef, title: String? = nil, titleMatch: TitleMatch = .any,
                 documentPath: String? = nil, indexInApp: Int = 0, displayUUID: String, frame: CGRect,
                 relativeFrame: CGRect, placement: SpacePlacement, isFullScreen: Bool = false,
                 isMinimized: Bool = false, zIndex: Int = 0, restore: Bool = true,
-                origin: WindowOrigin? = nil, zoneName: String? = nil) {
+                origin: WindowOrigin? = nil, zoneName: String? = nil, stage: SavedStage? = nil) {
         self.id = id
         self.app = app
         self.title = title
@@ -174,11 +195,12 @@ public struct WindowSnapshot: Codable, Hashable, Sendable, Identifiable {
         self.restore = restore
         self.origin = origin
         self.zoneName = zoneName
+        self.stage = stage
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, app, title, titleMatch, documentPath, indexInApp, displayUUID, frame, relativeFrame
-        case placement, isFullScreen, isMinimized, zIndex, restore, origin, zoneName
+        case placement, isFullScreen, isMinimized, zIndex, restore, origin, zoneName, stage
     }
 
     public init(from decoder: Decoder) throws {
@@ -199,6 +221,7 @@ public struct WindowSnapshot: Codable, Hashable, Sendable, Identifiable {
         restore = try c.decodeIfPresent(Bool.self, forKey: .restore) ?? true
         origin = try c.decodeIfPresent(WindowOrigin.self, forKey: .origin)
         zoneName = try c.decodeIfPresent(String.self, forKey: .zoneName)
+        stage = try c.decodeIfPresent(SavedStage.self, forKey: .stage)
     }
 }
 

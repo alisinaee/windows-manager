@@ -27,13 +27,20 @@ public struct LiveWindow: Hashable, Sendable, Identifiable {
     public var isOnCurrentSpace: Bool
     /// Stage Manager is on and the window sits in the strip or in another stage, where it cannot be moved.
     public var isInStageStrip: Bool
+    /// CGWindowList `kCGWindowIsOnscreen`; nil when not known (hand-built windows).
+    public var isOnScreen: Bool?
+    /// The owning app is hidden (Cmd-H), which also makes its windows not on screen.
+    public var isAppHidden: Bool
+    /// Stage Manager placement worked out by `StageManager.annotate`; nil when Stage Manager is off or unknown.
+    public var stage: SavedStage?
 
     public var id: UInt32 { windowID }
 
     public init(windowID: UInt32, pid: Int32 = 0, app: AppRef, title: String? = nil, documentPath: String? = nil,
                 frame: CGRect, displayUUID: String? = nil, spaceIDs: [UInt64] = [], isFullScreen: Bool = false,
                 isMinimized: Bool = false, indexInApp: Int = 0, isOnCurrentSpace: Bool = true,
-                isInStageStrip: Bool = false) {
+                isInStageStrip: Bool = false, isOnScreen: Bool? = nil, isAppHidden: Bool = false,
+                stage: SavedStage? = nil) {
         self.windowID = windowID
         self.pid = pid
         self.app = app
@@ -47,5 +54,8 @@ public struct LiveWindow: Hashable, Sendable, Identifiable {
         self.indexInApp = indexInApp
         self.isOnCurrentSpace = isOnCurrentSpace
         self.isInStageStrip = isInStageStrip
+        self.isOnScreen = isOnScreen
+        self.isAppHidden = isAppHidden
+        self.stage = stage
     }
 }

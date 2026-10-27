@@ -396,6 +396,16 @@ public enum RestorePlanner {
                     + RestoreFormat.list(names) + ".")
             }
         }
+        // A window saved as sitting in the strip / another stage: its saved frame is just its old position, and
+        // moving it would only pull it into the active stage. Leave it (the app is not raised either).
+        if stageManagerOn {
+            let wasInStrip = items.filter { $0.snapshot.stage?.isActive == false }
+            items.removeAll { $0.snapshot.stage?.isActive == false }
+            if !wasInStrip.isEmpty {
+                plan.warnings.append("Stage Manager: \(wasInStrip.count) window\(wasInStrip.count == 1 ? " was" : "s were") in the strip or another stage "
+                    + "when captured and \(wasInStrip.count == 1 ? "was" : "were") left alone: " + RestoreFormat.list(wasInStrip.map { $0.target.label }) + ".")
+            }
+        }
         if let saved = profile.stageManagerOn, let now = scan.stageManagerOn, saved != now {
             plan.warnings.append("Stage Manager was \(saved ? "on" : "off") when this profile was captured and is \(now ? "on" : "off") now; "
                 + "windows are placed as saved.")

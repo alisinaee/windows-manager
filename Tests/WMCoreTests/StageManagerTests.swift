@@ -48,6 +48,87 @@ import Testing
         #expect(try JSONDecoder().decode(Profile.self, from: old).stageManagerOn == nil)
     }
 
+    // MARK: Detection with CGWindowList flags (P6.57)
+
+    static let terminal = AppRef(bundleID: "com.apple.Terminal", name: "Terminal")
+    static let v2box = AppRef(bundleID: "com.v2box.app", name: "V2Box")
+
+    /// Stage Manager keeps the original frames, so every window here is fully on the screen.
+    static func win(_ id: UInt32, _ app: AppRef, onScreen: Bool?, hidden: Bool = false, minimized: Bool = false,
+                    onCurrentSpace: Bool = true) -> LiveWindow {
+        LiveWindow(windowID: id, app: app, frame: CGRect(x: 100, y: 100, width: 800, height: 600),
+                   isMinimized: minimized, isOnCurrentSpace: onCurrentSpace, isOnScreen: onScreen, isAppHidden: hidden)
+    }
+
+    @Test func userCaseTerminalInStripOthersActive() {
+        let scan = F.scan([Self.win(1, Self.terminal, onScreen: false), Self.win(2, Self.v2box, onScreen: true),
+                           Self.win(3, F.finder, onScreen: true), Self.win(4, F.finder, onScreen: true)])
+        let result = StageManager.annotate(scan, provider: .fixed(true))
+        #expect(result.windows.map(\.isInStageStrip) == [true, false, false, false])
+        #expect(result.windows[0].stage == SavedStage(group: 1, isActive: false, isHeuristic: true))
+        for window in result.windows.dropFirst() { #expect(window.stage == SavedStage(group: 0, isActive: true, isHeuristic: false)) }
+    }
+
+    @Test func stripWindowsAreGroupedByApp() {
+        let scan = F.scan([Self.win(1, Self.terminal, onScreen: false), Self.win(2, F.finder, onScreen: false),
+                           Self.win(3, Self.terminal, onScreen: false)])
+        let groups = StageManager.annotate(scan, provider: .fixed(true)).windows.map { $0.stage?.group }
+        #expect(groups == [1, 2, 1])
+    }
+
+    @Test func notStripWhenMinimizedHiddenOrOtherSpace() {
+        let scan = F.scan([Self.win(1, Self.terminal, onScreen: false, minimized: true),
+                           Self.win(2, Self.v2box, onScreen: false, hidden: true),
+                           Self.win(3, F.finder, onScreen: false, onCurrentSpace: false)])
+        let result = StageManager.annotate(scan, provider: .fixed(true))
+        #expect(result.windows.allSatisfy { !$0.isInStageStrip && $0.stage == nil })
+    }
+
+    @Test func nothingIsFlaggedWhenStageManagerIsOffOrUnknown() {
+        let scan = F.scan([Self.win(1, Self.terminal, onScreen: false)])
+        for value in [false, nil] as [Bool?] {
+            let result = StageManager.annotate(scan, provider: .fixed(value))
+            #expect(!result.windows[0].isInStageStrip && result.windows[0].stage == nil)
+        }
+    }
+
+    @Test func offscreenFrameIsTheHeuristicFallback() {
+        let parked = LiveWindow(windowID: 1, app: F.chrome, frame: Self.far)
+        let result = StageManager.annotate(F.scan([parked]), provider: .fixed(true))
+        #expect(result.windows[0].isInStageStrip)
+        #expect(StageManager.classify(parked, displays: [F.displayA()]) == .init(state: .strip, isHeuristic: true))
+    }
+
+    @Test func captureSavesStage() {
+        let scan = StageManager.annotate(F.scan([Self.win(1, Self.terminal, onScreen: false), Self.win(2, F.finder, onScreen: true)]),
+                                         provider: .fixed(true))
+        let profile = ProfileCapture.makeProfile(name: "p", from: scan).0
+        #expect(profile.windows.map(\.stage) == [SavedStage(group: 1, isActive: false, isHeuristic: true),
+                                                SavedStage(group: 0, isActive: true, isHeuristic: false)])
+    }
+
+    @Test func savedStageIsAdditiveInJSON() throws {
+        var snapshot = F.snap(1, F.chrome)
+        snapshot.stage = SavedStage(group: 2, isActive: false, isHeuristic: true)
+        let data = try JSONEncoder().encode(snapshot)
+        #expect(try JSONDecoder().decode(WindowSnapshot.self, from: data).stage == snapshot.stage)
+        var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "stage")
+        let old = try JSONSerialization.data(withJSONObject: object)
+        #expect(try JSONDecoder().decode(WindowSnapshot.self, from: old).stage == nil)
+    }
+
+    @Test func windowSavedInStripIsNotMovedOnRestore() {
+        var strip = F.snap(1, F.chrome, title: "A", index: 0)
+        strip.stage = SavedStage(group: 1, isActive: false, isHeuristic: true)
+        let profile = F.profile([strip, F.snap(2, F.chrome, title: "B", index: 1)])
+        var scan = F.scan([F.live(10, F.chrome, title: "A", index: 0), F.live(11, F.chrome, title: "B", index: 1)])
+        scan.stageManagerOn = true
+        let plan = F.plan(profile, scan)
+        #expect(plan.steps.allSatisfy { $0.target?.windowID != 10 })
+        #expect(plan.warnings.contains { $0.contains("strip or another stage") && $0.contains("captured") })
+    }
+
     @Test func parkedWindowIsLeftAloneWithWarning() {
         let moved = CGRect(x: 10, y: 10, width: 500, height: 400)
         let profile = F.profile([F.snap(1, F.chrome, title: "A", index: 0), F.snap(2, F.chrome, title: "B", index: 1)])

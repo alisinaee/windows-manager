@@ -178,8 +178,13 @@ public enum WorkspaceScanner {
 
         let scanned = assemble(displays: displays, skyLight: skyLight, catalog: catalog,
                                activeSpaceID: SpaceReader.activeSpaceID(), appRef: appRef, ax: ax, options: options,
-                               accessibilityTrusted: trusted, screenIsLocked: locked, notes: notes)
+                               accessibilityTrusted: trusted, screenIsLocked: locked, notes: notes, hiddenPIDs: hiddenPIDs(catalog))
         return StageManager.annotate(scanned)
+    }
+
+    /// Processes in `catalog` whose app is hidden (Cmd-H); their windows are off screen without being in a stage.
+    private static func hiddenPIDs(_ catalog: [CatalogWindow]) -> Set<Int32> {
+        Set(Set(catalog.map(\.pid)).filter { NSRunningApplication(processIdentifier: $0)?.isHidden == true })
     }
 
     /// True while the login window or screen saver covers the session.
@@ -380,7 +385,7 @@ public enum WorkspaceScanner {
     static func assemble(displays: [DisplayIdentity], skyLight: [DisplaySpaces], catalog: [CatalogWindow],
                          activeSpaceID: UInt64, appRef: (Int32) -> AppRef?, ax: [UInt32: AXWindowDetails],
                          options: ScanOptions = ScanOptions(), accessibilityTrusted: Bool = true,
-                         screenIsLocked: Bool = false, notes: [String] = [],
+                         screenIsLocked: Bool = false, notes: [String] = [], hiddenPIDs: Set<Int32> = [],
                          scannedAt: Date = Date()) -> WorkspaceScan {
         var notes = notes
 
@@ -452,7 +457,8 @@ public enum WorkspaceScanner {
                 displayUUID: DisplayMap.display(containing: frame, in: displays)?.uuid,
                 spaceIDs: window.spaceIDs, isFullScreen: ownerIDs.contains(window.windowID),
                 isMinimized: details?.isMinimized ?? false, indexInApp: index,
-                isOnCurrentSpace: !currentSpaceIDs.isDisjoint(with: window.spaceIDs)))
+                isOnCurrentSpace: !currentSpaceIDs.isDisjoint(with: window.spaceIDs),
+                isOnScreen: window.isOnScreen, isAppHidden: hiddenPIDs.contains(window.pid)))
         }
 
         return WorkspaceScan(displays: displays, spaces: scanned, windows: windows, activeSpaceID: activeSpaceID,

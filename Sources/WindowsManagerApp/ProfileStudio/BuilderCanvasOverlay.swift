@@ -437,6 +437,7 @@ struct BuilderCanvasOverlay: View {
     @ObservedObject private var map: ProfileMapModel
     @ObservedObject private var builder: ProfileBuilderModel
     @Environment(\.canvasFocusRequest) private var requestFocus
+    @Environment(\.canvasFitRequest) private var requestFit
 
     private static let space = "builderCanvas"
 
@@ -470,6 +471,7 @@ struct BuilderCanvasOverlay: View {
                 controller.select(nil)
                 requestFocus()
             }
+            .onTapGesture(count: 2) { requestFit() }
             .dropDestination(for: LibraryDragPayload.self) { items, location in
                 controller.handleDrop(items, at: location)
             } isTargeted: { controller.isDropTargeted = $0 }

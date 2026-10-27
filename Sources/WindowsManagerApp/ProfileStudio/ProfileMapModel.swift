@@ -19,7 +19,12 @@ final class ProfileMapModel: ObservableObject {
     @Published private(set) var selectedWindowID: UUID?
     /// The monitor that keyboard Space navigation starts from.
     @Published private(set) var focusedDisplayUUID: String?
+    /// View scale of the whole map (1 = fitted). The layout itself is always built at zoom 1; the canvas scales it.
     @Published private(set) var zoom: Double = 1
+    /// Screen position of the canvas origin inside the viewport (pan). See `CanvasViewport`.
+    @Published private(set) var offset: CGPoint = .zero
+    /// True while Space is held over the map: the canvas ignores clicks so a drag pans instead of moving windows.
+    @Published var panModeActive = false
     @Published private(set) var viewport: CGSize = CGSize(width: 800, height: 500)
     /// Optional live status ("Compare with now"). Nil hides every status badge.
     @Published var status: ProfileLiveStatus?
@@ -27,8 +32,6 @@ final class ProfileMapModel: ObservableObject {
 
     /// `WindowTile.id` under the pointer (hover highlight only).
     @Published private(set) var hoveredTileID: String?
-
-    private var pinchBase: Double?
 
     // MARK: Loading
 
@@ -40,6 +43,8 @@ final class ProfileMapModel: ObservableObject {
         if changed {
             spaceSelection = [:]
             selectedWindowID = nil
+            zoom = 1
+            offset = .zero
             focusedDisplayUUID = profile?.displays.first?.uuid
         } else {
             // Space ids are positional, so re-resolve each stored selection by kind + Desktop number
@@ -73,21 +78,48 @@ final class ProfileMapModel: ObservableObject {
         relayout()
     }
 
-    func setZoom(_ value: Double) {
-        let clamped = min(max(value, ProfileMapLayout.zoomRange.lowerBound), ProfileMapLayout.zoomRange.upperBound)
-        guard clamped != zoom else { return }
-        zoom = clamped
-        relayout()
+    /// Zooms to `value` (clamped) keeping the point under `anchor` (viewport coordinates; default the centre) fixed.
+    func setZoom(_ value: Double, around anchor: CGPoint? = nil) {
+        let point = anchor ?? CGPoint(x: viewport.width / 2, y: viewport.height / 2)
+        apply(CanvasViewport(zoom: zoom, offset: offset).zoomed(to: value, around: point))
     }
 
-    func zoomBy(_ factor: Double) { setZoom(zoom * factor) }
+    func zoomBy(_ factor: Double, around anchor: CGPoint? = nil) { setZoom(zoom * factor, around: anchor) }
 
-    func pinchChanged(_ magnification: Double) {
-        if pinchBase == nil { pinchBase = zoom }
-        setZoom((pinchBase ?? zoom) * magnification)
+    /// Moves the map by `delta` screen points (two-finger scroll, Space+drag, middle mouse).
+    func panBy(_ delta: CGSize) {
+        apply(CanvasViewport(zoom: zoom, offset: offset).panned(by: delta))
     }
 
-    func pinchEnded() { pinchBase = nil }
+    /// Fit: the whole canvas at once, recentred.
+    func fit() {
+        apply(CanvasViewport.fitting(CGRect(origin: .zero, size: layout.canvasSize), in: viewport, padding: 0, maxZoom: 1),
+              clamp: false)
+        DebugLog.log("studio", "map fit")
+    }
+
+    /// 100%: the fitted scale, keeping the centre of the view where it is.
+    func actualSize() { setZoom(1) }
+
+    /// Zoom to the selected window, else the shown Space of the focused monitor.
+    func zoomToSelection() {
+        let rect: CGRect?
+        if let selectedWindowID, let tile = layout.windows.first(where: { $0.windowID == selectedWindowID }) {
+            rect = tile.rect
+        } else {
+            let uuid = focusedDisplayUUID ?? layout.monitors.first?.id
+            rect = layout.monitors.first { $0.id == uuid }?.contentRect
+        }
+        guard let rect else { return }
+        apply(CanvasViewport.fitting(rect, in: viewport, padding: 48), clamp: false)
+        DebugLog.log("studio", "map zoom to selection \(Int((zoom * 100).rounded()))%")
+    }
+
+    private func apply(_ next: CanvasViewport, clamp: Bool = true) {
+        let result = clamp ? next.clamped(content: layout.canvasSize, viewport: viewport) : next
+        if result.zoom != zoom { zoom = result.zoom }
+        if result.offset != offset { offset = result.offset }
+    }
 
     private func relayout() {
         guard let profile else {
@@ -95,7 +127,7 @@ final class ProfileMapModel: ObservableObject {
             return
         }
         layout = ProfileMapLayout.make(profile: profile, index: index, selection: spaceSelection,
-                                       viewport: viewport, zoom: zoom)
+                                       viewport: viewport, zoom: 1)
     }
 
     // MARK: Lookups

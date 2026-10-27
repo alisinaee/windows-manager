@@ -36,6 +36,18 @@ extension EnvironmentValues {
     }
 }
 
+private struct CanvasFitRequestKey: EnvironmentKey {
+    static let defaultValue: () -> Void = {}
+}
+
+extension EnvironmentValues {
+    /// Fits the whole map in the window (the Edit mode overlay calls it on a double-click of empty canvas).
+    var canvasFitRequest: () -> Void {
+        get { self[CanvasFitRequestKey.self] }
+        set { self[CanvasFitRequestKey.self] = newValue }
+    }
+}
+
 /// The map: monitors drawn to scale, a Space strip per monitor, window tiles, the tray and the zoom bar.
 struct ProfileMapCanvas: View {
     @ObservedObject var model: ProfileMapModel
@@ -51,19 +63,24 @@ struct ProfileMapCanvas: View {
             toolbar
             Divider()
             GeometryReader { geo in
-                ScrollView([.horizontal, .vertical]) {
+                ZStack(alignment: .topLeading) {
+                    CanvasGridBackground(zoom: model.zoom, offset: model.offset)
                     canvasContent
                         .frame(width: model.layout.canvasSize.width, height: model.layout.canvasSize.height,
                                alignment: .topLeading)
                         .environment(\.layoutDirection, .leftToRight)   // physical geometry, never mirrored
+                        .allowsHitTesting(!model.panModeActive)
+                        .scaleEffect(model.zoom, anchor: .topLeading)
+                        .offset(x: model.offset.x, y: model.offset.y)
                 }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                .clipped()
+                .background(CanvasNavigator(model: model))
                 .onAppear { model.setViewport(geo.size) }
                 .onChange(of: geo.size) { _, size in model.setViewport(size) }
             }
             .background(Color(nsColor: .underPageBackgroundColor))
-            .gesture(MagnifyGesture()
-                .onChanged { model.pinchChanged($0.magnification) }
-                .onEnded { _ in model.pinchEnded() })
+            .help("Hold Space and drag to pan, pinch or Cmd+scroll to zoom")
             if !model.index.tray.isEmpty {
                 Divider()
                 trayRow
@@ -110,19 +127,26 @@ struct ProfileMapCanvas: View {
                 .keyboardShortcut("-", modifiers: .command)
                 .accessibilityLabel("Zoom out").help("Zoom out (Cmd+-)")
             Slider(value: Binding(get: { model.zoom }, set: { model.setZoom($0) }),
-                   in: ProfileMapLayout.zoomRange)
+                   in: CanvasViewport.zoomRange)
                 .frame(width: 100)
                 .accessibilityLabel("Zoom")
                 .accessibilityValue("\(Int((model.zoom * 100).rounded())) percent")
             Button { model.zoomBy(1.25) } label: { Image(systemName: "plus.magnifyingglass") }
                 .keyboardShortcut("=", modifiers: .command)
                 .accessibilityLabel("Zoom in").help("Zoom in (Cmd+=)")
-            Text("\(Int((model.zoom * 100).rounded()))%")
-                .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
-                .frame(width: 40, alignment: .trailing).accessibilityHidden(true)
-            Button("Fit") { model.setZoom(1) }
-                .keyboardShortcut("0", modifiers: .command)
-                .help("Fit the map to the window (Cmd+0)")
+            Button { model.actualSize() } label: {
+                Text("\(Int((model.zoom * 100).rounded()))%")
+                    .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
+                    .frame(width: 40, alignment: .trailing)
+            }
+            .keyboardShortcut("0", modifiers: .command)
+            .accessibilityLabel("Reset zoom to 100 percent").help("Reset zoom to 100% (Cmd+0)")
+            Button("Fit") { model.fit() }
+                .keyboardShortcut("1", modifiers: .command)
+                .help("Fit the map to the window (Cmd+1). Hold Space and drag to pan, pinch or Cmd+scroll to zoom")
+            Button { model.zoomToSelection() } label: { Image(systemName: "scope") }
+                .keyboardShortcut("2", modifiers: .command)
+                .accessibilityLabel("Zoom to selection").help("Zoom to the selected window or Space (Cmd+2)")
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -152,15 +176,18 @@ struct ProfileMapCanvas: View {
             noDisplays
         } else {
             ZStack(alignment: .topLeading) {
-                Color.clear.contentShape(Rectangle()).onTapGesture { model.selectWindow(nil) }
+                Color.clear.contentShape(Rectangle())
+                    .onTapGesture { model.selectWindow(nil) }
+                    .onTapGesture(count: 2) { model.fit() }
                 ForEach(layout.monitors) { monitor in
                     monitorView(monitor)
                 }
                 if let canvasOverlay {
-                    canvasOverlay.environment(\.canvasFocusRequest, { focused = true })
+                    canvasOverlay
+                        .environment(\.canvasFocusRequest, { focused = true })
+                        .environment(\.canvasFitRequest, { model.fit() })
                 }
             }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: model.zoom)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: model.spaceSelection)
         }
     }

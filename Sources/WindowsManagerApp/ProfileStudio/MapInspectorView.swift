@@ -54,6 +54,8 @@ struct MapInspectorView: View {
         }
         .accessibilityElement(children: .combine)
 
+        if let stack = map.selectedStack { stackSection(stack, selected: window.id) }
+
         let live = map.status
         let status = live?.windows[window.id]
         let parked = live?.parked.contains(window.id) == true
@@ -96,6 +98,30 @@ struct MapInspectorView: View {
 
         if let profile, let launch = launchOrderText(window.app, profile) {
             section("Launch order") { Text(launch).font(.callout).fixedSize(horizontal: false, vertical: true) }
+        }
+    }
+
+    /// Every window of the selected stack; a click brings that window to the front of the stack.
+    private func stackSection(_ stack: TileStacking.Stack, selected: UUID) -> some View {
+        section("Overlapping windows (\(stack.count))") {
+            ForEach(Array(map.orderedMembers(of: stack).enumerated()), id: \.element) { at, id in
+                if let member = map.window(id) {
+                    let isSelected = id == selected
+                    Button { map.selectWindow(id) } label: {
+                        HStack(spacing: 6) {
+                            Image(nsImage: AppIconCache.icon(for: member.app)).resizable().frame(width: 16, height: 16)
+                            Text(RestoreStepText.quoted(member.app.name, member.title)).font(.callout).lineLimit(2)
+                            Spacer(minLength: 0)
+                            if isSelected { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Show this window in front of the stack")
+                    .accessibilityLabel("\(RestoreStepText.quoted(member.app.name, member.title)), \(at + 1) of \(stack.count) overlapping windows")
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
         }
     }
 

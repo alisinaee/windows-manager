@@ -37,6 +37,18 @@ final class ProfileMapModel: ObservableObject {
     /// `WindowTile.id` under the pointer (hover highlight only).
     @Published private(set) var hoveredTileID: String?
 
+    // MARK: Tile stacks (P6.56)
+
+    /// Windows whose frames overlap heavily, per Space, from `TileStacking`. Includes single windows.
+    @Published private(set) var stacks: [TileStacking.Stack] = []
+    /// The window shown in front of a collapsed stack, by `Stack.id`. A stack missing here shows its real front window.
+    @Published private(set) var frontOverride: [String: UUID] = [:]
+    /// The stack whose windows are fanned out in a strip, by `Stack.id`.
+    @Published private(set) var fannedStackID: String?
+    /// View mode and Compare collapse a stack to one tile; Edit mode keeps every tile (editing needs them).
+    /// Set by the canvas, not published: the canvas that sets it is the one that draws.
+    var collapsesStacks = true
+
     // MARK: Loading
 
     func load(_ profile: Profile?) {
@@ -47,6 +59,8 @@ final class ProfileMapModel: ObservableObject {
         if changed {
             spaceSelection = [:]
             selectedWindowID = nil
+            frontOverride = [:]
+            fannedStackID = nil
             zoom = 1
             offset = .zero
             focusedDisplayUUID = profile?.displays.first?.uuid
@@ -149,6 +163,18 @@ final class ProfileMapModel: ObservableObject {
         }
         layout = ProfileMapLayout.make(profile: profile, index: index, selection: spaceSelection,
                                        viewport: viewport, zoom: 1)
+        regroupStacks(profile)
+    }
+
+    private func regroupStacks(_ profile: Profile) {
+        let apps = Dictionary(profile.windows.map { ($0.id, $0.app.bundleID ?? $0.app.name) }, uniquingKeysWith: { a, _ in a })
+        stacks = TileStacking.group(layout.windows.map {
+            TileStacking.Item(windowID: $0.windowID, spaceID: $0.spaceID, rect: $0.rect, zIndex: $0.zIndex,
+                              appKey: apps[$0.windowID] ?? "")
+        }).filter(\.isStack)
+        let live = Set(stacks.map(\.id))
+        frontOverride = frontOverride.filter { live.contains($0.key) && stack(withID: $0.key)?.members.contains($0.value) == true }
+        if let fannedStackID, !live.contains(fannedStackID) { self.fannedStackID = nil }
     }
 
     // MARK: Lookups
@@ -195,6 +221,96 @@ final class ProfileMapModel: ObservableObject {
         if let id, let tile = layout.windows.first(where: { $0.windowID == id }) {
             focusedDisplayUUID = tile.displayUUID
         }
+        // Selecting a hidden member (inspector list, tray, fan) brings it to the front of its stack.
+        if let id {
+            for stack in stacks where stack.members.contains(id) { frontOverride[stack.id] = id }
+        }
+        if let fannedStackID, let id, stack(withID: fannedStackID)?.members.contains(id) != true { self.fannedStackID = nil }
+        if id == nil { fannedStackID = nil }
+    }
+
+    // MARK: Stack lookups and actions
+
+    func stack(withID id: String) -> TileStacking.Stack? { stacks.first { $0.id == id } }
+
+    func stack(containing windowID: UUID, spaceID: String? = nil) -> TileStacking.Stack? {
+        stacks.first { $0.members.contains(windowID) && (spaceID == nil || $0.spaceID == spaceID) }
+    }
+
+    /// The stack the selected window belongs to (on the Space it is shown on).
+    var selectedStack: TileStacking.Stack? {
+        guard let selectedWindowID else { return nil }
+        let shown = Set(layout.windows.filter { $0.windowID == selectedWindowID }.map(\.spaceID))
+        return stacks.first { $0.members.contains(selectedWindowID) && shown.contains($0.spaceID) }
+    }
+
+    /// The member drawn in front while the stack is collapsed.
+    func frontWindowID(of stack: TileStacking.Stack) -> UUID {
+        frontOverride[stack.id].flatMap { stack.members.contains($0) ? $0 : nil } ?? stack.members[0]
+    }
+
+    /// Members with the front one first, the rest in stacking order.
+    func orderedMembers(of stack: TileStacking.Stack) -> [UUID] {
+        let front = frontWindowID(of: stack)
+        return [front] + stack.members.filter { $0 != front }
+    }
+
+    /// Tiles (`WindowTile.id`) that a collapsed stack hides behind its front window.
+    var hiddenTileIDs: Set<String> {
+        guard collapsesStacks else { return [] }
+        var hidden = Set<String>()
+        for stack in stacks {
+            let front = frontWindowID(of: stack)
+            for member in stack.members where member != front { hidden.insert("\(stack.spaceID)#\(member.uuidString)") }
+        }
+        return hidden
+    }
+
+    /// The stack a tile is the visible front of (collapsed), or the top tile of (Edit mode, badge only).
+    func stackShown(by tile: ProfileMapLayout.WindowTile) -> TileStacking.Stack? {
+        guard let stack = stack(containing: tile.windowID, spaceID: tile.spaceID) else { return nil }
+        return (collapsesStacks ? frontWindowID(of: stack) : stack.members[0]) == tile.windowID ? stack : nil
+    }
+
+    /// Click on a collapsed stack: select its front window and fan the windows out.
+    func fanOut(_ stack: TileStacking.Stack) {
+        selectWindow(frontWindowID(of: stack))
+        fannedStackID = stack.id
+        DebugLog.log("studio", "stack fan out \(stack.count) windows (\(stack.appKey))")
+    }
+
+    /// Esc: closes the fan. False when nothing was open, so the key falls through.
+    @discardableResult func collapseFan() -> Bool {
+        guard fannedStackID != nil else { return false }
+        fannedStackID = nil
+        DebugLog.log("studio", "stack collapse")
+        return true
+    }
+
+    /// Option-click or the badge: the next window of the stack comes to the front.
+    func cycleFront(_ stack: TileStacking.Stack) {
+        let at = stack.members.firstIndex(of: frontWindowID(of: stack)) ?? 0
+        let next = stack.members[(at + 1) % stack.members.count]
+        frontOverride[stack.id] = next
+        if let selectedWindowID, stack.members.contains(selectedWindowID) { self.selectedWindowID = next }
+        DebugLog.log("studio", "stack cycle front \(stack.count) windows")
+    }
+
+    /// Arrow keys while a fan is open: the previous or next window of that stack.
+    private func stepFan(_ direction: MapDirection) -> Bool {
+        guard collapsesStacks, let fannedStackID, let stack = stack(withID: fannedStackID) else { return false }
+        let members = stack.members
+        let at = members.firstIndex { $0 == selectedWindowID } ?? members.firstIndex(of: frontWindowID(of: stack)) ?? 0
+        let delta = (direction == .left || direction == .up) ? -1 : 1
+        selectWindow(members[(at + delta + members.count) % members.count])
+        return true
+    }
+
+    /// Return: fan out the stack of the selected window.
+    @discardableResult func fanOutSelected() -> Bool {
+        guard collapsesStacks, let stack = selectedStack else { return false }
+        fanOut(stack)
+        return true
     }
 
     /// Tab / Shift+Tab: the next Space across all monitors, wrapping around.
@@ -209,7 +325,9 @@ final class ProfileMapModel: ObservableObject {
 
     /// Arrow keys: the nearest window in that direction; the front window when nothing is selected.
     func moveSelection(_ direction: MapDirection) {
-        let tiles = layout.windows
+        if stepFan(direction) { return }
+        let hidden = hiddenTileIDs
+        let tiles = layout.windows.filter { !hidden.contains($0.id) }
         guard !tiles.isEmpty else { return }
         guard let current = tiles.first(where: { $0.windowID == selectedWindowID }) else {
             selectWindow(tiles.min { $0.zIndex < $1.zIndex }?.windowID)

@@ -58,6 +58,14 @@ struct ProfileMapCanvas: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
 
+    init(model: ProfileMapModel, canvasOverlay: AnyView? = nil, keyOverride: ((KeyPress) -> Bool)? = nil) {
+        self.model = model
+        self.canvasOverlay = canvasOverlay
+        self.keyOverride = keyOverride
+        // Stacks collapse in View mode and Compare; Edit mode (it supplies a key override) keeps every tile.
+        model.collapsesStacks = keyOverride == nil
+    }
+
     private var displayLayout: ProfileMapLayout { model.displayLayout }
     private var metrics: MapMetrics { MapMetrics(zoom: CGFloat(model.zoom)) }
 
@@ -91,11 +99,13 @@ struct ProfileMapCanvas: View {
         }
         .focusable()
         .focused($focused)
-        .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .tab, .delete, .deleteForward, .escape,
+        .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .tab, .delete, .deleteForward, .escape, .return,
                            "1", "2", "3", "4", "5", "6", "7", "8", "9"]) { press in
             if keyOverride?(press) == true { return .handled }
             switch press.key {
-            case .delete, .deleteForward, .escape, "1", "2", "3", "4", "5", "6", "7", "8", "9": return .ignored
+            case .escape: return model.collapseFan() ? .handled : .ignored
+            case .return: return model.fanOutSelected() ? .handled : .ignored
+            case .delete, .deleteForward, "1", "2", "3", "4", "5", "6", "7", "8", "9": return .ignored
             case .leftArrow: model.moveSelection(.left)
             case .rightArrow: model.moveSelection(.right)
             case .upArrow: model.moveSelection(.up)
@@ -220,20 +230,21 @@ struct ProfileMapCanvas: View {
                 .offset(x: monitor.frame.minX + 6, y: monitor.frame.minY + 4)
 
             // Back to front: the layout lists windows back to front already; sort again to be safe.
-            ForEach(tiles.sorted { $0.zIndex > $1.zIndex }) { tile in
+            // A collapsed stack draws only its front window, with card edges and a badge.
+            let hidden = model.hiddenTileIDs
+            ForEach(tiles.filter { !hidden.contains($0.id) }.sorted { $0.zIndex > $1.zIndex }) { tile in
                 if let window = windowsByID[tile.windowID] {
-                    WindowTileView(window: window, tile: tile,
-                                   status: model.status?.windows[tile.windowID],
-                                   isSelected: model.selectedWindowID == tile.windowID,
-                                   isHovered: model.hoveredTileID == tile.id,
-                                   metrics: metrics,
-                                   locationText: location(of: tile, monitor: monitor, shown: shown, among: tiles),
-                                   onSelect: { model.selectWindow(tile.windowID); focused = true },
-                                   onHover: { inside in
-                                       model.setHover(tile.id, inside: inside)
-                                   })
+                    tileView(window, tile: tile, monitor: monitor, shown: shown, among: tiles)
                         .offset(x: tile.rect.minX, y: tile.rect.minY)
                 }
+            }
+            if model.collapsesStacks, let id = model.fannedStackID, let stack = model.stack(withID: id),
+               let front = layout.windows.first(where: { $0.windowID == model.frontWindowID(of: stack) && $0.spaceID == stack.spaceID }),
+               front.displayUUID == monitor.id {
+                StackFanView(stack: stack,
+                             windows: model.orderedMembers(of: stack).compactMap { windowsByID[$0] },
+                             selectedID: model.selectedWindowID, anchor: front.rect, bounds: monitor.frame,
+                             metrics: metrics, onSelect: { model.selectWindow($0); focused = true })
             }
             if let shown, shown.windowIDs.isEmpty {
                 Text("No windows on this Space")
@@ -250,6 +261,42 @@ struct ProfileMapCanvas: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(monitor.name)\(monitor.isMain ? ", main" : ""), showing \(shownLabel ?? "no Space")"
             + (spaceCount > 0 ? " of \(spaceCount) Spaces" : ""))
+    }
+
+    /// One window tile; the visible front of a stack also gets its card edges, badge and stack gestures.
+    @ViewBuilder private func tileView(_ window: WindowSnapshot, tile: ProfileMapLayout.WindowTile,
+                                       monitor: ProfileMapLayout.Monitor, shown: ProfileSpaceIndex.Space?,
+                                       among tiles: [ProfileMapLayout.WindowTile]) -> some View {
+        let stack = model.stackShown(by: tile)
+        let collapsed = stack != nil && model.collapsesStacks
+        let select: () -> Void = {
+            if let stack, collapsed {
+                // Option-click cycles the front window; a plain click selects the stack and fans it out.
+                if NSEvent.modifierFlags.contains(.option) { model.cycleFront(stack) } else { model.fanOut(stack) }
+            } else {
+                model.selectWindow(tile.windowID)
+            }
+            focused = true
+        }
+        let content = WindowTileView(window: window, tile: tile,
+                                     status: model.status?.windows[tile.windowID],
+                                     isSelected: model.selectedWindowID == tile.windowID,
+                                     isHovered: model.hoveredTileID == tile.id,
+                                     metrics: metrics,
+                                     stackCount: stack?.count ?? 1,
+                                     locationText: location(of: tile, monitor: monitor, shown: shown, among: tiles),
+                                     onSelect: select,
+                                     onHover: { inside in model.setHover(tile.id, inside: inside) })
+        if let stack {
+            TileStackView(size: tile.rect.size, tint: AppTint.color(for: window.app), showsEdges: collapsed) { content }
+                .overlay(alignment: .bottomTrailing) {
+                    StackBadge(stack: stack, appName: window.app.name, metrics: metrics, isInteractive: collapsed,
+                               onCycle: { model.cycleFront(stack); focused = true })
+                }
+                .accessibilityAction(named: "Next window in stack") { if collapsed { model.cycleFront(stack) } }
+        } else {
+            content
+        }
     }
 
     private func monitorTitle(_ monitor: ProfileMapLayout.Monitor, shownLabel: String?) -> some View {

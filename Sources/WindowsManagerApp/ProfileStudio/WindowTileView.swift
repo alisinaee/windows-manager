@@ -89,6 +89,8 @@ struct WindowTileView: View {
     let isSelected: Bool
     let isHovered: Bool
     var metrics = MapMetrics()
+    /// How many windows overlap this one (1 = alone); the stack's badge is drawn by the parent.
+    var stackCount = 1
     /// "Desktop 2 of Studio Display, window 3 of 6" style location text for VoiceOver.
     let locationText: String
     let onSelect: () -> Void
@@ -184,6 +186,7 @@ struct WindowTileView: View {
         var parts = [window.app.name]
         if let title = window.title, !title.isEmpty { parts.append("\"\(title)\"") }
         parts.append(locationText)
+        if stackCount > 1 { parts.append("\(stackCount) windows overlap here") }
         let f = window.frame
         parts.append("\(Int(f.width))x\(Int(f.height)) at \(Int(f.minX)), \(Int(f.minY))")
         if let status { parts.append(ProfileMapModel.statusText(status)) }
@@ -195,6 +198,7 @@ struct WindowTileView: View {
         var text = window.app.name
         if let title = window.title, !title.isEmpty { text += ", window '\(title)'" }
         text += ", \(locationText)"
+        if stackCount > 1 { text += ", \(stackCount) windows overlap here" }
         if let phrase = ProfileMapModel.positionPhrase(for: window, tile: tile) {
             text += ", \(phrase)"
         }

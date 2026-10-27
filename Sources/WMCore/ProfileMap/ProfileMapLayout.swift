@@ -229,8 +229,11 @@ public struct ProfileMapLayout: Equatable, Sendable {
 
     /// The visible part of the display, inside its tile, using the same fractions as the real screen.
     private static func contentRect(for display: DisplayIdentity, tile fullTile: CGRect) -> CGRect {
+        // Header band on top for the label, strip band at the bottom for the Space thumbnails: windows never draw there.
         let band = min(headerHeight, fullTile.height / 4)
-        let tile = CGRect(x: fullTile.minX, y: fullTile.minY + band, width: fullTile.width, height: fullTile.height - band)
+        let bottomBand = min(stripHeight, fullTile.height / 4)
+        let tile = CGRect(x: fullTile.minX, y: fullTile.minY + band, width: fullTile.width,
+                          height: fullTile.height - band - bottomBand)
         let frame = display.frame
         let visible = display.visibleFrame
         guard visible.width > 0, visible.height > 0 else { return tile }

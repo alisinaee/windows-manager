@@ -290,7 +290,7 @@ import Testing
         let monitor = layout.monitors[0]
 
         #expect(monitor.contentRect.minY > monitor.frame.minY)
-        #expect(Self.near(monitor.contentRect.maxY, monitor.frame.maxY))
+        #expect(monitor.contentRect.maxY <= monitor.stripRect.minY)   // the strip band stays free of windows
         #expect(Self.near(monitor.contentRect.width, monitor.frame.width))
     }
 

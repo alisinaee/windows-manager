@@ -94,9 +94,9 @@ struct ProfileMapCanvas: View {
         HStack(spacing: 8) {
             if let summary = model.summaryText {
                 Image(systemName: "checklist").foregroundStyle(.secondary).accessibilityHidden(true)
-                Text(summaryWithParked(summary)).font(.callout)
+                Text(summaryWithParked(summary)).font(.callout).lineLimit(1).truncationMode(.tail)
             }
-            Spacer()
+            Spacer(minLength: 8)
             if keyOverride == nil {
                 // View mode only: previous / next Space on the shown monitor.
                 Button { stepShownDesktop(forward: false) } label: { Image(systemName: "chevron.left") }
@@ -111,7 +111,7 @@ struct ProfileMapCanvas: View {
                 .accessibilityLabel("Zoom out").help("Zoom out (Cmd+-)")
             Slider(value: Binding(get: { model.zoom }, set: { model.setZoom($0) }),
                    in: ProfileMapLayout.zoomRange)
-                .frame(width: 140)
+                .frame(width: 100)
                 .accessibilityLabel("Zoom")
                 .accessibilityValue("\(Int((model.zoom * 100).rounded())) percent")
             Button { model.zoomBy(1.25) } label: { Image(systemName: "plus.magnifyingglass") }

@@ -7,8 +7,8 @@ import SwiftUI
 final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
     static let shared = ProfileStudioWindowController()
 
-    /// Minimum content size (UI1 shell; the full design asks for 960x600 once the inspector exists).
-    static let minSize = NSSize(width: 900, height: 600)
+    /// Minimum content size. The widest layout needs sidebar 200 + library 160 + map 320 + inspector 260 = 940.
+    static let minSize = NSSize(width: 1000, height: 640)
 
     private var window: NSWindow?
     private let model = ProfileStudioModel()
@@ -22,6 +22,7 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
             return
         }
         let hosting = NSHostingController(rootView: ProfileStudioView(model: model))
+        hosting.sizingOptions = []   // the window decides the size; the SwiftUI content never pushes it
         let window = NSWindow(contentViewController: hosting)
         window.title = model.windowTitle
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -31,12 +32,26 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
         window.setContentSize(NSSize(width: 1100, height: 700))
         window.center()
         window.setFrameAutosaveName("ProfileStudio")
+        clampToScreen(window)
         self.window = window
         model.onTitleChange = { [weak window] title in window?.title = title }
         present(window)
     }
 
+    /// A frame restored from an older run may be smaller than the minimum or bigger/off the screen: fix it.
+    private func clampToScreen(_ window: NSWindow) {
+        let visible = (window.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let minFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: Self.minSize)).size
+        var frame = window.frame
+        frame.size.width = min(max(frame.width, minFrame.width), max(visible.width, minFrame.width))
+        frame.size.height = min(max(frame.height, minFrame.height), max(visible.height, minFrame.height))
+        frame.origin.x = min(max(frame.minX, visible.minX), max(visible.maxX - frame.width, visible.minX))
+        frame.origin.y = min(max(frame.minY, visible.minY), max(visible.maxY - frame.height, visible.minY))
+        if frame != window.frame { window.setFrame(frame, display: false) }
+    }
+
     private func present(_ window: NSWindow) {
+        clampToScreen(window)
         if window.isMiniaturized { window.deminiaturize(nil) }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)

@@ -18,7 +18,7 @@ struct ProfileStudioView: View {
             case .loaded:
                 NavigationSplitView {
                     sidebar
-                        .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)
+                        .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 340)
                 } detail: {
                     detail
                 }
@@ -39,7 +39,7 @@ struct ProfileStudioView: View {
                 }
             }
         }
-        .frame(minWidth: 900, minHeight: 600)
+        .frame(minWidth: ProfileStudioWindowController.minSize.width, minHeight: ProfileStudioWindowController.minSize.height)
         .onAppear { model.reload() }
     }
 
@@ -96,51 +96,46 @@ struct ProfileStudioView: View {
         }
     }
 
+    /// Name and actions. Falls back to icon-only buttons, then a single-line subtitle, so it never grows past the pane.
     private func header(_ row: ProfileStudioRow) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.name).font(.title2.bold())
-                Text(ProfileStudioRowView.subtitle(row))
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            Spacer()
-            StudioModePicker(model: model)
-            Button { model.beginNewProfile() } label: { Label("New profile", systemImage: "plus") }
-                .help("Start a new profile from a blank layout, the current workspace or a copy")
-            Button { model.startEditing(row.id) } label: { Label("Edit this profile", systemImage: "pencil") }
-                .help("Open this profile in the Builder")
-            Button { NSApp.activate(); openSettings() } label: { Label("Reveal in Settings", systemImage: "gearshape") }
-                .accessibilityHint("Opens Settings, Profiles tab")
+        ViewThatFits(in: .horizontal) {
+            headerRow(row, iconOnly: false, truncating: false)
+            headerRow(row, iconOnly: true, truncating: false)
+            headerRow(row, iconOnly: true, truncating: true)
         }
         .padding(16)
     }
 
-    /// Compare toggle, Preview restore and Run, with the compare / run status next to them.
+    private func headerRow(_ row: ProfileStudioRow, iconOnly: Bool, truncating: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.name).font(.title2.bold()).lineLimit(1).truncationMode(.tail)
+                Text(ProfileStudioRowView.subtitle(row))
+                    .font(.callout).foregroundStyle(.secondary)
+                    .lineLimit(truncating ? 1 : nil).truncationMode(.tail)
+            }
+            .frame(maxWidth: truncating ? .infinity : nil, alignment: .leading)
+            Spacer(minLength: 8)
+            StudioModePicker(model: model)
+            Group {
+                Button { model.beginNewProfile() } label: { Label("New profile", systemImage: "plus") }
+                    .help("Start a new profile from a blank layout, the current workspace or a copy")
+                Button { model.startEditing(row.id) } label: { Label("Edit this profile", systemImage: "pencil") }
+                    .help("Open this profile in the Builder")
+                Button { NSApp.activate(); openSettings() } label: { Label("Reveal in Settings", systemImage: "gearshape") }
+                    .help("Reveal in Settings (Profiles tab)")
+                    .accessibilityHint("Opens Settings, Profiles tab")
+            }
+            .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
+        }
+    }
+
+    /// Compare toggle, Preview restore and Run, with the compare / run status below them.
     private func controlBar(_ row: ProfileStudioRow) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                Toggle(isOn: Binding(get: { model.isCompareOn }, set: { model.setCompare($0) })) {
-                    Label("Show what is missing now", systemImage: "arrow.triangle.2.circlepath")
-                }
-                .toggleStyle(.button)
-                .keyboardShortcut("l", modifiers: .command)
-                .help("Compare this profile with your Mac (Cmd+L). Only scans: nothing is moved.")
-                if model.isComparing {
-                    ProgressView().controlSize(.small)
-                    Text("Comparing with your Mac…").font(.callout).foregroundStyle(.secondary)
-                } else if model.isCompareOn, model.compareError == nil {
-                    Button { model.refreshCompare() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                        .keyboardShortcut("r", modifiers: .command)
-                        .help("Compare again (Cmd+R)")
-                }
-                Spacer()
-                Button { DebugLog.log("studio", "preview restore opened: \(row.name)"); model.isPreviewPresented = true } label: { Label("Preview restore", systemImage: "list.bullet.rectangle") }
-                    .keyboardShortcut("p", modifiers: [.command, .shift])
-                    .help("See what a restore would do, step by step (Cmd+Shift+P)")
-                if let app = AppState.current {
-                    RunProfileButton(app: app, profileID: row.id, profileName: row.name)
-                        .keyboardShortcut(.defaultAction)
-                }
+            ViewThatFits(in: .horizontal) {
+                controlRow(row, iconOnly: false)
+                controlRow(row, iconOnly: true)
             }
             if let error = model.compareError {
                 Label(error, systemImage: "exclamationmark.triangle")
@@ -148,9 +143,51 @@ struct ProfileStudioView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Compare problem: \(error)")
             }
-            if let app = AppState.current { RunStatusLine(app: app) }
+            if let app = AppState.current { RunStatusLine(app: app).fixedSize(horizontal: false, vertical: true) }
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+
+    private func controlRow(_ row: ProfileStudioRow, iconOnly: Bool) -> some View {
+        HStack(spacing: 12) {
+            Toggle(isOn: Binding(get: { model.isCompareOn }, set: { model.setCompare($0) })) {
+                Label(iconOnly ? "Compare" : "Show what is missing now", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .toggleStyle(.button)
+            .keyboardShortcut("l", modifiers: .command)
+            .help("Compare this profile with your Mac (Cmd+L). Only scans: nothing is moved.")
+            if model.isComparing {
+                ProgressView().controlSize(.small)
+                if !iconOnly { Text("Comparing with your Mac…").font(.callout).foregroundStyle(.secondary) }
+            } else if model.isCompareOn, model.compareError == nil {
+                Button { model.refreshCompare() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                    .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
+                    .keyboardShortcut("r", modifiers: .command)
+                    .help("Compare again (Cmd+R)")
+            }
+            Spacer(minLength: 8)
+            Button { DebugLog.log("studio", "preview restore opened: \(row.name)"); model.isPreviewPresented = true } label: { Label("Preview restore", systemImage: "list.bullet.rectangle") }
+                .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .help("See what a restore would do, step by step (Cmd+Shift+P)")
+            if let app = AppState.current {
+                RunProfileButton(app: app, profileID: row.id, profileName: row.name)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+    }
+}
+
+/// Title and icon, or the icon alone when the row is short of room (the button keeps its help text).
+struct StudioActionLabelStyle: LabelStyle {
+    var iconOnly: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        if iconOnly {
+            configuration.icon
+        } else {
+            HStack(spacing: 4) { configuration.icon; configuration.title }
+        }
     }
 }
 
@@ -161,16 +198,34 @@ struct StudioMapHost: View {
     @ObservedObject var model: ProfileStudioModel
     @StateObject private var map = ProfileMapModel()
 
+    /// Map 360 + inspector 220 + dividers and padding: below this the inspector moves under the map.
+    private static let sideBySideWidth: CGFloat = 760
+
+    private var mapPane: some View {
+        VStack(spacing: 0) {
+            ProfileMapCanvas(model: map)
+            Divider()
+            studioBottomBar { MapLegendView(showsStatus: map.status != nil) }
+        }
+    }
+
+    private var inspectorPane: MapInspectorView {
+        MapInspectorView(map: map, plan: model.comparePlan, isCompareOn: model.isCompareOn)
+    }
+
     var body: some View {
-        HSplitView {
-            VStack(spacing: 0) {
-                ProfileMapCanvas(model: map)
-                Divider()
-                studioBottomBar { MapLegendView(showsStatus: map.status != nil) }
+        GeometryReader { geo in
+            if geo.size.width >= Self.sideBySideWidth {
+                HSplitView {
+                    mapPane.frame(minWidth: 360)
+                    inspectorPane.frame(minWidth: 220, idealWidth: 270, maxWidth: 420)
+                }
+            } else {
+                VSplitView {
+                    mapPane.frame(minHeight: 260)
+                    inspectorPane.frame(minHeight: 120, idealHeight: 220, maxHeight: 400)
+                }
             }
-            .frame(minWidth: 420)
-            MapInspectorView(map: map, plan: model.comparePlan, isCompareOn: model.isCompareOn)
-                .frame(minWidth: 220, idealWidth: 270, maxWidth: 420)
         }
         .task(id: row) { map.load(try? AppState.current?.store.load(row.id)) }
         .onChange(of: model.liveStatus) { _, newValue in map.status = newValue }
@@ -246,20 +301,37 @@ struct StudioEditDetail: View {
                 Divider()
                 editBar
                 Divider()
-                HSplitView {
-                    AppLibraryView(builder: builder)
-                        .onAppear { builder.mapModel = map }
-                        .frame(minWidth: 180, idealWidth: 220, maxWidth: 300)
-                    VStack(spacing: 0) {
-                        BuilderMapCanvas(map: map, builder: builder)
-                        Divider()
-                        studioBottomBar { MapLegendView(showsStatus: false) }
+                GeometryReader { geo in
+                    if geo.size.width >= Self.sideBySideWidth {
+                        HSplitView {
+                            libraryAndMap
+                            inspector.frame(minWidth: 260, idealWidth: 320, maxWidth: 440)
+                        }
+                    } else {
+                        VSplitView {
+                            libraryAndMap.frame(minHeight: 260)
+                            inspector.frame(minHeight: 140, idealHeight: 240, maxHeight: 420)
+                        }
                     }
-                    .frame(minWidth: 380)
-                    inspector
-                        .frame(minWidth: 300, idealWidth: 320, maxWidth: 440)
                 }
             }
+        }
+    }
+
+    /// Library 160 + map 320 + inspector 260 + dividers: below this the inspector moves under the map.
+    private static let sideBySideWidth: CGFloat = 780
+
+    private var libraryAndMap: some View {
+        HSplitView {
+            AppLibraryView(builder: builder)
+                .onAppear { builder.mapModel = map }
+                .frame(minWidth: 160, idealWidth: 210, maxWidth: 300)
+            VStack(spacing: 0) {
+                BuilderMapCanvas(map: map, builder: builder)
+                Divider()
+                studioBottomBar { MapLegendView(showsStatus: false) }
+            }
+            .frame(minWidth: 320)
         }
     }
 
@@ -267,10 +339,11 @@ struct StudioEditDetail: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(builder.nameText.isEmpty ? "Untitled profile" : builder.nameText).font(.title2.bold())
+                    .lineLimit(1).truncationMode(.tail)
                 Text(builder.isNewProfile ? "New profile (not saved yet)" : "Editing a saved profile")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.callout).foregroundStyle(.secondary).lineLimit(1)
             }
-            Spacer()
+            Spacer(minLength: 8)
             StudioModePicker(model: model)
         }
         .padding(16)
@@ -287,9 +360,9 @@ struct StudioEditDetail: View {
                     .keyboardShortcut("z", modifiers: [.command, .shift])
                     .disabled(!builder.canRedo)
                     .help("Redo (Shift+Cmd+Z)")
-                Spacer()
+                Spacer(minLength: 8)
                 Text(statusText)
-                    .font(.callout)
+                    .font(.callout).lineLimit(1).truncationMode(.tail)
                     .foregroundStyle(builder.errorCount > 0 ? Color.red : (builder.warningCount > 0 ? Color.orange : Color.secondary))
                     .accessibilityLabel("Draft check: \(statusText)")
                 Button { model.saveThen(nil) } label: { Label("Save", systemImage: "square.and.arrow.down") }

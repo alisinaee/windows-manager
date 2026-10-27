@@ -58,6 +58,17 @@ struct ProfileStudioView: View {
     private var sidebar: some View {
         let selection = Binding<UUID?>(get: { model.selectedID }, set: { model.selectedID = $0 })
         return VStack(spacing: 0) {
+            Button { model.beginNewProfile() } label: {
+                Label("New profile", systemImage: "plus")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+            .disabled(model.mode == .edit)
+            .help("Start a new profile from a blank layout, the current workspace or a copy")
+            .padding(.horizontal, 6).padding(.top, 8)
             List(model.rows, selection: selection) { row in
                 ProfileStudioRowView(row: row).tag(row.id)
                     .listRowInsets(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10))

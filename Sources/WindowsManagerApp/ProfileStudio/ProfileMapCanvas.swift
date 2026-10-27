@@ -12,7 +12,7 @@ struct ProfileMapHost: View {
         VStack(spacing: 0) {
             ProfileMapCanvas(model: model)
             Divider()
-            MapLegendView(showsStatus: model.status != nil)
+            MapLegendView(showsStatus: model.status != nil, showsStageStrip: model.usesStageManager)
         }
         .task(id: row) { reloadProfile() }
         .onChange(of: status) { _, newValue in model.status = newValue }
@@ -214,6 +214,8 @@ struct ProfileMapCanvas: View {
         let focusedHere = model.focusedDisplayUUID == monitor.id && layout.monitors.count > 1
         let spaceCount = thumbs.count
         let shownLabel = shown.map { model.spaceName($0) }
+        // Stage Manager (P6.58): every monitor of such a profile has a lane on its left edge.
+        let stageLane = model.usesStageManager ? ProfileMapModel.stageLaneRect(for: monitor) : nil
 
         return ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -226,7 +228,7 @@ struct ProfileMapCanvas: View {
                 .overlay(Rectangle().strokeBorder(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 0.5))
                 .frame(width: monitor.contentRect.width, height: monitor.contentRect.height)
                 .offset(x: monitor.contentRect.minX, y: monitor.contentRect.minY)
-            monitorTitle(monitor, shownLabel: shownLabel)
+            monitorTitle(monitor, shownLabel: shownLabel, showsStageBadge: stageLane != nil)
                 .offset(x: monitor.frame.minX + 6, y: monitor.frame.minY + 4)
 
             // Back to front: the layout lists windows back to front already; sort again to be safe.
@@ -252,6 +254,13 @@ struct ProfileMapCanvas: View {
                     .frame(width: monitor.contentRect.width, height: monitor.contentRect.height)
                     .offset(x: monitor.contentRect.minX, y: monitor.contentRect.minY)
             }
+            if let stageLane {
+                StageStripLaneView(groups: model.stageGroups(onDisplay: monitor.id),
+                                   selectedWindowID: model.selectedWindowID, metrics: metrics,
+                                   onSelect: { model.selectWindow($0); focused = true })
+                    .frame(width: stageLane.width, height: stageLane.height)
+                    .offset(x: stageLane.minX, y: stageLane.minY)
+            }
             SpaceStripView(thumbnails: thumbs, index: model.index, windows: windowsByID,
                            spaceStatus: model.status?.spaces ?? [:],
                            spaceName: { model.spaceName($0) },
@@ -260,7 +269,7 @@ struct ProfileMapCanvas: View {
         .frame(width: layout.canvasSize.width, height: layout.canvasSize.height, alignment: .topLeading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(monitor.name)\(monitor.isMain ? ", main" : ""), showing \(shownLabel ?? "no Space")"
-            + (spaceCount > 0 ? " of \(spaceCount) Spaces" : ""))
+            + (spaceCount > 0 ? " of \(spaceCount) Spaces" : "") + (stageLane != nil ? ", Stage Manager" : ""))
     }
 
     /// One window tile; the visible front of a stack also gets its card edges, badge and stack gestures.
@@ -299,17 +308,27 @@ struct ProfileMapCanvas: View {
         }
     }
 
-    private func monitorTitle(_ monitor: ProfileMapLayout.Monitor, shownLabel: String?) -> some View {
+    private func monitorTitle(_ monitor: ProfileMapLayout.Monitor, shownLabel: String?, showsStageBadge: Bool) -> some View {
         HStack(spacing: 4) {
             if monitor.isMain { Image(systemName: "star.fill").font(.system(size: metrics.font(9))) }
             (Text(monitor.name).fontWeight(.semibold)
                 + Text(shownLabel.map { " · " + $0 } ?? "").foregroundColor(.secondary))
                 .font(.system(size: metrics.font(10)))
                 .lineLimit(1).truncationMode(.tail)
+                .accessibilityHidden(true)
+            if showsStageBadge {
+                let badge = "Stage Manager was on when captured. Strip windows sit in the lane on the left."
+                Text("Stage Manager")
+                    .font(.system(size: metrics.font(9), weight: .medium)).foregroundStyle(.secondary)
+                    .lineLimit(1).fixedSize()
+                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .background(Color(nsColor: .separatorColor).opacity(0.35), in: Capsule())
+                    .help(badge)
+                    .accessibilityLabel(badge)
+            }
         }
         .padding(.horizontal, 4)
         .frame(width: max(monitor.frame.width - 12, 20), height: max(ProfileMapLayout.headerHeight * CGFloat(model.zoom) - 4, 10), alignment: .leading)
-        .accessibilityHidden(true)
     }
 
     private func location(of tile: ProfileMapLayout.WindowTile, monitor: ProfileMapLayout.Monitor,

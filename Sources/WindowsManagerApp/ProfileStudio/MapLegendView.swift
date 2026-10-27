@@ -4,6 +4,8 @@ import WMCore
 /// Legend of the symbols on the map. Status entries appear only when a live status is shown.
 struct MapLegendView: View {
     let showsStatus: Bool
+    /// True when the profile was captured with Stage Manager on: adds the strip entry (P6.58).
+    var showsStageStrip = false
 
     private struct Entry: Identifiable {
         let symbol: String
@@ -20,9 +22,11 @@ struct MapLegendView: View {
     }
 
     private var shapeEntries: [Entry] {
-        [Entry(symbol: "rectangle.dashed", text: "All Desktops (dashed)"),
-         Entry(symbol: "line.3.horizontal.decrease", text: "Not restored (hatched)"),
-         Entry(symbol: "arrow.up.left.and.arrow.down.right", text: "Full screen / Split")]
+        var entries = [Entry(symbol: "rectangle.dashed", text: "All Desktops (dashed)"),
+                       Entry(symbol: "line.3.horizontal.decrease", text: "Not restored (hatched)"),
+                       Entry(symbol: "arrow.up.left.and.arrow.down.right", text: "Full screen / Split")]
+        if showsStageStrip { entries.append(Entry(symbol: "sidebar.left", text: "Stage Manager strip")) }
+        return entries
     }
 
     var body: some View {

@@ -34,6 +34,36 @@ final class ProfileStudioModel: ObservableObject {
     /// Names of profiles that could not be read (shown as a warning, the rest still load).
     @Published private(set) var skipped: [String] = []
 
+    // MARK: Sidebar
+
+    /// The user's choice, remembered ("studioSidebarVisible"; expanded by default).
+    @Published private(set) var sidebarVisible = UserDefaults.standard.object(forKey: "studioSidebarVisible") as? Bool ?? true
+    /// The window content is narrower than `narrowWidth`: the sidebar collapses unless the user expanded it on purpose.
+    @Published private(set) var isNarrow = false
+    private var userForcedOpen = false
+    static let narrowWidth: CGFloat = 760
+
+    var isSidebarShown: Bool { sidebarVisible && (!isNarrow || userForcedOpen) }
+
+    func toggleSidebar() {
+        if isSidebarShown {
+            sidebarVisible = false
+            userForcedOpen = false
+        } else {
+            sidebarVisible = true
+            userForcedOpen = true   // explicit: do not fight it when the window is narrow
+        }
+        UserDefaults.standard.set(sidebarVisible, forKey: "studioSidebarVisible")
+        DebugLog.log("studio", "sidebar \(isSidebarShown ? "expanded" : "collapsed")")
+    }
+
+    func contentWidthChanged(_ width: CGFloat) {
+        let narrow = width < Self.narrowWidth
+        guard narrow != isNarrow else { return }
+        isNarrow = narrow
+        if !narrow { userForcedOpen = false }
+    }
+
     // MARK: Compare with now (UI3)
 
     /// "Show what is missing now": the toggle. Off by default because comparing scans the Mac.

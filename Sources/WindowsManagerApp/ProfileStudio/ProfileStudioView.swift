@@ -16,11 +16,18 @@ struct ProfileStudioView: View {
                 messageView(icon: "rectangle.3.group", text: "No profiles yet: capture your workspace from the menu bar",
                             action: ("Capture…", { model.beginCapture() }))
             case .loaded:
-                NavigationSplitView {
-                    sidebar
-                        .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 340)
-                } detail: {
-                    detail
+                GeometryReader { geo in
+                    HStack(spacing: 0) {
+                        if model.isSidebarShown {
+                            sidebar.frame(width: 240)
+                        } else {
+                            SidebarRailView(model: model)
+                        }
+                        Divider()
+                        detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .onAppear { model.contentWidthChanged(geo.size.width) }
+                    .onChange(of: geo.size.width) { _, width in model.contentWidthChanged(width) }
                 }
                 .sheet(isPresented: $model.isStartSheetPresented) {
                     StudioStartFlow(capture: model.capture, profiles: model.rows,
@@ -60,16 +67,19 @@ struct ProfileStudioView: View {
     private var sidebar: some View {
         let selection = Binding<UUID?>(get: { model.selectedID }, set: { model.selectedID = $0 })
         return VStack(spacing: 0) {
-            Button { model.beginNewProfile() } label: {
-                Label("New profile", systemImage: "plus")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .contentShape(Rectangle())
+            HStack(spacing: 2) {
+                SidebarToggleButton(model: model)
+                Button { model.beginNewProfile() } label: {
+                    Label("New profile", systemImage: "plus")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 6).padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+                .disabled(model.mode == .edit)
+                .help("Start a new profile from a blank layout, the current workspace or a copy")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
-            .disabled(model.mode == .edit)
-            .help("Start a new profile from a blank layout, the current workspace or a copy")
             .padding(.horizontal, 6).padding(.top, 8)
             List(model.rows, selection: selection) { row in
                 ProfileStudioRowView(row: row).tag(row.id)
@@ -230,18 +240,10 @@ struct StudioMapHost: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            if geo.size.width >= Self.sideBySideWidth {
-                HSplitView {
-                    mapPane.frame(minWidth: 360)
-                    inspectorPane.frame(minWidth: 220, idealWidth: 270, maxWidth: 420)
-                }
-            } else {
-                VSplitView {
-                    mapPane.frame(minHeight: 260)
-                    inspectorPane.frame(minHeight: 120, idealHeight: 220, maxHeight: 400)
-                }
-            }
+        StudioInspectorSplit(sideBySideWidth: Self.sideBySideWidth, minMainWidth: 360) {
+            mapPane
+        } inspector: {
+            inspectorPane
         }
         .task(id: row) { map.load(try? AppState.current?.store.load(row.id)) }
         .onChange(of: model.liveStatus) { _, newValue in map.status = newValue }
@@ -317,18 +319,10 @@ struct StudioEditDetail: View {
                 Divider()
                 editBar
                 Divider()
-                GeometryReader { geo in
-                    if geo.size.width >= Self.sideBySideWidth {
-                        HSplitView {
-                            libraryAndMap
-                            inspector.frame(minWidth: 260, idealWidth: 320, maxWidth: 440)
-                        }
-                    } else {
-                        VSplitView {
-                            libraryAndMap.frame(minHeight: 260)
-                            inspector.frame(minHeight: 140, idealHeight: 240, maxHeight: 420)
-                        }
-                    }
+                StudioInspectorSplit(sideBySideWidth: Self.sideBySideWidth, minMainWidth: 480) {
+                    libraryAndMap
+                } inspector: {
+                    inspector
                 }
             }
         }

@@ -129,10 +129,12 @@ final class ProfileBuilderModel: ObservableObject {
         await loadLibrary()
     }
 
-    /// Reads the live workspace off the main thread into a draft capture. Nothing in the Builder changes.
+    /// Reads the live workspace into a draft capture, with the Studio's own windows out of the way (`CaptureSession`).
+    /// Nothing in the Builder changes.
     func captureWorkspace() async -> Result<(Profile, [String]), CaptureFailure> {
         DebugLog.log("studio", "capture start: current workspace")
-        let (captured, notes) = await Task.detached { ProfileCapture.capture(name: "Current workspace") }.value
+        let scan = await CaptureSession.run { CaptureSession.scanWorkspace() }
+        let (captured, notes) = await Task.detached { ProfileCapture.makeProfile(name: "Current workspace", from: scan) }.value
         guard !captured.displays.isEmpty else {
             DebugLog.log("studio", "capture failed: no monitors read")
             return .failure(CaptureFailure("The workspace could not be read. Check the permissions in Settings."))

@@ -190,19 +190,33 @@ final class AppState: ObservableObject {
 
     func cancelCapture() { isNamingCapture = false }
 
+    /// Menu "Capture now (3 s)": names the profile by the time and captures after a short pause, so the menu can close first.
+    func captureNow(afterSeconds seconds: Int = 3) {
+        let stamp = DateFormatter()
+        stamp.dateFormat = "HH.mm.ss"
+        captureName = "Capture " + stamp.string(from: Date())
+        commitCapture(afterSeconds: seconds)
+    }
+
     /// Scans the workspace off the main thread and saves the result as a profile.
     /// A name already used by another profile gets a number ("Work 2"), so names stay unambiguous.
-    func commitCapture() {
+    /// With `afterSeconds`, the status shows the countdown first and the scan waits for it to end.
+    func commitCapture(afterSeconds seconds: Int = 0) {
         let name = captureName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, checkCanStart() else { return }
         isNamingCapture = false
-        DebugLog.log("capture", "start name=\(name)")
-        status = .running("Capturing \(name)…")
+        DebugLog.log("capture", "start name=\(name) delay=\(seconds)s")
+        status = .running(seconds > 0 ? "Capturing in \(seconds) s…" : "Capturing \(name)…")
         let store = self.store
         Task { [weak self] in
+            if seconds > 0 {
+                try? await Task.sleep(for: .seconds(seconds))
+                self?.status = .running("Capturing \(name)…")
+            }
+            let scan = await CaptureSession.run { CaptureSession.scanWorkspace() }
             let outcome: Result<String, Error> = await Task.detached(priority: .userInitiated) {
                 do {
-                    let (captured, warnings) = ProfileCapture.capture(name: name)
+                    let (captured, warnings) = ProfileCapture.makeProfile(name: name, from: scan)
                     var profile = captured
                     profile.name = ProfileTransfer.uniqueName(name, among: store.list().map(\.name))
                     let saved = try store.save(profile)

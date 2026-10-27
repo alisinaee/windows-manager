@@ -131,6 +131,15 @@ struct MenuBarContent: View {
         } else {
             MenuRow(title: "Capture current workspace…") { appState.beginCapture() }
                 .disabled(!appState.canAct)
+                .help("Name a new profile and save the current workspace to it")
+                .accessibilityLabel("Capture current workspace")
+            MenuRow(title: "Capture now (3 s)") {
+                // Close the popup first so it is not in the capture; the countdown gives the stage time to settle.
+                Self.closePopup(); appState.captureNow()
+            }
+            .disabled(!appState.canAct)
+            .help("Closes this menu, waits 3 seconds, then saves the current workspace as a new profile")
+            .accessibilityLabel("Capture now in 3 seconds")
         }
     }
 

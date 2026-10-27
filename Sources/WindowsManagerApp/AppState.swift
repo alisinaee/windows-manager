@@ -149,6 +149,7 @@ final class AppState: ObservableObject {
     /// responsive while it runs; the file read happens off the main thread.
     func run(_ summary: ProfileSummary) {
         guard checkCanStart() else { return }
+        DebugLog.log("run", "start profile=\(summary.name) id=\(summary.id)")
         status = .running("Loading \(summary.name)…")
         let store = self.store
         Task { [weak self] in
@@ -156,12 +157,15 @@ final class AppState: ObservableObject {
                 let profile = try await Task.detached(priority: .userInitiated) { try store.load(summary.id) }.value
                 let engine = RestoreEngine()
                 let report = await engine.run(profile) { event in
+                    DebugLog.log("run", "progress \(event.message)")
                     Task { @MainActor in self?.showProgress(event) }
                 }
                 guard let self else { return }
                 let line = "\(profile.name): \(report.summary)"
+                DebugLog.log("run", "finished clean=\(report.isClean) \(line)")
                 self.status = report.isClean ? .success(line) : .failure(line)
             } catch {
+                DebugLog.log("run", "failed \(error.localizedDescription)")
                 self?.status = .failure("Could not run \(summary.name): \(error.localizedDescription)")
             }
         }
@@ -192,6 +196,7 @@ final class AppState: ObservableObject {
         let name = captureName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, checkCanStart() else { return }
         isNamingCapture = false
+        DebugLog.log("capture", "start name=\(name)")
         status = .running("Capturing \(name)…")
         let store = self.store
         Task { [weak self] in
@@ -209,6 +214,7 @@ final class AppState: ObservableObject {
                 }
             }.value
             guard let self else { return }
+            DebugLog.log("capture", "result \(outcome)")
             switch outcome {
             case .success(let text): self.status = .success(text)
             case .failure(let error): self.status = .failure("Capture failed: \(error.localizedDescription)")

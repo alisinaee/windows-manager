@@ -640,7 +640,6 @@ struct BuilderCanvasOverlay: View {
                 ForEach(preview.linked.sorted { $0.key.uuidString < $1.key.uuidString }, id: \.key) { _, rect in linkedGhost(rect) }
             }
             ForEach(layout.thumbnails) { thumb in thumbnailHitArea(thumb) }
-            ForEach(layout.monitors) { monitor in monitorControls(monitor) }
         }
         .frame(width: local.toScreen(layout.canvasSize).width, height: local.toScreen(layout.canvasSize).height,
                alignment: .topLeading)
@@ -863,111 +862,6 @@ struct BuilderCanvasOverlay: View {
         .help(space.kind == .desktop ? "Delete this Desktop from the profile" : "Remove this full-screen Space from the profile")
     }
 
-    // MARK: Desktop strip controls
-
-    private func monitorControls(_ monitor: ProfileMapLayout.Monitor) -> some View {
-        let desktopCount = map.index.spaces(onDisplay: monitor.id).filter { $0.kind == .desktop }.count
-        let selected = builder.selectedWindowID.flatMap { controller.window($0) }.flatMap { $0.displayUUID == monitor.id ? $0 : nil }
-        return HStack(spacing: 2) {
-            if let window = selected {
-                Toggle(isOn: Binding(get: { window.isFullScreen }, set: { _ in controller.toggleFullScreen(window) })) {
-                    Label("Make full screen", systemImage: "arrow.up.left.and.arrow.down.right")
-                }
-                .toggleStyle(.button).labelStyle(.iconOnly)
-                .monitorBarSlot()
-                .help(window.isFullScreen ? "Leave full screen" : "Make the selected window full screen in a new Space")
-                .accessibilityLabel("Make full screen")
-            }
-            layoutMenu(monitor)
-            Toggle(isOn: $controller.snapEnabled) { Label("Snap", systemImage: "magnet") }
-                .toggleStyle(.button).labelStyle(.iconOnly)
-                .monitorBarSlot()
-                .help("Snap to Layout zones and edges (hold Option to turn off while dragging)")
-                .accessibilityLabel("Snap to layout zones and edges")
-            GridControl(controller: controller, monitorID: monitor.id)
-            Toggle(isOn: $controller.magnetEnabled) { Label("Magnet", systemImage: "line.diagonal") }
-                .toggleStyle(.button).labelStyle(.iconOnly)
-                .monitorBarSlot()
-                .help("Magnet: while dragging or resizing, stick to other windows' edges and the monitor edges (Option turns off)")
-                .accessibilityLabel("Magnet to window and monitor edges")
-            Toggle(isOn: $controller.linkEnabled) { Label("Link", systemImage: "link") }
-                .toggleStyle(.button).labelStyle(.iconOnly)
-                .monitorBarSlot()
-                .help("Link: resizing an edge shared with a neighbour also resizes the neighbour, with no gap or overlap")
-                .accessibilityLabel("Linked resize")
-            Toggle(isOn: $controller.allowOverlap) {
-                Label("Allow overlap", systemImage: controller.allowOverlap ? "lock.open" : "lock")
-            }
-            .toggleStyle(.button).labelStyle(.iconOnly)
-            .monitorBarSlot()
-            .help(controller.allowOverlap ? "Overlap allowed: tiles can be placed freely" : "Locked: tiles cannot overlap or leave the monitor while dragging and resizing")
-            .accessibilityLabel("Allow overlap")
-            AutoLayoutControl(controller: controller, monitor: monitor)
-            Button { controller.builder.addDesktop(onDisplay: monitor.id) } label: {
-                Label("Add Desktop", systemImage: "rectangle.stack.badge.plus")
-            }
-            .buttonStyle(.borderless).labelStyle(.iconOnly)
-            .monitorBarSlot()
-            .disabled(desktopCount >= ProfileDraftEditor.maxDesktopsPerDisplay)
-            .help("Add a Desktop to \(monitor.name)")
-            .accessibilityLabel("Add Desktop")
-        }
-        .padding(2)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .fixedSize()
-        .position(x: local.toScreen(monitor.frame).maxX - 8, y: local.toScreen(monitor.frame).minY + 16)
-        .alignmentGuide(.leading) { $0[.leading] }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Edit controls for \(monitor.name)")
-    }
-
-    private func layoutMenu(_ monitor: ProfileMapLayout.Monitor) -> some View {
-        let matching = controller.layoutsMatching(monitor.id)
-        let active = controller.activeLayout(monitor.id)
-        return Menu {
-            Button { controller.chooseLayout(nil, on: monitor.id) } label: {
-                if active == nil { Label("No layout", systemImage: "checkmark") } else { Text("No layout") }
-            }
-            .help("Stop snapping to layout zones on this monitor")
-            ForEach(matching) { layout in
-                Button { controller.chooseLayout(layout.id, on: monitor.id) } label: {
-                    if active?.id == layout.id { Label(layout.name, systemImage: "checkmark") } else { Text(layout.name) }
-                }
-                .help("Snap to the \(layout.name) zones on this monitor")
-            }
-            if matching.isEmpty { Text("No saved Layouts for this monitor") }
-            Divider()
-            Button("Edit zones…") { controller.zoneEditorMonitor = monitor.id }
-            Button("Save current arrangement as zones…") {
-                let name = "\(monitor.name) \(matching.count + 1)"
-                controller.saveArrangementAsZones(on: monitor, name: name)
-            }
-            if !matching.isEmpty {
-                Menu("Apply zones") {
-                    ForEach(matching) { layout in
-                        Button(layout.name) { controller.applyZones(layout, on: monitor) }
-                    }
-                }
-            }
-        } label: {
-            Label("Layout zones", systemImage: "square.grid.2x2")
-        }
-        .labelStyle(.iconOnly)
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .monitorBarSlot()
-        .help("Layout zones to snap to: \(active?.name ?? "none")")
-        .accessibilityLabel("Layout zones")
-        .sheet(isPresented: Binding(get: { controller.zoneEditorMonitor == monitor.id },
-                                    set: { if !$0 { controller.zoneEditorMonitor = nil; controller.reloadLayouts() } })) {
-            VStack(spacing: 0) {
-                LayoutEditorView(model: LayoutEditorModel())
-                Divider()
-                HStack { Spacer(); Button("Done") { controller.zoneEditorMonitor = nil; controller.reloadLayouts() }.keyboardShortcut(.defaultAction) }
-                    .padding(8)
-            }
-        }
-    }
 }
 
 /// "Auto layout" button with a popover that previews 1-3 candidate layouts (G4).
@@ -978,8 +872,7 @@ private struct AutoLayoutControl: View {
 
     var body: some View {
         Button { showing.toggle() } label: { Label("Auto layout", systemImage: "wand.and.stars") }
-            .buttonStyle(.borderless).labelStyle(.iconOnly)
-            .monitorBarSlot()
+            .buttonStyle(ToolBarButtonStyle(isOn: showing))
             .help("Auto layout: arrange this Desktop's windows on \(monitor.name) by how many there are")
             .accessibilityLabel("Auto layout")
             .popover(isPresented: $showing, arrowEdge: .bottom) { popover }
@@ -1041,17 +934,16 @@ private struct GridControl: View {
     var body: some View {
         let g = controller.grid(monitorID)
         HStack(spacing: 0) {
-            Toggle(isOn: Binding(get: { g.isOn }, set: { on in controller.setGrid(monitorID) { $0.isOn = on } })) {
+            Button { controller.setGrid(monitorID) { $0.isOn.toggle() } } label: {
                 Label("Grid", systemImage: "grid")
             }
-            .toggleStyle(.button).labelStyle(.iconOnly)
-            .monitorBarSlot()
-            .help("Show a grid on this monitor and snap dragging and resizing to it (\(g.spec.columns) x \(g.spec.rows))")
+            .buttonStyle(ToolBarButtonStyle(isOn: g.isOn))
+            .help("Grid: show a grid on this monitor and snap dragging and resizing to it, \(g.spec.columns) x \(g.spec.rows) (\(g.isOn ? "on" : "off"))")
             .accessibilityLabel("Grid overlay")
+            .accessibilityValue(g.isOn ? "on" : "off")
             Button { showing.toggle() } label: { Label("Grid size", systemImage: "chevron.down") }
-                .buttonStyle(.borderless).labelStyle(.iconOnly)
-                .frame(minWidth: 16, minHeight: 28)
-                .help("Choose the grid size")
+                .buttonStyle(ToolBarButtonStyle(isOn: false, width: 18))
+                .help("Grid size: \(g.spec.columns) x \(g.spec.rows)")
                 .accessibilityLabel("Grid size")
                 .popover(isPresented: $showing, arrowEdge: .bottom) { popover }
         }
@@ -1087,11 +979,199 @@ private struct GridControl: View {
     }
 }
 
-private extension View {
-    /// One slot in a monitor's control row: at least 28pt square, so every control shares a height and corner radius.
-    func monitorBarSlot() -> some View {
-        frame(minWidth: 28, minHeight: 28)
+
+// MARK: - Tools bar
+
+/// Equal 28pt tool button: accent fill when on, soft fill on hover.
+private struct ToolBarButtonStyle: ButtonStyle {
+    var isOn: Bool
+    var width: CGFloat = 28
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .labelStyle(.iconOnly)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(isOn ? Color.white : Color.primary)
+            .frame(width: width, height: 28)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isOn ? Color.accentColor
+                      : Color.primary.opacity(configuration.isPressed ? 0.16 : (hovering ? 0.08 : 0))))
             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .onHover { hovering = $0 }
+            .opacity(configuration.isPressed ? 0.85 : 1)
+    }
+}
+
+/// The edit tools for one monitor, docked above the map (it does not zoom or pan). Monitor name on the left.
+struct BuilderToolsBar: View {
+    @ObservedObject var controller: BuilderCanvasController
+    @ObservedObject private var map: ProfileMapModel
+    @ObservedObject private var builder: ProfileBuilderModel
+    @State private var chosenMonitorID: String?
+
+    init(controller: BuilderCanvasController) {
+        self.controller = controller
+        _map = ObservedObject(wrappedValue: controller.map)
+        _builder = ObservedObject(wrappedValue: controller.builder)
+    }
+
+    private var monitor: ProfileMapLayout.Monitor? {
+        let monitors = map.layout.monitors
+        if let id = chosenMonitorID, let m = monitors.first(where: { $0.id == id }) { return m }
+        if let id = map.focusedDisplayUUID, let m = monitors.first(where: { $0.id == id }) { return m }
+        return monitors.first
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let monitor {
+                header(monitor)
+                Spacer(minLength: 8)
+                tools(monitor)
+            } else {
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 4)
+        .frame(minHeight: 36)
+        .onChange(of: map.focusedDisplayUUID) { _, _ in chosenMonitorID = nil }
+    }
+
+    @ViewBuilder private func header(_ monitor: ProfileMapLayout.Monitor) -> some View {
+        let title = HStack(spacing: 4) {
+            if monitor.isMain { Image(systemName: "star.fill").font(.system(size: 10)).foregroundStyle(.yellow) }
+            Text(monitor.name).fontWeight(.semibold).lineLimit(1).truncationMode(.tail)
+        }
+        if map.layout.monitors.count > 1 {
+            Menu {
+                ForEach(map.layout.monitors) { m in
+                    Button { chosenMonitorID = m.id } label: {
+                        if m.id == monitor.id { Label(m.name, systemImage: "checkmark") } else { Text(m.name) }
+                    }
+                }
+            } label: { title }
+            .menuStyle(.borderlessButton).fixedSize()
+            .help("Monitor the tools apply to: \(monitor.name)")
+            .accessibilityLabel("Monitor: \(monitor.name)")
+        } else {
+            title.help("Monitor: \(monitor.name)").accessibilityLabel("Monitor: \(monitor.name)")
+        }
+    }
+
+    private func divider() -> some View {
+        Divider().frame(height: 18).padding(.horizontal, 4)
+    }
+
+    private func state(_ on: Bool) -> String { on ? "on" : "off" }
+
+    @ViewBuilder private func tools(_ monitor: ProfileMapLayout.Monitor) -> some View {
+        let desktopCount = map.index.spaces(onDisplay: monitor.id).filter { $0.kind == .desktop }.count
+        let selected = builder.selectedWindowID.flatMap { controller.window($0) }.flatMap { $0.displayUUID == monitor.id ? $0 : nil }
+        HStack(spacing: 2) {
+            if let window = selected {
+                Button { controller.toggleFullScreen(window) } label: {
+                    Label("Make full screen", systemImage: "arrow.up.left.and.arrow.down.right")
+                }
+                .buttonStyle(ToolBarButtonStyle(isOn: window.isFullScreen))
+                .help(window.isFullScreen ? "Full screen: leave full screen (on)" : "Full screen: make the selected window full screen in a new Space (off)")
+                .accessibilityLabel("Make full screen")
+                .accessibilityValue(state(window.isFullScreen))
+                divider()
+            }
+            layoutMenu(monitor)
+            Button { controller.snapEnabled.toggle() } label: { Label("Snap", systemImage: "square.dashed.inset.filled") }
+                .buttonStyle(ToolBarButtonStyle(isOn: controller.snapEnabled))
+                .help("Snap: snap to Layout zones and edges, hold Option to turn off while dragging (\(state(controller.snapEnabled)))")
+                .accessibilityLabel("Snap to layout zones and edges")
+                .accessibilityValue(state(controller.snapEnabled))
+            divider()
+            GridControl(controller: controller, monitorID: monitor.id)
+            divider()
+            Button { controller.magnetEnabled.toggle() } label: { Label("Magnet", systemImage: "arrow.left.to.line") }
+                .buttonStyle(ToolBarButtonStyle(isOn: controller.magnetEnabled))
+                .help("Magnet: snap to other windows and monitor edges while dragging or resizing, Option turns off (\(state(controller.magnetEnabled)))")
+                .accessibilityLabel("Magnet to window and monitor edges")
+                .accessibilityValue(state(controller.magnetEnabled))
+            Button { controller.linkEnabled.toggle() } label: { Label("Link", systemImage: "link") }
+                .buttonStyle(ToolBarButtonStyle(isOn: controller.linkEnabled))
+                .help("Link: resizing an edge shared with a neighbour also resizes the neighbour (\(state(controller.linkEnabled)))")
+                .accessibilityLabel("Linked resize")
+                .accessibilityValue(state(controller.linkEnabled))
+            Button { controller.allowOverlap.toggle() } label: {
+                Label("Allow overlap", systemImage: controller.allowOverlap ? "lock.open" : "lock")
+            }
+            .buttonStyle(ToolBarButtonStyle(isOn: controller.allowOverlap))
+            .help(controller.allowOverlap ? "Allow overlap: tiles can be placed freely (on)"
+                  : "Allow overlap: tiles cannot overlap or leave the monitor while dragging and resizing (off)")
+            .accessibilityLabel("Allow overlap")
+            .accessibilityValue(state(controller.allowOverlap))
+            divider()
+            AutoLayoutControl(controller: controller, monitor: monitor)
+            divider()
+            Button { controller.builder.addDesktop(onDisplay: monitor.id) } label: {
+                Label("Add Desktop", systemImage: "rectangle.stack.badge.plus")
+            }
+            .buttonStyle(ToolBarButtonStyle(isOn: false))
+            .disabled(desktopCount >= ProfileDraftEditor.maxDesktopsPerDisplay)
+            .help("Add Desktop: add a Desktop to \(monitor.name)")
+            .accessibilityLabel("Add Desktop")
+        }
+        .fixedSize()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Edit tools for \(monitor.name)")
+    }
+
+    fileprivate func layoutMenu(_ monitor: ProfileMapLayout.Monitor) -> some View {
+        let matching = controller.layoutsMatching(monitor.id)
+        let active = controller.activeLayout(monitor.id)
+        return Menu {
+            Button { controller.chooseLayout(nil, on: monitor.id) } label: {
+                if active == nil { Label("No layout", systemImage: "checkmark") } else { Text("No layout") }
+            }
+            .help("Stop snapping to layout zones on this monitor")
+            ForEach(matching) { layout in
+                Button { controller.chooseLayout(layout.id, on: monitor.id) } label: {
+                    if active?.id == layout.id { Label(layout.name, systemImage: "checkmark") } else { Text(layout.name) }
+                }
+                .help("Snap to the \(layout.name) zones on this monitor")
+            }
+            if matching.isEmpty { Text("No saved Layouts for this monitor") }
+            Divider()
+            Button("Edit zones…") { controller.zoneEditorMonitor = monitor.id }
+            Button("Save current arrangement as zones…") {
+                let name = "\(monitor.name) \(matching.count + 1)"
+                controller.saveArrangementAsZones(on: monitor, name: name)
+            }
+            if !matching.isEmpty {
+                Menu("Apply zones") {
+                    ForEach(matching) { layout in
+                        Button(layout.name) { controller.applyZones(layout, on: monitor) }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 2) {
+                Image(systemName: "square.grid.2x2")
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+            }
+            .frame(width: 40, height: 28)
+        }
+        .labelStyle(.iconOnly)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Layout: zones to snap to on this monitor (\(active?.name ?? "none"))")
+        .accessibilityLabel("Layout zones")
+        .sheet(isPresented: Binding(get: { controller.zoneEditorMonitor == monitor.id },
+                                    set: { if !$0 { controller.zoneEditorMonitor = nil; controller.reloadLayouts() } })) {
+            VStack(spacing: 0) {
+                LayoutEditorView(model: LayoutEditorModel())
+                Divider()
+                HStack { Spacer(); Button("Done") { controller.zoneEditorMonitor = nil; controller.reloadLayouts() }.keyboardShortcut(.defaultAction) }
+                    .padding(8)
+            }
+        }
     }
 }
 
@@ -1110,9 +1190,13 @@ struct BuilderMapCanvas: View {
     }
 
     var body: some View {
-        ProfileMapCanvas(model: map,
-                         onSync: { Task { await builder.syncNow() } },
-                         canvasOverlay: AnyView(BuilderCanvasOverlay(controller: controller)),
-                         keyOverride: { controller.handleKey($0) })
+        VStack(spacing: 0) {
+            BuilderToolsBar(controller: controller)
+            Divider()
+            ProfileMapCanvas(model: map,
+                             onSync: { Task { await builder.syncNow() } },
+                             canvasOverlay: AnyView(BuilderCanvasOverlay(controller: controller)),
+                             keyOverride: { controller.handleKey($0) })
+        }
     }
 }

@@ -45,7 +45,9 @@ public enum ProfileCapture {
                     : relativeFrame(of: window.frame, in: display),
                 placement: placement,
                 isFullScreen: window.isFullScreen, isMinimized: window.isMinimized, zIndex: snapshots.count,
-                restore: true, stage: window.stage, resizeLimits: window.resizeLimits))
+                restore: true, stage: window.stage,
+                resizeLimits: SizeLimitLearning.merge(window.resizeLimits,
+                    with: SizeLimitStore.shared.limits(bundleID: window.app.bundleID, title: window.title))))
 
             if window.title == nil {
                 warnings.append("\(describe(window)) has no title (Screen Recording or Accessibility access may be missing); it is matched by app and position only.")

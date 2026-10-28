@@ -230,11 +230,19 @@ public final class RestoreEngine {
     public let environment: any RestoreEnvironment
     public var configuration: Configuration
     public let desktopAdder: any DesktopAdding
+    /// Where limits learned from clamped sizes go: the app cache and the profile. Nil: not kept (tests).
+    public let sizeLimitStore: SizeLimitStore?
+    public let profileStore: ProfileStore?
 
+    /// `persistLearnedLimits` nil: kept only with the live environment.
     public init(environment: any RestoreEnvironment = .live, configuration: Configuration = Configuration(),
-                desktopAdder: (any DesktopAdding)? = nil) {
+                desktopAdder: (any DesktopAdding)? = nil, persistLearnedLimits: Bool? = nil,
+                sizeLimitStore: SizeLimitStore? = nil, profileStore: ProfileStore? = nil) {
         self.environment = environment
         self.configuration = configuration
+        let persist = persistLearnedLimits ?? (environment is LiveRestoreEnvironment)
+        self.sizeLimitStore = persist ? (sizeLimitStore ?? .shared) : nil
+        self.profileStore = persist ? (profileStore ?? ProfileStore()) : nil
         self.desktopAdder = desktopAdder ?? MissionControlDesktopAdder()
     }
 
@@ -504,14 +512,14 @@ public final class RestoreEngine {
         // Remember what the settle pass has to check.
         guard let target = step.target, outcome.status.isDone else { return }
         switch step {
-        case .setFrame(_, let frame, _, let beforeFullScreen):
+        case .setFrame(_, let frame, let from, let beforeFullScreen):
+            learn(frame: frame, from: from, actual: outcome.frame, target: target, state: state)
             if !beforeFullScreen, let handle = outcome.handle {
-                // A window with a minimum size stays larger than asked for; that size is the one to keep.
+                // A window that clamps its size keeps that size; it is the one to check later.
                 var expected = frame
-                if let actual = outcome.frame,
-                   actual.width > frame.width + configuration.frameTolerance
-                    || actual.height > frame.height + configuration.frameTolerance {
-                    expected = CGRect(origin: frame.origin, size: actual.size)
+                if case .sizeClamped(let size) = SizeLimitLearning.classify(
+                    requested: frame, actual: outcome.frame, sizeTolerance: configuration.frameTolerance) {
+                    expected = CGRect(origin: frame.origin, size: size)
                 }
                 state.placed[target.snapshotID] = Placed(target: target, handle: handle, frame: expected)
                 if !state.placedOrder.contains(target.snapshotID) { state.placedOrder.append(target.snapshotID) }
@@ -522,6 +530,34 @@ public final class RestoreEngine {
         default:
             break
         }
+    }
+
+    /// Notes what a clamped size says about the window, to be stored when the run finishes.
+    private func learn(frame: CGRect, from: CGRect, actual: CGRect?, target: RestoreTarget, state: RunState) {
+        guard case .sizeClamped(let size) = SizeLimitLearning.classify(requested: frame, actual: actual),
+              let learned = SizeLimitLearning.learn(requested: frame.size, observed: size, previous: from.size)
+        else { return }
+        state.learned[target.snapshotID] = LearnedLimits(
+            target: target, limits: SizeLimitLearning.merge(state.learned[target.snapshotID]?.limits, with: learned) ?? learned)
+    }
+
+    /// Writes the learned limits into the app cache and into the profile's window entries (merged).
+    private func persistLearned(_ state: RunState) {
+        guard !state.learned.isEmpty else { return }
+        for item in state.learned.values {
+            sizeLimitStore?.record(item.limits, bundleID: item.target.app.bundleID, title: item.target.title)
+        }
+        guard let profileStore, var profile = try? profileStore.load(state.profile.id) else { return }
+        var changed = false
+        for (id, item) in state.learned {
+            guard let i = profile.windows.firstIndex(where: { $0.id == id }) else { continue }
+            let merged = SizeLimitLearning.merge(profile.windows[i].resizeLimits, with: item.limits)
+            if SizeLimitLearning.adds(merged, to: profile.windows[i].resizeLimits) {
+                profile.windows[i].resizeLimits = merged
+                changed = true
+            }
+        }
+        if changed { _ = try? profileStore.save(profile) }
     }
 
     private func perform(_ step: RestoreStep, state: RunState) async -> Outcome {
@@ -718,6 +754,7 @@ public final class RestoreEngine {
         for note in state.scanNotes where !warnings.contains(note) { warnings.append(note) }
         report.warnings = warnings
         report.finish(profile: state.profile, elapsed: Self.uptime() - state.started)
+        persistLearned(state)
         emit(state, .finished(report))
         return report
     }
@@ -733,6 +770,11 @@ public final class RestoreEngine {
     }
 
     // MARK: Run state
+
+    private struct LearnedLimits {
+        var target: RestoreTarget
+        var limits: WindowResizeLimits
+    }
 
     private struct Placed {
         var target: RestoreTarget
@@ -759,6 +801,8 @@ public final class RestoreEngine {
         /// Windows whose frame was set, to be checked again after the settle delay (by snapshot id).
         var placed: [UUID: Placed] = [:]
         var placedOrder: [UUID] = []
+        /// Size limits seen this run, by snapshot id.
+        var learned: [UUID: LearnedLimits] = [:]
 
         init(profile: Profile, dryRun: Bool, progress: ((RestoreProgress) -> Void)?) {
             self.profile = profile
@@ -882,10 +926,9 @@ public final class LiveRestoreEnvironment: RestoreEnvironment {
         if result.minSizeHit && !result.refused {
             return .ok("minimum size reached (now \(now))", frame: result.actual)
         }
-        // Fixed-size window (Calculator): the size write is rejected but the position is right. Not a failure.
-        if let actual = result.actual, result.steps.contains(where: { $0.write == .size && !$0.succeeded }),
-           WindowMover.positionMatches(actual.origin, frame.origin, tolerance: 2) {
-            return .ok("fixed size (now \(now))", frame: result.actual)
+        // The app took the position but kept another size (fixed or clamped): done, with a note.
+        if case .sizeClamped(let size) = SizeLimitLearning.classify(requested: frame, actual: result.actual) {
+            return .ok("\(SizeLimitLearning.note(for: size)) (now \(now))", frame: result.actual)
         }
         return .failure("the window refused the frame (now \(now))", frame: result.actual)
     }

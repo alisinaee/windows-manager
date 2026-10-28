@@ -18,15 +18,32 @@ final class HotkeyController {
     func start() {
         guard !started else { return }
         started = true
-        KeyboardShortcuts.onKeyDown(for: .nextWorkspace) { WorkspaceController.shared.run(.next) }
-        KeyboardShortcuts.onKeyDown(for: .previousWorkspace) { WorkspaceController.shared.run(.previous) }
+        bind(.nextWorkspace) { WorkspaceController.shared.run(.next) }
+        bind(.previousWorkspace) { WorkspaceController.shared.run(.previous) }
         for (i, name) in KeyboardShortcuts.Name.workspaceIndexed.enumerated() {
-            KeyboardShortcuts.onKeyDown(for: name) { WorkspaceController.shared.run(.index(i + 1)) }
+            bind(name) { WorkspaceController.shared.run(.index(i + 1)) }
         }
         for (i, name) in KeyboardShortcuts.Name.snapZones.enumerated() {
-            KeyboardShortcuts.onKeyDown(for: name) { [weak self] in self?.snapFrontmost(toZone: i) }
+            bind(name) { [weak self] in self?.snapFrontmost(toZone: i) }
         }
+        for direction in WindowSizeDirection.allCases {
+            bind(.windowSize(direction)) { [weak self] in self?.cycleFrontmost(direction) }
+        }
+        bind(.moveToNextDisplay) { [weak self] in self?.moveFrontmost(toDisplay: .next) }
+        bind(.moveToPreviousDisplay) { [weak self] in self?.moveFrontmost(toDisplay: .previous) }
         syncProfiles()
+    }
+
+    /// Registers a global shortcut handler that does nothing while an app on the ignore list is frontmost.
+    private func bind(_ name: KeyboardShortcuts.Name, _ action: @escaping () -> Void) {
+        KeyboardShortcuts.onKeyDown(for: name) {
+            guard !Self.isFrontmostIgnored() else { return }
+            action()
+        }
+    }
+
+    private static func isFrontmostIgnored() -> Bool {
+        HotkeyIgnoreList.load().contains(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
     }
 
     /// Registers a handler for each saved profile not yet registered, and follows later changes.
@@ -61,10 +78,8 @@ final class HotkeyController {
         for profile in profiles where !registeredProfiles.contains(profile.id) {
             registeredProfiles.insert(profile.id)
             let id = profile.id
-            KeyboardShortcuts.onKeyDown(for: .profile(id)) {
-                // Run by id, looked up at press time, so renames and deletions are honoured and duplicate names are safe.
-                AppState.current?.run(id: id)
-            }
+            // Run by id, looked up at press time, so renames and deletions are honoured and duplicate names are safe.
+            bind(.profile(id)) { AppState.current?.run(id: id) }
         }
     }
 
@@ -101,6 +116,36 @@ final class HotkeyController {
             let result = WindowMover.setFrame(window, to: frame)
             AppInfo.logger.notice("Hotkey snap to zone \(index + 1): refused=\(result.refused) minSizeHit=\(result.minSizeHit)")
         }
+    }
+
+    // MARK: Size cycling and moving between displays
+
+    private func cycleFrontmost(_ direction: WindowSizeDirection) {
+        guard AXPermission.isTrusted(), let window = AXWindows.focusedWindow(), let current = window.frame else { return }
+        let displays = Self.topLeftVisibleFrames()
+        guard let index = DisplayMove.displayIndex(of: current, in: displays) else { return }
+        let frame = WindowSizeCycle.nextFrame(current: current, visible: displays[index], direction: direction)
+        setFrameInBackground(window, frame, label: "size \(direction.rawValue)")
+    }
+
+    private func moveFrontmost(toDisplay direction: DisplayMoveDirection) {
+        guard AXPermission.isTrusted(), let window = AXWindows.focusedWindow(), let current = window.frame else { return }
+        guard let frame = DisplayMove.targetFrame(current: current, displays: Self.topLeftVisibleFrames(),
+                                                  direction: direction) else { return }
+        setFrameInBackground(window, frame, label: "move to \(direction.rawValue) display")
+    }
+
+    private func setFrameInBackground(_ window: AXElement, _ frame: CGRect, label: String) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = WindowMover.setFrame(window, to: frame)
+            AppInfo.logger.notice("Hotkey \(label): refused=\(result.refused) minSizeHit=\(result.minSizeHit)")
+        }
+    }
+
+    /// Visible frame of every display in global top-left coordinates, sorted in the order "next display" uses.
+    private static func topLeftVisibleFrames() -> [CGRect] {
+        let frames = NSScreen.screens.map { SnapGeometry.topLeftFrame(of: $0.visibleFrame) }
+        return DisplayMove.sortedOrder(of: frames).map { frames[$0] }
     }
 
     private static func displayUUID(_ screen: NSScreen) -> String? {

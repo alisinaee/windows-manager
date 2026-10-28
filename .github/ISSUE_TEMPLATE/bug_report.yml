@@ -1,0 +1,33 @@
+name: Bug report
+description: Something did not work as expected
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      placeholder: "1. \n2. \n3. "
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: App version, macOS version, hardware, displays and desktops.
+      render: markdown
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Use Report a Bug... in the menu bar (or `wm report`) to get redacted logs, and attach the zip here.
+      render: text
+    validations:
+      required: true

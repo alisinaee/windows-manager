@@ -29,6 +29,7 @@ Envelope: success `{"ok":true,"data":...}`; failure `{"ok":false,"error":{"code"
 | `wm spaces` | | | List displays, Desktops, full-screen Spaces and windows (read-only) |
 | `wm debug list` | | | List live debug scenarios |
 | `wm debug results` | | | Show the last headless debug run |
+| `wm report` | M | | `--title T` `--description D` `--include-profile NAME` `--out DIR` (default ~/Desktop) `--submit` (needs `gh`; the only network use). Writes a redacted zip and prints the prefilled issue URL |
 | `wm debug run` | M | W | `--scenario <id>\|all` (default all) `--yes` (required; moves real windows; exit 4 without Accessibility, 6 if a scenario fails) |
 
 ## Profiles

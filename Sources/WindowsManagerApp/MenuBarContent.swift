@@ -53,6 +53,9 @@ struct MenuBarContent: View {
                 NSApp.activate()
                 openSettings()
             }
+            MenuRow(title: "Report a Bug…") {
+                Self.closePopup(); BugReportWindowController.shared.show()
+            }
             MenuRow(title: (appState.debugMode ? "\u{2713} " : "    ") + "Debug") {
                 Self.closePopup(); appState.debugMode.toggle()
             }

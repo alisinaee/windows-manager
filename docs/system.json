@@ -17,7 +17,11 @@
       "layer": "ui",
       "kind": "module",
       "files": [
-        "Sources/WindowsManagerApp/*.swift"
+        "Sources/WindowsManagerApp/AppDelegate.swift",
+        "Sources/WindowsManagerApp/AppState.swift",
+        "Sources/WindowsManagerApp/MenuBarContent.swift",
+        "Sources/WindowsManagerApp/WindowsManagerApp.swift",
+        "Sources/WindowsManagerApp/Updates/*.swift"
       ],
       "notes": "MenuBarExtra: profile list, Run, Capture, drift warnings, mode switch.",
       "tasks": [
@@ -29,7 +33,10 @@
       "name": "Settings and profile editor",
       "layer": "ui",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WindowsManagerApp/Settings/*.swift",
+        "Sources/WindowsManagerApp/SettingsView.swift"
+      ],
       "notes": "SwiftUI window: profiles, per-window rules, monitor map, Space mode, permissions.",
       "tasks": [
         "P6.1"
@@ -40,7 +47,10 @@
       "name": "Layout and zone editor",
       "layer": "ui",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WindowsManagerApp/Layouts/*.swift",
+        "Sources/WindowsManagerApp/Snap/*.swift"
+      ],
       "notes": "Mini map of the monitors; draw zones, drag apps into zones; snap overlay while dragging.",
       "tasks": [
         "P4.2",
@@ -77,7 +87,9 @@
       "name": "App Intents (Shortcuts, Focus)",
       "layer": "api",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WindowsManagerApp/Intents/*.swift"
+      ],
       "notes": "Run profile / capture as Shortcuts actions so Focus modes can trigger profiles.",
       "tasks": [
         "P6.4"
@@ -88,7 +100,9 @@
       "name": "Hotkey manager",
       "layer": "api",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WindowsManagerApp/Hotkeys/*.swift"
+      ],
       "notes": "Global shortcuts per profile, per zone and per virtual workspace.",
       "tasks": [
         "P4.4"
@@ -100,8 +114,16 @@
       "layer": "core",
       "kind": "module",
       "files": [
-        "Sources/WMCore/Profiles/WorkspaceScanner.swift",
-        "Sources/WMCore/Profiles/ProfileCapture.swift"
+        "Sources/WMCore/Profiles/ControlCommand.swift",
+        "Sources/WMCore/Profiles/ControlCommandQueue.swift",
+        "Sources/WMCore/Profiles/HotkeyCleanup.swift",
+        "Sources/WMCore/Profiles/LaunchPlan.swift",
+        "Sources/WMCore/Profiles/ProfileCapture.swift",
+        "Sources/WMCore/Profiles/ProfileResolver.swift",
+        "Sources/WMCore/Profiles/ProfileTransfer.swift",
+        "Sources/WMCore/Profiles/ShortcutAdvice.swift",
+        "Sources/WMCore/Profiles/WindowRules.swift",
+        "Sources/WMCore/Profiles/WorkspaceScanner.swift"
       ],
       "notes": "Capture and restore orchestration; one restore = a list of steps with retries and timeouts.",
       "tasks": [
@@ -114,7 +136,9 @@
       "name": "Restore planner",
       "layer": "core",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Restore/RestorePlan.swift"
+      ],
       "notes": "Diffs live state against the saved profile: launch, move, resize, full screen, Space, order rebuild.",
       "tasks": [
         "P2.8"
@@ -140,7 +164,9 @@
       "layer": "core",
       "kind": "module",
       "files": [
-        "Sources/WMCore/Displays/*.swift"
+        "Sources/WMCore/Displays/*.swift",
+        "Sources/WMCore/Profiles/AutoProfile.swift",
+        "Sources/WindowsManagerApp/AutoProfile/*.swift"
       ],
       "notes": "Display UUIDs, monitor sets, fallback mapping when a monitor is missing; auto-profile on monitor change.",
       "tasks": [
@@ -167,7 +193,10 @@
       "name": "Space guard",
       "layer": "core",
       "kind": "service",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Spaces/SpaceGuard.swift",
+        "Sources/WindowsManagerApp/SpaceGuard/*.swift"
+      ],
       "notes": "Watches Space changes, sleep, display changes; detects drift; offers or applies a fix; checks mru-spaces.",
       "tasks": [
         "P3.4"
@@ -178,7 +207,10 @@
       "name": "Pin rules",
       "layer": "core",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Spaces/PinRules.swift",
+        "Sources/WindowsManagerApp/Pins/*.swift"
+      ],
       "notes": "Own app/window to Desktop rules applied on window creation; replaces Apple bindings.",
       "tasks": [
         "P3.5"
@@ -190,7 +222,8 @@
       "layer": "core",
       "kind": "module",
       "files": [
-        "Sources/WMCore/Spaces/SpaceOrderFile.swift"
+        "Sources/WMCore/Spaces/SpaceOrderFile.swift",
+        "Sources/WMCore/Spaces/SpaceOrderRepair.swift"
       ],
       "notes": "Backs up Apple app-bindings and Space order; re-applies them at login (macOS 27 cold-boot bug).",
       "tasks": [
@@ -203,7 +236,9 @@
       "name": "Layout engine",
       "layer": "core",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Layouts/*.swift"
+      ],
       "notes": "Grid templates and custom zones; frames per display; split layouts.",
       "tasks": [
         "P4.1"
@@ -216,7 +251,8 @@
       "kind": "module",
       "files": [
         "Sources/WMCore/Virtual/*.swift",
-        "Sources/WMCore/Spaces/SpaceSwitcher.swift"
+        "Sources/WMCore/Spaces/SpaceSwitcher.swift",
+        "Sources/WindowsManagerApp/Workspaces/*.swift"
       ],
       "notes": "Own workspaces: hide whole apps, park split apps' windows in a corner, crash-safe unhide.",
       "tasks": [
@@ -244,7 +280,9 @@
       "name": "Content restorers",
       "layer": "core",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Restore/ContentRestorer.swift"
+      ],
       "notes": "Per-app plugins: browser tabs, documents, VS Code folders, Terminal tabs.",
       "tasks": [
         "P6.2"
@@ -269,7 +307,10 @@
       "name": "Window list",
       "layer": "platform",
       "kind": "module",
-      "files": [],
+      "files": [
+        "Sources/WMCore/SkyLight/WindowCatalog.swift",
+        "Sources/WMCore/Virtual/LiveWindowInfo.swift"
+      ],
       "notes": "CGWindowList and SLS window queries, including windows on other Spaces.",
       "tasks": [
         "P2.5"
@@ -281,7 +322,12 @@
       "layer": "platform",
       "kind": "module",
       "files": [
-        "Sources/WMCore/SkyLight/*.swift"
+        "Sources/WMCore/SkyLight/PrivateSymbols.swift",
+        "Sources/WMCore/SkyLight/SkyLightHealth.swift",
+        "Sources/WMCore/SkyLight/SkyLightImage.swift",
+        "Sources/WMCore/SkyLight/SpaceMover.swift",
+        "Sources/WMCore/SkyLight/SpaceReader.swift",
+        "Sources/WindowsManagerApp/Health/*.swift"
       ],
       "notes": "All private SLS calls (spaces per display, window to space, bridged move, switch). dlsym, launch self-test, fallback flags.",
       "tasks": [
@@ -339,7 +385,9 @@
       "name": "Backup store",
       "layer": "data",
       "kind": "store",
-      "files": [],
+      "files": [
+        "Sources/WMCore/Spaces/SpaceBindingsBackup.swift"
+      ],
       "notes": "Timestamped copies of com.apple.spaces before any write; restore button.",
       "tasks": [
         "P3.6"
@@ -353,7 +401,8 @@
       "files": [
         "Sources/spaceslab/**",
         "scripts/build.sh",
-        "docs/LAB.md"
+        "docs/LAB.md",
+        "lab-results/**"
       ],
       "notes": "Phase 1 tool: runs the Space experiments on the user's macOS and writes a results file.",
       "tasks": [
@@ -369,14 +418,20 @@
       "kind": "tool",
       "files": [
         ".gitignore",
-        "docs/system.json",
+        "LICENSE",
+        "README.md",
         "Package.swift",
+        "Package.resolved",
         "Sources/WMCore/Lab/*.swift",
         "Tests/**",
         "Resources/**",
         "scripts/env.sh",
         "scripts/bundle-app.sh",
-        "scripts/run-app.sh"
+        "scripts/run-app.sh",
+        "scripts/make-dev-cert.sh",
+        "scripts/package-zip.sh",
+        "scripts/release-notarized.sh",
+        "docs/system.json"
       ],
       "notes": "Git ignore rules and this map.",
       "tasks": [
@@ -397,6 +452,116 @@
         "P0.6",
         "P0.7"
       ]
+    },
+    {
+      "id": "restore-engine",
+      "name": "Restore engine",
+      "layer": "core",
+      "kind": "module",
+      "files": [
+        "Sources/WMCore/Restore/RestoreEngine.swift",
+        "Sources/WMCore/Restore/RestoreReport.swift"
+      ],
+      "notes": "Runs a restore plan step by step with retries and timeouts; builds the report shown after a run."
+    },
+    {
+      "id": "debug-engine",
+      "name": "Debug tests engine",
+      "layer": "core",
+      "kind": "module",
+      "files": [
+        "Sources/WMCore/Debug/*.swift",
+        "Sources/WMCore/Diagnostics/WindowDump.swift",
+        "docs/DEBUG-TESTS.md"
+      ],
+      "notes": "Debug test runner: scrambles the desktop, runs restore checks, verifies results; window dump for diagnosis."
+    },
+    {
+      "id": "debug-panel",
+      "name": "Debug panel and headless run",
+      "layer": "ui",
+      "kind": "module",
+      "files": [
+        "Sources/WindowsManagerApp/Debug/*.swift",
+        "Sources/WindowsManagerApp/DebugPanel.swift",
+        "Sources/WindowsManagerApp/DebugPanelModel.swift",
+        "Sources/WindowsManagerApp/DebugWindowController.swift"
+      ],
+      "notes": "Debug window to run debug tests and verify; headless run entry for scripted checks."
+    },
+    {
+      "id": "profile-map-layout",
+      "name": "Map grid, magnet, auto layout and linked resize",
+      "layer": "core",
+      "kind": "module",
+      "files": [
+        "Sources/WMCore/ProfileMap/GridSnap.swift",
+        "Sources/WMCore/ProfileMap/MagnetSnap.swift",
+        "Sources/WMCore/ProfileMap/AutoLayout.swift",
+        "Sources/WMCore/ProfileMap/LinkedResize.swift",
+        "Sources/WMCore/ProfileMap/MapSnapping.swift",
+        "Sources/WMCore/ProfileMap/ProfileMapLayout.swift"
+      ],
+      "notes": "Pure geometry for the profile map: grid sizes and snapping, magnet snap, auto layout, linked resize of neighbours."
+    },
+    {
+      "id": "profile-map-model",
+      "name": "Profile map model and drafts",
+      "layer": "core",
+      "kind": "module",
+      "files": [
+        "Sources/WMCore/ProfileMap/CanvasViewport.swift",
+        "Sources/WMCore/ProfileMap/CaptureSelection.swift",
+        "Sources/WMCore/ProfileMap/DraftSession.swift",
+        "Sources/WMCore/ProfileMap/EditHistory.swift",
+        "Sources/WMCore/ProfileMap/InstalledApps.swift",
+        "Sources/WMCore/ProfileMap/LaunchSequence.swift",
+        "Sources/WMCore/ProfileMap/LiveDraftSync.swift",
+        "Sources/WMCore/ProfileMap/ProfileDraftCheck.swift",
+        "Sources/WMCore/ProfileMap/ProfileDraftEditor.swift",
+        "Sources/WMCore/ProfileMap/ProfileLiveStatus.swift",
+        "Sources/WMCore/ProfileMap/ProfileMapText.swift",
+        "Sources/WMCore/ProfileMap/ProfileSpaceIndex.swift",
+        "Sources/WMCore/ProfileMap/ResizeHandles.swift",
+        "Sources/WMCore/ProfileMap/TileStacking.swift"
+      ],
+      "notes": "Draft sessions, undo history, live sync and checks for profile maps; the Profile Studio edits these."
+    },
+    {
+      "id": "profile-studio",
+      "name": "Profile Studio UI",
+      "layer": "ui",
+      "kind": "module",
+      "files": [
+        "Sources/WindowsManagerApp/ProfileStudio/*.swift"
+      ],
+      "notes": "Profile Studio window: map canvas, inspector, app library, capture sheet, restore preview, profile icon picker."
+    },
+    {
+      "id": "project-docs",
+      "name": "Project docs",
+      "layer": "docs",
+      "kind": "store",
+      "files": [
+        "docs/COMPETITORS.md",
+        "docs/CREDITS.md",
+        "docs/PLAN-profile-maps.md",
+        "docs/RELEASE-NOTES-SPARKLE.md",
+        "docs/RELEASE.md",
+        "docs/USER-GUIDE.md"
+      ],
+      "notes": "User guide, release process, plans and credits."
+    },
+    {
+      "id": "board-data",
+      "name": "Roadmap board data",
+      "layer": "tooling",
+      "kind": "store",
+      "files": [
+        "docs/*.json",
+        "docs/*.jsonl"
+      ],
+      "notes": "Git-ignored roadmap board data (tasks, jobs, head ledger); not app code."
     }
   ],
   "edges": [
@@ -549,6 +714,78 @@
       "to": "skylight-bridge",
       "label": "experiments",
       "kind": "call"
+    },
+    {
+      "from": "menubar-ui",
+      "to": "debug-panel",
+      "label": "open debug panel",
+      "kind": "call"
+    },
+    {
+      "from": "debug-panel",
+      "to": "debug-engine",
+      "label": "run debug tests, headless run",
+      "kind": "call"
+    },
+    {
+      "from": "debug-engine",
+      "to": "restore-engine",
+      "label": "run restore checks",
+      "kind": "call"
+    },
+    {
+      "from": "profile-engine",
+      "to": "restore-engine",
+      "label": "execute plan",
+      "kind": "call"
+    },
+    {
+      "from": "restore-engine",
+      "to": "restore-planner",
+      "label": "plan steps",
+      "kind": "call"
+    },
+    {
+      "from": "restore-engine",
+      "to": "window-matcher",
+      "label": "match windows",
+      "kind": "call"
+    },
+    {
+      "from": "restore-engine",
+      "to": "content-restore",
+      "label": "tabs, documents",
+      "kind": "call"
+    },
+    {
+      "from": "profile-studio",
+      "to": "profile-engine",
+      "label": "run / capture profile",
+      "kind": "call"
+    },
+    {
+      "from": "profile-studio",
+      "to": "profile-map-layout",
+      "label": "grid, magnet, auto layout, linked resize",
+      "kind": "call"
+    },
+    {
+      "from": "profile-studio",
+      "to": "profile-map-model",
+      "label": "draft edits, undo",
+      "kind": "call"
+    },
+    {
+      "from": "profile-studio",
+      "to": "restore-planner",
+      "label": "restore preview",
+      "kind": "call"
+    },
+    {
+      "from": "profile-map-model",
+      "to": "profile-store",
+      "label": "save draft",
+      "kind": "data"
     }
   ],
   "external": [
@@ -606,7 +843,13 @@
         "mission-control",
         "app-launcher",
         "profile-store",
-        "backup-store"
+        "backup-store",
+        "restore-engine",
+        "debug-engine",
+        "debug-panel",
+        "profile-map-layout",
+        "profile-map-model",
+        "profile-studio"
       ],
       "notes": "One process; private calls isolated in skylight-bridge."
     },

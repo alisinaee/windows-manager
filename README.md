@@ -4,6 +4,16 @@ Windows Manager is a macOS menu bar app that saves how your windows are arranged
 
 A profile (for example "Home" or "Work") records where each app's windows are: the monitor, position, size, full screen state and Desktop. Running the profile opens apps that are closed and moves the windows that are already open.
 
+## Install (alpha)
+
+Download the latest `.dmg` from [Releases](https://github.com/alisinaee/windows-manager/releases), drag the app to Applications, then run once in Terminal:
+
+```
+xattr -dr com.apple.quarantine "/Applications/Windows Manager.app"
+```
+
+The alpha is not notarized yet. Full steps, the `wm` command line tool for scripts and AI agents, and bug reporting: [docs/INSTALL.md](docs/INSTALL.md), [docs/CLI.md](docs/CLI.md).
+
 ## Status
 
 This is an early version, still in development.

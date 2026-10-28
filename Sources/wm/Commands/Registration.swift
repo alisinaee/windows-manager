@@ -5,6 +5,15 @@ import WMCore
 func registerAllCommands(_ r: Registry) {
     // registerProfileCommands(r)
     // registerRunCommands(r)
-    // registerSystemCommands(r)
+    registerDoctorCommands(r)
+    registerSettingsCommands(r)
+    registerLayoutCommands(r)
+    registerRuleCommands(r)
+    registerDebugTestsCommands(r)
+    registerSpacesCommands(r)
     registerStatusCommands(r)
+    registerCaptureCommands(r)
+    registerPlanCommands(r)
+    registerRunCommands(r)
+    registerVerifyCommands(r)
 }

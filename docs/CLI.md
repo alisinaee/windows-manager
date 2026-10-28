@@ -66,8 +66,8 @@ Envelope: success `{"ok":true,"data":...}`; failure `{"ok":false,"error":{"code"
 | Command | M | W | Arguments and options |
 |---|---|---|---|
 | `wm capture` | M | W | `--name <name>` `--select <selector>` (repeatable: `app:`, `desktop:N`, `monitor:<uuid\|name\|index>`, `fullscreen`, `minimized`; selectors combine as a union) |
-| `wm plan` | | | `<profile>`: dry-run plan grouped by phase |
-| `wm run` | M | W | `<profile>` `--dry-run` `--yes` (streams NDJSON with `--json`) |
+| `wm plan` | | | `<profile>` `--monitor <uuid\|name\|index>` `--desktop N` `--app <bundle\|name>` (repeatable scope flags; `--desktop` is relative to `--monitor` when given; empty or unknown scope = exit 2): dry-run plan grouped by phase, with `scope` in the JSON |
+| `wm run` | M | W | `<profile>` `--dry-run` `--yes` `--monitor` `--desktop N` `--app` (same scope flags as `wm plan`; only the scope is touched) (streams NDJSON with `--json`; each `progress` event and the envelope carry `scope`) |
 | `wm verify` | | W | `<profile>`: compare live windows with the profile (exit 6 on mismatch) |
 
 ## Layouts

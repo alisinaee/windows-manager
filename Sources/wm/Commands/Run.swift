@@ -37,9 +37,11 @@ func registerRunCommands(_ r: Registry) {
     r.register(Command(["run"], summary: "Restore a profile (streams NDJSON progress with --json)",
                        args: [CLIArg("profile", "Profile name or id")],
                        options: [CLIOption("dry-run", "Plan only, change nothing"),
-                                 CLIOption("yes", short: "y", "Do not ask for confirmation")],
+                                 CLIOption("yes", short: "y", "Do not ask for confirmation")] + CLIScopeParser.options,
                        mutates: true, touchesWindows: true) { args, ctx in
         let profile = try loadProfileByQuery(args.positionals[0])
+        let scope = try CLIScopeParser.scope(from: args, profile: profile)
+        let scopeName = scope.describe(profile: profile)
         let dry = args.flag("dry-run")
         if !dry { try requireAccessibility() }
         if !dry && !args.flag("yes") && !ctx.json && isatty(0) != 0 {
@@ -51,11 +53,16 @@ func registerRunCommands(_ r: Registry) {
         let events = ctx.events
         let json = ctx.json
         let report = runOnMain { () -> RestoreReport in
-            await RestoreEngine().run(profile, dryRun: dry) { event in
-                if json { events.emit("progress", CLIRunEvents.fields(for: event)) }
+            await RestoreEngine().run(profile, dryRun: dry, scope: scope) { event in
+                if json {
+                    var fields = CLIRunEvents.fields(for: event)
+                    fields["scope"] = .string(scopeName)
+                    events.emit("progress", fields)
+                }
                 else { FileHandle.standardError.write(Data((event.message + "\n").utf8)) }
             }
         }
-        return CLIResult(data: try JSONValue.from(report), exit: CLIRunOutcome.exit(for: report), text: report.summary)
+        let data = CLIScopeParser.addingScope(scopeName, to: try JSONValue.from(report))
+        return CLIResult(data: data, exit: CLIRunOutcome.exit(for: report), text: report.summary)
     })
 }

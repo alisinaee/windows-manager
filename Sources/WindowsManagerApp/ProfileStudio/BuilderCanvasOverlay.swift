@@ -636,28 +636,35 @@ struct BuilderCanvasOverlay: View {
     private func monitorControls(_ monitor: ProfileMapLayout.Monitor) -> some View {
         let desktopCount = map.index.spaces(onDisplay: monitor.id).filter { $0.kind == .desktop }.count
         let selected = builder.selectedWindowID.flatMap { controller.window($0) }.flatMap { $0.displayUUID == monitor.id ? $0 : nil }
-        return HStack(spacing: 6) {
+        return HStack(spacing: 2) {
             if let window = selected {
                 Toggle(isOn: Binding(get: { window.isFullScreen }, set: { _ in controller.toggleFullScreen(window) })) {
                     Label("Make full screen", systemImage: "arrow.up.left.and.arrow.down.right")
                 }
                 .toggleStyle(.button).labelStyle(.iconOnly)
+                .monitorBarSlot()
                 .help(window.isFullScreen ? "Leave full screen" : "Make the selected window full screen in a new Space")
+                .accessibilityLabel("Make full screen")
             }
             layoutMenu(monitor)
             Toggle(isOn: $controller.snapEnabled) { Label("Snap", systemImage: "magnet") }
                 .toggleStyle(.button).labelStyle(.iconOnly)
+                .monitorBarSlot()
                 .help("Snap to Layout zones and edges (hold Option to turn off while dragging)")
-            Button { controller.builder.addDesktop(onDisplay: monitor.id) } label: { Label("Add Desktop", systemImage: "plus") }
-                .labelStyle(.iconOnly)
-                .disabled(desktopCount >= ProfileDraftEditor.maxDesktopsPerDisplay)
-                .help("Add a Desktop to \(monitor.name)")
+                .accessibilityLabel("Snap to layout zones and edges")
+            Button { controller.builder.addDesktop(onDisplay: monitor.id) } label: {
+                Label("Add Desktop", systemImage: "rectangle.stack.badge.plus")
+            }
+            .buttonStyle(.borderless).labelStyle(.iconOnly)
+            .monitorBarSlot()
+            .disabled(desktopCount >= ProfileDraftEditor.maxDesktopsPerDisplay)
+            .help("Add a Desktop to \(monitor.name)")
+            .accessibilityLabel("Add Desktop")
         }
-        .controlSize(.small)
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(.regularMaterial, in: Capsule())
+        .padding(2)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .fixedSize()
-        .position(x: local.toScreen(monitor.frame).maxX - 8, y: local.toScreen(monitor.frame).minY + 14)
+        .position(x: local.toScreen(monitor.frame).maxX - 8, y: local.toScreen(monitor.frame).minY + 16)
         .alignmentGuide(.leading) { $0[.leading] }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Edit controls for \(monitor.name)")
@@ -684,7 +691,17 @@ struct BuilderCanvasOverlay: View {
         .labelStyle(.iconOnly)
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .monitorBarSlot()
         .help("Layout zones to snap to: \(active?.name ?? "none")")
+        .accessibilityLabel("Layout zones")
+    }
+}
+
+private extension View {
+    /// One slot in a monitor's control row: at least 28pt square, so every control shares a height and corner radius.
+    func monitorBarSlot() -> some View {
+        frame(minWidth: 28, minHeight: 28)
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 

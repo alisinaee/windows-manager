@@ -43,7 +43,7 @@ private struct StageStripCard: View {
         Button(action: onSelect) {
             VStack(spacing: 3) {
                 Text(group.label)
-                    .font(.system(size: metrics.font(9), weight: .semibold))
+                    .font(.system(size: max(metrics.font(9), 11), weight: .semibold))
                     .lineLimit(1).minimumScaleFactor(0.6)
                 ForEach(Array(group.apps.prefix(maxIcons).enumerated()), id: \.offset) { _, app in
                     Image(nsImage: AppIconCache.icon(for: app))
@@ -52,7 +52,7 @@ private struct StageStripCard: View {
                 }
                 if group.apps.count > maxIcons {
                     Text("+\(group.apps.count - maxIcons)")
-                        .font(.system(size: metrics.font(9))).foregroundStyle(.secondary)
+                        .font(.system(size: max(metrics.font(9), 11))).foregroundStyle(.secondary)
                 }
                 Text("\(group.count)")
                     .font(.system(size: metrics.font(10), weight: .medium)).monospacedDigit()

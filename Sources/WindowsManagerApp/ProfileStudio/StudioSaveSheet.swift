@@ -53,7 +53,11 @@ struct StudioCopyPickerSheet: View {
 
 private final class NameDraft: ObservableObject {
     @Published var text: String?
+    /// How a name clash is resolved: nil = not chosen yet.
+    @Published var choice: ConflictChoice?
 }
+
+private enum ConflictChoice { case replace, keepBoth }
 
 /// Name, problems and Save/Cancel. The model refuses to save while an error is listed.
 struct StudioSaveSheet: View {
@@ -69,6 +73,16 @@ struct StudioSaveSheet: View {
     private var errors: [DraftCheckIssue] { ProfileDraftCheck.errors(builder.draftIssues) }
     private var warnings: [DraftCheckIssue] { ProfileDraftCheck.warnings(builder.draftIssues) }
 
+    private var trimmedName: String { shownName.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var store: ProfileStore { AppState.current?.store ?? ProfileStore() }
+    /// Another saved profile (not this one) that already has the typed name.
+    private var conflict: ProfileSummary? {
+        guard !trimmedName.isEmpty else { return nil }
+        let own = builder.profile?.id
+        return store.list().first { $0.id != own && $0.name.caseInsensitiveCompare(trimmedName) == .orderedSame }
+    }
+    private var needsChoice: Bool { conflict != nil && draft.choice == nil }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Save profile").font(.title2.bold())
@@ -76,6 +90,21 @@ struct StudioSaveSheet: View {
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(save)
                 .help("Name the profile (Return saves)")
+                .onChange(of: shownName) { _, _ in draft.choice = nil }
+
+            if let clash = conflict {
+                VStack(alignment: .leading, spacing: 8) {
+                    issueRow("exclamationmark.triangle.fill", .orange, "A profile named \u{201C}\(clash.name)\u{201D} already exists. Replace it, keep both, or type another name above.")
+                    Picker("When the name exists", selection: Binding(get: { draft.choice }, set: { draft.choice = $0 })) {
+                        Text("Replace the old one").tag(Optional(ConflictChoice.replace))
+                        Text("Keep both (adds a number)").tag(Optional(ConflictChoice.keepBoth))
+                    }
+                    .pickerStyle(.radioGroup)
+                    .help("Replace moves the old profile to the Trash. Keep both saves this one with a number added to its name.")
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.12)))
+            }
 
             if shownName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 issueRow("exclamationmark.octagon.fill", .red, "Give the profile a name.")
@@ -108,8 +137,10 @@ struct StudioSaveSheet: View {
                 Button("Save", action: save)
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
-                    .disabled(builder.blocksSaving || shownName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .help(builder.blocksSaving ? "Fix the problems marked in red first" : "Save the profile (Return)")
+                    .tint(.blue)
+                    .disabled(builder.blocksSaving || trimmedName.isEmpty || needsChoice)
+                    .help(builder.blocksSaving ? "Fix the problems marked in red first"
+                          : needsChoice ? "Choose Replace or Keep both, or change the name" : "Save the profile (Return)")
             }
         }
         .padding(20)
@@ -118,6 +149,8 @@ struct StudioSaveSheet: View {
 
     private func save() {
         if let nameDraft { builder.setName(nameDraft) }
+        guard !needsChoice, !trimmedName.isEmpty else { return }
+        if draft.choice == .replace, let clash = conflict { _ = try? store.delete(clash.id) }
         guard !builder.blocksSaving, let saved = builder.save() else { return }
         onSaved(saved)
     }

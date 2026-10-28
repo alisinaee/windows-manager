@@ -24,7 +24,7 @@ struct ProfileStudioView: View {
                            subtitle: "Capture the windows you have open now, or start a new profile and arrange it yourself.") {
                     HStack(spacing: 10) {
                         Button { model.beginCapture() } label: { Label("Capture current desktop", systemImage: "camera.viewfinder") }
-                            .buttonStyle(.borderedProminent).controlSize(.large)
+                            .buttonStyle(.borderedProminent).tint(.blue).controlSize(.large)
                             .help("Capture the windows you have open now as a new profile")
                             .accessibilityLabel("Capture current desktop as a profile")
                         Button { model.beginNewProfile() } label: { Label("New profile", systemImage: "plus") }
@@ -192,7 +192,7 @@ struct ProfileStudioView: View {
             emptyState(icon: "rectangle.3.group", title: "Select a profile",
                        subtitle: "Choose one on the left, or create a new one") {
                 Button { model.beginNewProfile() } label: { Label("New profile", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent).controlSize(.large)
+                    .buttonStyle(.borderedProminent).tint(.blue).controlSize(.large)
                     .disabled(model.mode == .edit)
                     .help("Start a new profile from the current workspace")
                     .accessibilityLabel("New profile")
@@ -281,6 +281,7 @@ struct StudioRunControl: View {
                 .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
                 .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)
+                .tint(.blue)
                 .disabled(!app.canAct)
                 .help((studioRunBlockReason(app) ?? "Restore \(profileName) now") + " (Cmd+Return)")
                 .accessibilityLabel("Run profile \(profileName)")
@@ -289,14 +290,14 @@ struct StudioRunControl: View {
                 showEditor = true
             } label: {
                 Text(shortcut.map { $0.description } ?? "Set shortcut")
-                    .font(.callout.monospaced()).lineLimit(1)
+                    .font(shortcut == nil ? .callout : .callout.monospaced()).lineLimit(1)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.15)))
-                    .foregroundStyle(shortcut == nil ? .tertiary : .primary)
+                    .foregroundStyle(shortcut == nil && isSaved ? .secondary : .primary)
             }
             .buttonStyle(.plain)
             .disabled(!isSaved)
-            .help(isSaved ? "Run shortcut: click to set or change it" : "Save the profile to set a run shortcut")
+            .help(isSaved ? "Run shortcut: click to set or change it" : "Set shortcut is off because this profile is not saved yet. Save it first, then set a shortcut here.")
             .accessibilityLabel(shortcut.map { "Run shortcut \($0.description), change" } ?? "Set run shortcut")
             .popover(isPresented: $showEditor, arrowEdge: .bottom) {
                 ProfileShortcutView(profileID: profileID, profileName: profileName).padding(12).frame(width: 280)
@@ -496,7 +497,7 @@ struct StudioEditDetail: View {
                 .help("Redo (Shift+Cmd+Z)")
                 .accessibilityLabel("Redo")
             Toggle(isOn: Binding(get: { builder.isLive }, set: { builder.setLive($0) })) {
-                Label("Live", systemImage: builder.isLive ? "circle.fill" : "circle")
+                Label(builder.isLive ? "Live: on" : "Live: off", systemImage: builder.isLive ? "circle.fill" : "circle")
             }
             .toggleStyle(.button)
             .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
@@ -528,6 +529,7 @@ struct StudioEditDetail: View {
             Button { model.saveThen(nil) } label: { Label("Save", systemImage: "square.and.arrow.down") }
                 .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
                 .buttonStyle(.borderedProminent)
+                .tint(.blue)
                 .keyboardShortcut("s", modifiers: .command)
                 .disabled(builder.blocksSaving)
                 .help(builder.blocksSaving ? "Fix the problems marked in red first" : "Save the profile (Cmd+S)")
@@ -543,11 +545,11 @@ struct StudioEditDetail: View {
     /// Start notes and the last error on one dismissible line, so the toolbar never grows.
     private var banner: some View {
         let isError = builder.lastError != nil
-        let text = builder.lastError ?? builder.startNotes.joined(separator: " ")
+        let text = builder.lastError ?? builder.startNotes.map { "\u{2022} " + $0 }.joined(separator: "\n")
         return HStack(spacing: 8) {
             Image(systemName: isError ? "exclamationmark.triangle" : "info.circle")
                 .foregroundStyle(isError ? Color.orange : Color.secondary)
-            Text(text).font(.callout).lineLimit(1).truncationMode(.tail)
+            Text(text).font(.callout).lineLimit(3).truncationMode(.tail)
                 .foregroundStyle(isError ? Color.orange : Color.secondary)
                 .help(text)
             Spacer(minLength: 8)

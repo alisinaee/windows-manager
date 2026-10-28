@@ -13,7 +13,7 @@ struct SidebarRailView: View {
             }
             .buttonStyle(.plain)
             .disabled(model.mode == .edit)
-            .help(model.mode == .edit ? "New profile (not available while editing)" : "New profile")
+            .help(model.mode == .edit ? "Finish editing (Save or Cancel) to create a profile" : "New profile")
             .accessibilityLabel("New profile")
             ScrollView {
                 VStack(spacing: 6) {
@@ -22,6 +22,7 @@ struct SidebarRailView: View {
             }
             .scrollIndicators(.hidden)
             .disabled(model.mode == .edit)
+            .help(model.mode == .edit ? "Finish editing (Save or Cancel) to switch profiles" : "")
         }
         .padding(.vertical, 10)
         .frame(width: Self.width)
@@ -48,7 +49,7 @@ struct SidebarRailView: View {
             tile(icon: row.icon, tint: ProfileRowTint.color(for: row.id), selected: selected)
         }
         .buttonStyle(.plain)
-        .help(selected ? "\(row.name) (selected profile)" : row.name)
+        .help(selected ? "\(row.name) (selected profile)" : "Show \(row.name)")
         .accessibilityLabel(row.name)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }

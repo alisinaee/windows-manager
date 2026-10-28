@@ -31,7 +31,7 @@ struct MapLegendView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Text("Legend").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+            Text("Legend").font(.system(size: 12, weight: .semibold)).foregroundStyle(.primary.opacity(0.8))
             LegendFlow(spacing: 14, lineSpacing: 4) {
                 ForEach(shapeEntries + (showsStatus ? statusEntries : [])) { item($0) }
             }
@@ -43,8 +43,8 @@ struct MapLegendView: View {
 
     private func item(_ entry: Entry) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: entry.symbol).font(.system(size: 11)).foregroundStyle(.secondary)
-            Text(entry.text).font(.system(size: 11)).foregroundStyle(.secondary)
+            Image(systemName: entry.symbol).font(.system(size: 12)).foregroundStyle(.primary.opacity(0.75))
+            Text(entry.text).font(.system(size: 12)).foregroundStyle(.primary.opacity(0.75))
         }
         .lineLimit(1)
         .fixedSize()

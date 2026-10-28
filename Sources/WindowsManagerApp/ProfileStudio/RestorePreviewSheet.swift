@@ -222,7 +222,7 @@ struct RestorePreviewSheet: View {
             Divider()
             footer
         }
-        .frame(width: 640, height: 520)
+        .frame(minWidth: 360, idealWidth: 640, maxWidth: 640, minHeight: 320, idealHeight: 520, maxHeight: 520)
         .onAppear { model.load() }
         .onDisappear { model.cancel() }
         .accessibilityElement(children: .contain)
@@ -369,7 +369,7 @@ struct RestorePreviewSheet: View {
             }
             if !missing.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("Not found (\(missing.count))", systemImage: "exclamationmark.triangle")
+                    Label("Not found right now (\(missing.count))", systemImage: "questionmark.circle")
                         .font(.body.bold())
                     ForEach(missing, id: \.snapshotID) { item in
                         Text("\(item.label): \(item.reason)").font(.callout).foregroundStyle(.secondary)
@@ -393,6 +393,7 @@ struct RestorePreviewSheet: View {
             if let app = AppState.current {
                 RunProfileButton(app: app, profileID: profileID, profileName: profileName, title: "Run now")
                     .buttonStyle(.borderedProminent)
+                    .tint(.blue)
                     .keyboardShortcut(.defaultAction)
             }
         }

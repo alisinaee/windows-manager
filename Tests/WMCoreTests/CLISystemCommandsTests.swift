@@ -31,6 +31,14 @@ import Foundation
         #expect(DoctorReport.text([bad]) == "FAIL B: missing\n      fix: grant it")
     }
 
+    @Test func defaultsBoolParsesOnlyKnownValues() {
+        #expect(parseDefaultsBool("1\n") == true)
+        #expect(parseDefaultsBool("0") == false)
+        #expect(parseDefaultsBool("true") == true)
+        #expect(parseDefaultsBool("garbage") == nil)
+        #expect(parseDefaultsBool("") == nil)
+    }
+
     @Test func settingValuesUseJSONTypes() {
         #expect(CLISettingFormat.json(.bool(true)) == .bool(true))
         #expect(CLISettingFormat.json(.int(3)) == .int(3))

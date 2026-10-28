@@ -27,8 +27,7 @@ enum DebugHeadlessRun {
 
     /// Scenarios for a value: "all" (any case) or one raw value. Nil when the value names no scenario.
     static func scenarios(for value: String) -> [DebugScenarioID]? {
-        if value.lowercased() == "all" { return DebugScenarioID.allCases }
-        return DebugScenarioID(rawValue: value).map { [$0] }
+        DebugRunReport.scenarios(for: value)
     }
 
     /// Called once from applicationDidFinishLaunching. Does nothing unless a run was requested.
@@ -70,40 +69,9 @@ enum DebugHeadlessRun {
         AppInfo.logger.notice("Headless debug run finished: \(results.allSatisfy(\.passed) ? "passed" : "failed", privacy: .public)")
     }
 
-    static var resultURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/Windows Manager/debug-run.json")
-    }
-
-    static func jsonText(results: [DebugRunResult], error: String?) -> String {
-        let items: [[String: Any]] = results.map { result in
-            [
-                "scenario": result.scenario.rawValue,
-                "passed": result.passed,
-                "checks": result.checks.map { check -> [String: Any] in
-                    ["id": check.id, "name": check.name, "passed": check.passed, "detail": check.detail]
-                },
-                "log": result.log,
-            ]
-        }
-        var root: [String: Any] = [
-            "generatedAt": ISO8601DateFormatter().string(from: Date()),
-            "passed": error == nil && !results.isEmpty && results.allSatisfy(\.passed),
-            "results": items,
-        ]
-        if let error { root["error"] = error }
-        guard JSONSerialization.isValidJSONObject(root),
-              let data = try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys]),
-              let text = String(data: data, encoding: .utf8)
-        else { return "{}" }
-        return text
-    }
-
     private static func writeJSON(results: [DebugRunResult], error: String?) {
-        let url = resultURL
         do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data(jsonText(results: results, error: error).utf8).write(to: url, options: .atomic)
+            let url = try DebugRunReport.write(results: results, error: error)
             AppInfo.logger.notice("Headless debug results written to \(url.path, privacy: .public)")
         } catch {
             AppInfo.logger.error("Headless debug results not written: \(String(describing: error), privacy: .public)")

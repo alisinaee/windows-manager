@@ -63,6 +63,15 @@ public enum DoctorReport {
     }
 }
 
+/// Parses the output of `defaults read` for a boolean key ("1"/"0", or "true"/"false"). Nil for anything else.
+public func parseDefaultsBool(_ output: String) -> Bool? {
+    switch output.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "1", "true", "yes": return true
+    case "0", "false", "no": return false
+    default: return nil
+    }
+}
+
 /// Settings values as JSON and as one text line.
 public enum CLISettingFormat {
     public static func json(_ value: SettingValue) -> JSONValue {

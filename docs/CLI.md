@@ -24,11 +24,12 @@ Envelope: success `{"ok":true,"data":...}`; failure `{"ok":false,"error":{"code"
 | `wm commands` | | | List all registered commands |
 | `wm schema` | | | Machine-readable command list, flags, safety metadata, exit codes, envelope |
 | `wm agent-guide` | | | Markdown guide for AI agents (`--json` gives `{markdown}`) |
-| `wm doctor` | | | Check Accessibility, screen recording, SkyLight and Spaces settings |
+| `wm doctor` | | | Check Accessibility, screen recording, SkyLight, Stage Manager and Spaces settings |
 | `wm status` | | | Show app and permission status |
 | `wm spaces` | | | List displays, Desktops, full-screen Spaces and windows (read-only) |
 | `wm debug list` | | | List live debug scenarios |
 | `wm debug results` | | | Show the last headless debug run |
+| `wm debug run` | M | W | `--scenario <id>\|all` (default all) `--yes` (required; moves real windows; exit 4 without Accessibility, 6 if a scenario fails) |
 
 ## Profiles
 
@@ -101,4 +102,4 @@ Envelope: success `{"ok":true,"data":...}`; failure `{"ok":false,"error":{"code"
 
 ## Debug
 
-Debug scenarios are listed and read here; running them is done through the app and the debug tooling, not this reference.
+`wm debug run` runs the live scenarios in-process, one after another, on the real desktop. It installs the fixture profiles first. With `--json` it streams NDJSON `phase`, `step` and `check` events, then the envelope with each scenario's checks. It also writes `~/Library/Logs/Windows Manager/debug-run.json`, the same file as the app's `--debug-run`. Read the last run with `wm debug results`. Never run it on a desktop you are not willing to have rearranged.

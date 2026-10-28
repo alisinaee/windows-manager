@@ -11,6 +11,21 @@ private let doctorSymbols = [
 ]
 private let doctorClasses = ["SLSBridgedMoveWindowsToManagedSpaceOperation"]
 
+/// Reads one `defaults` boolean through Process. Nil when the key is missing or unreadable.
+private func defaultsBool(domain: String, key: String) -> Bool? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+    process.arguments = ["read", domain, key]
+    let output = Pipe()
+    process.standardOutput = output
+    process.standardError = Pipe()
+    do { try process.run() } catch { return nil }
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else { return nil }
+    return parseDefaultsBool(String(decoding: data, as: UTF8.self))
+}
+
 private func doctorItems() -> [DoctorItem] {
     let trusted = AXPermission.isTrusted()
     let screen = CGPreflightScreenCaptureAccess()
@@ -24,9 +39,9 @@ private func doctorItems() -> [DoctorItem] {
                                          osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
                                          loadError: PrivateSymbols.loadError)
 
-    // Same read as the lab doctor: a missing key means macOS default (on).
-    let mru = UserDefaults(suiteName: "com.apple.dock")?.object(forKey: "mru-spaces") as? Bool
-    let rearrange = mru ?? true
+    // A missing key means the macOS default: Stage Manager off, Spaces rearranged by recent use.
+    let stageManager = defaultsBool(domain: "com.apple.WindowManager", key: "GloLevelEnabled") ?? false
+    let rearrange = defaultsBool(domain: "com.apple.dock", key: "mru-spaces") ?? true
 
     var healthDetail = health.overall.rawValue
     if !health.missing.isEmpty { healthDetail += ", missing: " + health.missing.joined(separator: ", ") }
@@ -44,6 +59,9 @@ private func doctorItems() -> [DoctorItem] {
         DoctorItem(id: "skyLightHealth", title: "SkyLight health", ok: health.overall == .ok,
                    detail: healthDetail,
                    fix: health.overall == .ok || health.fallbacks.isEmpty ? nil : health.fallbacks.joined(separator: "; ")),
+        DoctorItem(id: "stageManager", title: "Stage Manager", ok: !stageManager,
+                   detail: stageManager ? "ON" : "off",
+                   fix: stageManager ? "Control Center > Stage Manager: turn it off. Window moves and Spaces results differ with it on." : nil),
         DoctorItem(id: "autoRearrangeSpaces", title: "Automatically rearrange Spaces", ok: !rearrange,
                    detail: rearrange ? "ON" : "off",
                    fix: rearrange ? "System Settings > Desktop & Dock: turn off 'Automatically rearrange Spaces based on most recent use'." : nil),

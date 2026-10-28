@@ -244,10 +244,15 @@ public struct RestorePlan: Equatable, Sendable {
     /// app has windows in the strip or another stage: they may well be there. For the status overlay; reports
     /// do not use it.
     public var possiblyParked: [UUID]
+    /// Why a window's frame step differs from the saved frame (learned or known size limits), by `WindowSnapshot.id`.
+    /// The engine adds it to the step's note in the report.
+    public var sizeNotes: [UUID: String]
+    /// What part of the profile this plan covers ("Desktop 2 on DELL only"); nil for the whole profile.
+    public var scopeSummary: String?
 
     public init(profileName: String, steps: [RestoreStep] = [], warnings: [String] = [],
                 unmatched: [UnmatchedSnapshot] = [], ambiguous: [UUID] = [], missingDesktops: [MissingDesktop] = [],
-                possiblyParked: [UUID] = []) {
+                possiblyParked: [UUID] = [], sizeNotes: [UUID: String] = [:], scopeSummary: String? = nil) {
         self.profileName = profileName
         self.steps = steps
         self.warnings = warnings
@@ -255,6 +260,8 @@ public struct RestorePlan: Equatable, Sendable {
         self.ambiguous = ambiguous
         self.missingDesktops = missingDesktops
         self.possiblyParked = possiblyParked
+        self.sizeNotes = sizeNotes
+        self.scopeSummary = scopeSummary
     }
 
     public var isEmpty: Bool { steps.isEmpty }
@@ -275,6 +282,7 @@ public struct RestorePlan: Equatable, Sendable {
     public var outline: String {
         var lines: [String] = []
         lines.append("Restore plan for \"\(profileName)\": \(steps.count) step\(steps.count == 1 ? "" : "s")")
+        if let scopeSummary { lines.append("Scope: \(scopeSummary)") }
         if !warnings.isEmpty {
             lines.append("")
             lines.append("Warnings (\(warnings.count)):")
@@ -349,8 +357,12 @@ public enum RestorePlanner {
     ///   - options: the switches to obey (normally `profile.options`).
     ///   - addMissingDesktops: the engine's opt-in. When true, a Desktop the profile needs on a monitor that has
     ///     fewer is planned as one `addDesktop` step (capped at `maxAddedDesktopsPerRun`) instead of a warning.
+    ///   - cachedLimits: app-level size limits (the learned cache) for a window the profile and the live window know
+    ///     nothing about. Injected so tests do not read the disk; nil = none.
     public static func plan(profile: Profile, scan: WorkspaceScan, displayMatch: [String: DisplayIdentity],
-                            match: MatchResult, options: ProfileOptions, addMissingDesktops: Bool = false) -> RestorePlan {
+                            match: MatchResult, options: ProfileOptions, addMissingDesktops: Bool = false,
+                            partial: Bool = false,
+                            cachedLimits: ((WindowSnapshot, LiveWindow) -> WindowResizeLimits?)? = nil) -> RestorePlan {
         var plan = RestorePlan(profileName: profile.name)
         plan.ambiguous = match.ambiguous
 
@@ -492,11 +504,16 @@ public enum RestorePlanner {
                 // A window that leaves full screen keeps the screen-sized frame until it is set again.
                 // A fixed width / height is not asked for: position only on that axis (the window would refuse).
                 var wanted = snapshot.frame
-                if !live.isFullScreen, let limits = snapshot.resizeLimits ?? live.resizeLimits, limits.hasRestrictions {
+                // Order: the profile's own limits, the live window's, then the app cache.
+                let known = snapshot.resizeLimits ?? live.resizeLimits ?? cachedLimits?(snapshot, live)
+                if !live.isFullScreen, let limits = known, limits.hasRestrictions {
                     wanted = limits.clamp(snapshot.frame, current: live.frame)
                     if !WindowMover.sizeMatches(wanted.size, snapshot.frame.size, tolerance: 0.5) {
                         let axes = [limits.fixedWidth ? "width" : nil, limits.fixedHeight ? "height" : nil].compactMap { $0 }
                         let why = axes.isEmpty ? "outside its size limits" : "fixed \(axes.joined(separator: " and "))"
+                        plan.sizeNotes[snapshot.id] = axes.isEmpty
+                            ? "size kept within the app's limits (\(RestoreFormat.size(wanted.size)))"
+                            : "size not changed: \(why)"
                         plan.warnings.append("\(target.label) cannot change size (\(why)); only its position is restored.")
                     }
                 }
@@ -584,7 +601,8 @@ public enum RestorePlanner {
         let raise: [RestoreStep] = alreadyStacked ? [] : backToFront.map { .raise($0.target, zIndex: $0.snapshot.zIndex) }
 
         // 8. Other apps.
-        let otherApps = planOtherApps(profile: profile, scan: scan, options: options)
+        // A partial scope never touches apps outside it.
+        let otherApps = partial ? [] : planOtherApps(profile: profile, scan: scan, options: options)
 
         plan.steps = plan.steps(in: .launch) + addSteps + exitFullScreen + unminimize + moveToDesktop + setFrame
             + enterFullScreen + minimize + raise + otherApps
@@ -780,6 +798,10 @@ enum RestoreFormat {
     static func list(_ names: [String], limit: Int = 3) -> String {
         guard names.count > limit else { return names.joined(separator: ", ") }
         return names.prefix(limit).joined(separator: ", ") + " and \(names.count - limit) more"
+    }
+
+    static func size(_ size: CGSize) -> String {
+        "\(Int(size.width.rounded()))x\(Int(size.height.rounded()))"
     }
 
     static func shorten(_ text: String, _ limit: Int) -> String {

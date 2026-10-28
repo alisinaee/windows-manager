@@ -217,6 +217,10 @@ public struct RestoreReport: Codable, Equatable, Sendable {
     public var warnings: [String]
     public var totals: RestoreTotals
     public var summary: String
+    /// What part of the profile was restored ("Desktop 2 on DELL only"); nil for the whole profile.
+    public var scopeSummary: String?
+    /// Set when the run could not start at all (for example an empty scope); nothing was touched.
+    public var failure: String?
 
     public init(profileID: UUID, profileName: String, dryRun: Bool = false, startedAt: Date = Date()) {
         self.profileID = profileID
@@ -239,7 +243,7 @@ public struct RestoreReport: Codable, Equatable, Sendable {
 
     /// True when nothing failed, nothing was cancelled and every wanted window was found.
     public var isClean: Bool {
-        !cancelled && totals.failed == 0 && totals.windowsNotFound == 0 && totals.windowsFailed == 0
+        !cancelled && failure == nil && totals.failed == 0 && totals.windowsNotFound == 0 && totals.windowsFailed == 0
     }
 
     // MARK: Finishing
@@ -349,6 +353,8 @@ public struct RestoreReport: Codable, Equatable, Sendable {
             parts.insert(count(totals.windowsPlaced, "window") + " placed", at: 0)
         }
         var text = parts.joined(separator: ", ")
+        if let failure { return failure }
+        if let scopeSummary { text += " (" + scopeSummary + ")" }
         if dryRun { text = "Dry run: " + text }
         if cancelled { text = "Cancelled: " + text }
         return text

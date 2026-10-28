@@ -233,32 +233,59 @@ public final class RestoreEngine {
     /// Where limits learned from clamped sizes go: the app cache and the profile. Nil: not kept (tests).
     public let sizeLimitStore: SizeLimitStore?
     public let profileStore: ProfileStore?
+    /// App-level size limits the planner consults after the profile's own: (bundle id, window title) -> limits.
+    /// Default: the `sizeLimitStore` (so none in tests unless injected).
+    public var sizeLimitProvider: ((_ bundleID: String?, _ title: String?) -> WindowResizeLimits?)?
 
     /// `persistLearnedLimits` nil: kept only with the live environment.
     public init(environment: any RestoreEnvironment = .live, configuration: Configuration = Configuration(),
                 desktopAdder: (any DesktopAdding)? = nil, persistLearnedLimits: Bool? = nil,
-                sizeLimitStore: SizeLimitStore? = nil, profileStore: ProfileStore? = nil) {
+                sizeLimitStore: SizeLimitStore? = nil, profileStore: ProfileStore? = nil,
+                sizeLimitProvider: ((_ bundleID: String?, _ title: String?) -> WindowResizeLimits?)? = nil) {
         self.environment = environment
         self.configuration = configuration
         let persist = persistLearnedLimits ?? (environment is LiveRestoreEnvironment)
         self.sizeLimitStore = persist ? (sizeLimitStore ?? .shared) : nil
         self.profileStore = persist ? (profileStore ?? ProfileStore()) : nil
         self.desktopAdder = desktopAdder ?? MissionControlDesktopAdder()
+        if let sizeLimitProvider {
+            self.sizeLimitProvider = sizeLimitProvider
+        } else if let store = self.sizeLimitStore {
+            self.sizeLimitProvider = { store.limits(bundleID: $0, title: $1) }
+        }
     }
 
     // MARK: Run
 
     /// Restores `profile`. With `dryRun` it only scans, matches and plans: nothing is launched, moved or hidden,
     /// and every planned step is reported as skipped. Cancel the surrounding task to stop between steps.
-    public func run(_ profile: Profile, dryRun: Bool = false,
+    /// With a partial `scope` only that part of the profile is restored: nothing outside it is moved, launched,
+    /// hidden or quit. An empty scope fails before anything is touched (`report.failure`).
+    public func run(_ profile: Profile, dryRun: Bool = false, scope: RestoreScope = .whole,
                     progress: ((RestoreProgress) -> Void)? = nil) async -> RestoreReport {
+        let full = profile
+        let profile = scope.filter(full)
+        let summary = scope.isWhole ? nil : scope.describe(profile: full)
         let state = RunState(profile: profile, dryRun: dryRun, progress: progress)
+        state.scope = scope
+        state.fullProfile = full
+        state.scopeSummary = summary
+        if !scope.isWhole, scope.isEmpty(for: full) {
+            var report = RestoreReport(profileID: full.id, profileName: full.name, dryRun: dryRun)
+            report.scopeSummary = summary
+            report.failure = ScopeError.emptyScope.errorDescription
+            report.warnings = [ScopeError.emptyScope.errorDescription ?? "Empty scope"]
+            report.finish(profile: profile, elapsed: 0)
+            emit(state, .finished(report))
+            return report
+        }
 
         emit(state, .scanning)
         var scan = await environment.scan()
         state.scanNotes = scan.notes
         state.lastScan = scan
-        var plan = evaluate(profile, scan: scan, addingDesktops: addsDesktops(for: profile))
+        var plan = evaluate(state, scan: scan, addingDesktops: addsDesktops(for: profile))
+        state.sizeNotes = plan.sizeNotes
         emit(state, .planned(plan))
         state.totalSteps = plan.steps.count
 
@@ -304,7 +331,8 @@ public final class RestoreEngine {
             state.lastScan = scan
             state.handles.removeAll()
             state.unreachable.removeAll()
-            plan = evaluate(profile, scan: scan, addingDesktops: false).removing(.launch)
+            plan = evaluate(state, scan: scan, addingDesktops: false).removing(.launch)
+            state.sizeNotes = plan.sizeNotes
             emit(state, .planned(plan))
         }
         state.totalSteps = launchSteps.count + addSteps.count + plan.steps.count
@@ -339,20 +367,56 @@ public final class RestoreEngine {
 
     /// The plan a run would make now, without doing anything: one `scan` of the environment, then matching and
     /// planning. Nothing is launched, moved, hidden or sleeping. For the map's dry run and compare overlay.
-    public func preview(profile: Profile) async -> RestorePlan {
+    /// With a partial `scope` the plan covers only that part; an empty scope gives an empty plan with a warning.
+    public func preview(profile: Profile, scope: RestoreScope = .whole) async -> RestorePlan {
+        let state = RunState(profile: scope.filter(profile), dryRun: true, progress: nil)
+        state.scope = scope
+        state.fullProfile = profile
+        state.scopeSummary = scope.isWhole ? nil : scope.describe(profile: profile)
+        if !scope.isWhole, scope.isEmpty(for: profile) {
+            return RestorePlan(profileName: profile.name, warnings: [ScopeError.emptyScope.errorDescription ?? "Empty scope"],
+                               scopeSummary: state.scopeSummary)
+        }
         let scan = await environment.scan()
-        return evaluate(profile, scan: scan, addingDesktops: addsDesktops(for: profile))
+        return evaluate(state, scan: scan, addingDesktops: addsDesktops(for: state.profile))
     }
 
     // MARK: Evaluate
 
     /// Monitors, window matching and planning for one scan.
-    private func evaluate(_ profile: Profile, scan: WorkspaceScan, addingDesktops: Bool) -> RestorePlan {
-        let displayMatch = DisplayMap.match(saved: profile.displays, current: scan.displays)
+    /// `state.profile` is already reduced to the scope. Monitors are matched with the full profile's displays (so
+    /// the mapping does not depend on the scope); then windows on a monitor that has no live counterpart are dropped
+    /// with a warning when the scope is partial: they target nothing, never the main monitor.
+    private func evaluate(_ state: RunState, scan: WorkspaceScan, addingDesktops: Bool) -> RestorePlan {
+        var profile = state.profile
+        let partial = !state.scope.isWhole
+        let displayMatch = DisplayMap.match(saved: (state.fullProfile ?? profile).displays, current: scan.displays)
+        var scopeWarnings: [String] = []
+        if partial {
+            func isMissing(_ uuid: String) -> Bool {
+                !displayMatch.keys.contains { $0.caseInsensitiveCompare(uuid) == .orderedSame }
+            }
+            let missing = profile.displays.filter { isMissing($0.uuid) }
+            if !missing.isEmpty {
+                profile.windows.removeAll { isMissing($0.displayUUID) }
+                profile.spaces.removeAll { isMissing($0.displayUUID) }
+                for display in missing {
+                    scopeWarnings.append("Monitor \"\(display.name)\" is not connected, so nothing of it was restored.")
+                }
+            }
+        }
         let snapshots = RestorePlanner.remap(profile.windows, savedDisplays: profile.displays, displayMatch: displayMatch)
         let match = WindowMatcher.match(snapshots: snapshots, live: scan.windows)
-        return RestorePlanner.plan(profile: profile, scan: scan, displayMatch: displayMatch, match: match,
-                                   options: profile.options, addMissingDesktops: addingDesktops)
+        let provider = sizeLimitProvider
+        let cached: ((WindowSnapshot, LiveWindow) -> WindowResizeLimits?)? = provider.map { lookup in
+            { snapshot, live in lookup(snapshot.app.bundleID, live.title ?? snapshot.title) }
+        }
+        var plan = RestorePlanner.plan(profile: profile, scan: scan, displayMatch: displayMatch, match: match,
+                                       options: profile.options, addMissingDesktops: addingDesktops,
+                                       partial: partial, cachedLimits: cached)
+        plan.warnings.append(contentsOf: scopeWarnings)
+        plan.scopeSummary = state.scopeSummary
+        return plan
     }
 
     /// Replaces "will be launched" in the unmatched list by what really happened to the app.
@@ -504,7 +568,8 @@ public final class RestoreEngine {
 
         let record = RestoreStepRecord(index: index, phase: step.phase, kind: step.kind, description: step.description,
                                        snapshotID: step.target?.snapshotID, windowID: step.target?.windowID,
-                                       app: step.app.name, status: outcome.status, elapsed: elapsed, note: outcome.note)
+                                       app: step.app.name, status: outcome.status, elapsed: elapsed,
+                                       note: Self.joinNotes(outcome.note, step: step, state: state))
         state.report.steps.append(record)
         emit(state, .stepFinished(index: index, total: state.totalSteps, description: step.description,
                                   status: outcome.status, elapsed: elapsed))
@@ -530,6 +595,12 @@ public final class RestoreEngine {
         default:
             break
         }
+    }
+
+    /// The step's own note plus the size-limit reason the planner gave for a frame step.
+    private static func joinNotes(_ note: String?, step: RestoreStep, state: RunState) -> String? {
+        guard case .setFrame(let target, _, _, false) = step, let reason = state.sizeNotes[target.snapshotID] else { return note }
+        return [note, reason].compactMap { $0 }.joined(separator: "; ")
     }
 
     /// Notes what a clamped size says about the window, to be stored when the run finishes.
@@ -750,6 +821,7 @@ public final class RestoreEngine {
         report.cancelled = state.cancelled
         report.unmatched = plan.unmatched
         report.ambiguous = plan.ambiguous
+        report.scopeSummary = state.scopeSummary
         var warnings = plan.warnings
         for note in state.scanNotes where !warnings.contains(note) { warnings.append(note) }
         report.warnings = warnings
@@ -803,6 +875,12 @@ public final class RestoreEngine {
         var placedOrder: [UUID] = []
         /// Size limits seen this run, by snapshot id.
         var learned: [UUID: LearnedLimits] = [:]
+        var scope: RestoreScope = .whole
+        /// The profile before the scope was applied (monitor matching uses all its displays).
+        var fullProfile: Profile?
+        var scopeSummary: String?
+        /// `RestorePlan.sizeNotes` of the latest plan.
+        var sizeNotes: [UUID: String] = [:]
 
         init(profile: Profile, dryRun: Bool, progress: ((RestoreProgress) -> Void)?) {
             self.profile = profile

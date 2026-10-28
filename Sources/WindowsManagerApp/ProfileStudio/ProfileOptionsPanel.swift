@@ -11,6 +11,7 @@ struct ProfileOptionsPanel: View {
     var body: some View {
         if let profile = builder.profile {
             Form {
+                iconSection(profile)
                 desktopsSection(profile.options)
                 appsSection(profile)
                 otherAppsSection(profile.options)
@@ -25,6 +26,18 @@ struct ProfileOptionsPanel: View {
     }
 
     // MARK: Sections
+
+    @ViewBuilder
+    private func iconSection(_ profile: Profile) -> some View {
+        Section("Icon") {
+            LabeledContent("Sidebar icon") {
+                ProfileIconPicker(current: profile.icon.isEmpty ? Profile.defaultIcon : profile.icon) { builder.setIcon($0) }
+            }
+            Text("Shown next to the profile name in the Profile Studio sidebar. Saved with the profile when you press Save.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 
     @ViewBuilder
     private func desktopsSection(_ options: ProfileOptions) -> some View {

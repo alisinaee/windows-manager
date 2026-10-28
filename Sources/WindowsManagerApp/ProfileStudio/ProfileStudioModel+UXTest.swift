@@ -45,9 +45,17 @@ extension ProfileStudioModel {
         } else if wanted == .view, mode == .edit {
             leaveEdit()
         }
+        if sheet == .capture {
+            // "Review capture" (CaptureReviewPanel, shown by isReviewCapturePresented) exists only behind a new profile
+            // started from the workspace: start one the way the New profile menu does, wait for the capture, then open it.
+            if mode == .edit { leaveEdit() }
+            beginNewProfile()
+            for _ in 0..<200 where capture.stage != .ready { try? await Task.sleep(for: .milliseconds(50)) }
+            isReviewCapturePresented = mode == .edit && capture.stage == .ready
+        }
         switch sheet {
         case .save: if mode == .edit { isSaveSheetPresented = true }
-        case .capture: if mode == .edit { isReviewCapturePresented = true }
+        case .capture: break
         case .restore: isPreviewPresented = true
         case nil: break
         }

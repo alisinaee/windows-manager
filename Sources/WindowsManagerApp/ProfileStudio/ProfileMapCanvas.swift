@@ -257,7 +257,12 @@ struct ProfileMapCanvas: View {
                              selectedID: model.selectedWindowID, anchor: front.rect, bounds: monitor.frame,
                              metrics: metrics, onSelect: { model.selectWindow($0); focused = true })
             }
-            if let shown, shown.windowIDs.isEmpty {
+            if tiles.isEmpty {
+                Text("No windows on this display")
+                    .font(.system(size: metrics.font(11))).foregroundStyle(.secondary)
+                    .frame(width: monitor.contentRect.width, height: monitor.contentRect.height)
+                    .offset(x: monitor.contentRect.minX, y: monitor.contentRect.minY)
+            } else if let shown, shown.windowIDs.isEmpty {
                 Text("No windows on this Space")
                     .font(.system(size: metrics.font(11))).foregroundStyle(.secondary)
                     .frame(width: monitor.contentRect.width, height: monitor.contentRect.height)
@@ -305,7 +310,11 @@ struct ProfileMapCanvas: View {
                                      locationText: location(of: tile, monitor: monitor, shown: shown, among: tiles),
                                      onSelect: select,
                                      onHover: { inside in model.setHover(tile.id, inside: inside) })
-        if let stack {
+        // Edit mode keeps every tile; a window behind a stack's top tile draws only an outline (no overlapping labels).
+        let stackedBehind = stack == nil && !model.collapsesStacks && model.stack(containing: tile.windowID, spaceID: tile.spaceID) != nil
+        if stackedBehind {
+            StackedBehindTile(size: tile.rect.size, tint: AppTint.color(for: window.app))
+        } else if let stack {
             TileStackView(size: tile.rect.size, tint: AppTint.color(for: window.app), showsEdges: collapsed) { content }
                 .overlay(alignment: .bottomTrailing) {
                     StackBadge(stack: stack, appName: window.app.name, metrics: metrics, isInteractive: collapsed,
@@ -322,7 +331,7 @@ struct ProfileMapCanvas: View {
             if monitor.isMain { Image(systemName: "star.fill").font(.system(size: metrics.font(9))) }
             (Text(monitor.name).fontWeight(.semibold)
                 + Text(shownLabel.map { " · " + $0 } ?? "").foregroundColor(.secondary))
-                .font(.system(size: metrics.font(10)))
+                .font(.system(size: metrics.font(11)))
                 .lineLimit(1).truncationMode(.tail)
                 .accessibilityHidden(true)
             if showsStageBadge {

@@ -29,6 +29,21 @@ struct TileStackView<Front: View>: View {
     }
 }
 
+/// A window stacked behind another in Edit mode (every tile is kept there). Only a dashed outline is drawn, with no
+/// label, so its title does not print over the top tile's. The top tile carries the label and the "×N" badge.
+struct StackedBehindTile: View {
+    let size: CGSize
+    let tint: Color
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .strokeBorder(tint.opacity(0.7), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            .frame(width: max(size.width, 1), height: max(size.height, 1), alignment: .topLeading)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
 /// The "×N" badge of a stack. A button in View mode and Compare (cycles the front window), a plain hint in Edit mode.
 struct StackBadge: View {
     let stack: TileStacking.Stack

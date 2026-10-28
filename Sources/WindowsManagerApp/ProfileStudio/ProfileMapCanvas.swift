@@ -130,6 +130,11 @@ struct ProfileMapCanvas: View {
                     .help("Read your real windows now and update the map")
                     .accessibilityLabel("Sync with real windows")
             }
+            if keyOverride != nil {
+                Text("Drag a tile to move it, its handles to resize. Lock = fixed-size window.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                    .help("Edit mode: drag tiles to move, drag handles to resize. A lock badge on a tile means the app does not allow resizing.")
+            }
             if let summary = model.summaryText {
                 Image(systemName: "checklist").foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(summaryWithParked(summary)).font(.callout).lineLimit(1).truncationMode(.tail)

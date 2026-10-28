@@ -995,17 +995,35 @@ private struct GridControl: View {
 // MARK: - Tools bar
 
 /// Equal 28pt tool button: accent fill when on, soft fill on hover.
+private struct ToolLabelsKey: EnvironmentKey { static let defaultValue = false }
+private extension EnvironmentValues {
+    /// True when the tools bar has room to print a short word next to each tool icon.
+    var toolLabels: Bool {
+        get { self[ToolLabelsKey.self] }
+        set { self[ToolLabelsKey.self] = newValue }
+    }
+}
+
 private struct ToolBarButtonStyle: ButtonStyle {
     var isOn: Bool
     var width: CGFloat = 28
+    @Environment(\.toolLabels) private var toolLabels
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .labelStyle(.iconOnly)
-            .font(.system(size: 13, weight: .medium))
+        let labeled = toolLabels && width == 28
+        return Group {
+            if labeled {
+                configuration.label.labelStyle(.titleAndIcon)
+            } else {
+                configuration.label.labelStyle(.iconOnly)
+            }
+        }
+            .font(.system(size: labeled ? 12 : 13, weight: .medium))
+            .lineLimit(1)
             .foregroundStyle(isOn ? Color.white : Color.primary)
-            .frame(width: width, height: 28)
+            .padding(.horizontal, labeled ? 6 : 0)
+            .frame(width: labeled ? nil : width, height: 28)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(isOn ? Color.accentColor
                       : Color.primary.opacity(configuration.isPressed ? 0.16 : (hovering ? 0.08 : 0))))
@@ -1022,8 +1040,12 @@ struct BuilderToolsBar: View {
     @ObservedObject private var builder: ProfileBuilderModel
     @State private var chosenMonitorID: String?
 
-    init(controller: BuilderCanvasController) {
+    /// Re-reads the real windows; lives here so Edit mode has one tools row instead of two.
+    var onSync: (() -> Void)?
+
+    init(controller: BuilderCanvasController, onSync: (() -> Void)? = nil) {
         self.controller = controller
+        self.onSync = onSync
         _map = ObservedObject(wrappedValue: controller.map)
         _builder = ObservedObject(wrappedValue: controller.builder)
     }
@@ -1040,7 +1062,10 @@ struct BuilderToolsBar: View {
             if let monitor {
                 header(monitor)
                 Spacer(minLength: 8)
-                tools(monitor)
+                ViewThatFits(in: .horizontal) {
+                    tools(monitor, labels: true).environment(\.toolLabels, true)
+                    tools(monitor, labels: false).environment(\.toolLabels, false)
+                }
             } else {
                 Spacer()
             }
@@ -1077,10 +1102,17 @@ struct BuilderToolsBar: View {
 
     private func state(_ on: Bool) -> String { on ? "on" : "off" }
 
-    @ViewBuilder private func tools(_ monitor: ProfileMapLayout.Monitor) -> some View {
+    @ViewBuilder private func tools(_ monitor: ProfileMapLayout.Monitor, labels: Bool) -> some View {
         let desktopCount = map.index.spaces(onDisplay: monitor.id).filter { $0.kind == .desktop }.count
         let selected = builder.selectedWindowID.flatMap { controller.window($0) }.flatMap { $0.displayUUID == monitor.id ? $0 : nil }
         HStack(spacing: 2) {
+            if let onSync {
+                Button(action: onSync) { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
+                    .buttonStyle(ToolBarButtonStyle(isOn: false))
+                    .help("Sync: read your real windows now and update the map")
+                    .accessibilityLabel("Sync with real windows")
+                divider()
+            }
             if let window = selected {
                 Button { controller.toggleFullScreen(window) } label: {
                     Label("Make full screen", systemImage: "arrow.up.left.and.arrow.down.right")
@@ -1091,7 +1123,7 @@ struct BuilderToolsBar: View {
                 .accessibilityValue(state(window.isFullScreen))
                 divider()
             }
-            layoutMenu(monitor)
+            layoutMenu(monitor, labels: labels)
             Button { controller.snapEnabled.toggle() } label: { Label("Snap", systemImage: "square.dashed.inset.filled") }
                 .buttonStyle(ToolBarButtonStyle(isOn: controller.snapEnabled))
                 .help("Snap: snap to Layout zones and edges, hold Option to turn off while dragging (\(state(controller.snapEnabled)))")
@@ -1111,7 +1143,7 @@ struct BuilderToolsBar: View {
                 .accessibilityLabel("Linked resize")
                 .accessibilityValue(state(controller.linkEnabled))
             Button { controller.allowOverlap.toggle() } label: {
-                Label("Allow overlap", systemImage: controller.allowOverlap ? "lock.open" : "lock")
+                Label("Overlap", systemImage: controller.allowOverlap ? "lock.open" : "lock")
             }
             .buttonStyle(ToolBarButtonStyle(isOn: controller.allowOverlap))
             .help(controller.allowOverlap ? "Allow overlap: tiles can be placed freely (on)"
@@ -1134,7 +1166,7 @@ struct BuilderToolsBar: View {
         .accessibilityLabel("Edit tools for \(monitor.name)")
     }
 
-    fileprivate func layoutMenu(_ monitor: ProfileMapLayout.Monitor) -> some View {
+    fileprivate func layoutMenu(_ monitor: ProfileMapLayout.Monitor, labels: Bool) -> some View {
         let matching = controller.layoutsMatching(monitor.id)
         let active = controller.activeLayout(monitor.id)
         return Menu {
@@ -1165,9 +1197,10 @@ struct BuilderToolsBar: View {
         } label: {
             HStack(spacing: 2) {
                 Image(systemName: "square.grid.2x2")
+                if labels { Text("Layout").font(.system(size: 12, weight: .medium)) }
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
             }
-            .frame(width: 40, height: 28)
+            .frame(width: labels ? nil : 40, height: 28)
         }
         .labelStyle(.iconOnly)
         .menuStyle(.borderlessButton)
@@ -1203,10 +1236,9 @@ struct BuilderMapCanvas: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            BuilderToolsBar(controller: controller)
+            BuilderToolsBar(controller: controller, onSync: { Task { await builder.syncNow() } })
             Divider()
             ProfileMapCanvas(model: map,
-                             onSync: { Task { await builder.syncNow() } },
                              canvasOverlay: AnyView(BuilderCanvasOverlay(controller: controller)),
                              keyOverride: { controller.handleKey($0) })
         }

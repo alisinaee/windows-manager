@@ -56,14 +56,18 @@ struct SpaceThumbnailView: View {
                                 Image(nsImage: AppIconCache.icon(for: window.app)).resizable().frame(width: metrics.font(14), height: metrics.font(14))
                             }
                         }
+                        if rect.width >= 70, let first = space.fullScreenWindowIDs.first.flatMap({ windows[$0] }) {
+                            Text(first.app.name).font(.system(size: max(metrics.font(11), 11)))
+                                .foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.8)
+                        }
                     } else {
                         Text("D\(space.desktopNumber ?? space.position + 1)")
-                            .font(.system(size: metrics.font(11), weight: isSelected ? .bold : .regular))
+                            .font(.system(size: max(metrics.font(11), 11), weight: isSelected ? .bold : .regular))
                             .foregroundStyle(.primary)
                             .minimumScaleFactor(0.7).lineLimit(1)
                     }
                     if missing != nil {
-                        Image(systemName: "circle.dashed").font(.system(size: metrics.font(10))).foregroundStyle(.orange)
+                        Image(systemName: "circle.dashed").font(.system(size: max(metrics.font(10), 11))).foregroundStyle(.orange)
                     }
                 }
             }

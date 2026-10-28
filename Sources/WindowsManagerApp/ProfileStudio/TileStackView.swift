@@ -55,7 +55,8 @@ struct StackBadge: View {
     private var label: String { "\(appName) \u{00D7}\(stack.count): \(stack.count) windows overlap here" }
 
     var body: some View {
-        let badge = Text("\u{00D7}\(stack.count)")
+        let badge = Label("\(stack.count) windows", systemImage: "square.stack.3d.down.right")
+            .labelStyle(.titleAndIcon)
             .font(.system(size: metrics.font(11), weight: .bold)).monospacedDigit()
             .padding(.horizontal, 6).padding(.vertical, 1)
             .background(.regularMaterial, in: Capsule())

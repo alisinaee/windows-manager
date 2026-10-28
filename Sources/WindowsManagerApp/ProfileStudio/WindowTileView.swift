@@ -139,14 +139,28 @@ struct WindowTileView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(3)
             }
-            if let message = window.resizeLimits?.fixedMessage, size.width >= 40, size.height >= 30 {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: metrics.font(10), weight: .semibold))
-                    .padding(3)
-                    .background(.regularMaterial, in: Circle())
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            if let message = window.resizeLimits?.fixedMessage, size.width >= 28, size.height >= 24 {
+                HStack(spacing: 3) {
+                    Image(systemName: "lock.fill").font(.system(size: metrics.font(10), weight: .bold))
+                    if size.width >= 110 { Text("Fixed size").font(.system(size: metrics.font(10), weight: .semibold)) }
+                }
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(.regularMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.orange, lineWidth: 1))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(4)
+                .help(message)
+                .accessibilityHidden(true)
+            }
+            if isHovered, size.width >= 90, size.height >= 50 {
+                let f = window.frame
+                Text("\(Int(f.width))\u{00D7}\(Int(f.height)) at \(Int(f.minX)), \(Int(f.minY))")
+                    .font(.system(size: metrics.font(10), weight: .medium)).monospacedDigit()
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(.regularMaterial, in: Capsule())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .padding(4)
-                    .help(message)
+                    .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
             if tile.isFullScreen && size.width >= 90 {

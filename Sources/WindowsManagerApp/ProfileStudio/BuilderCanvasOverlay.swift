@@ -19,6 +19,8 @@ struct BuilderDragPreview: Equatable {
     var zoneName: String?
     /// Set while the pointer is over a Space thumbnail (a drop there moves the window to that Space).
     var thumbnailSpaceID: String?
+    /// Magnet guide lines the rect is stuck to, canvas points.
+    var guides: [MagnetSnap.Guide] = []
 }
 
 @MainActor
@@ -27,6 +29,10 @@ final class BuilderCanvasController: ObservableObject {
     let builder: ProfileBuilderModel
 
     @Published var snapEnabled = true
+    /// Magnet mode (G3): edges stick to monitor and tile edges while dragging, with guide lines.
+    @Published var magnetEnabled = false
+    /// Per-monitor grid settings (G1, G2), kept per Studio in UserDefaults.
+    @Published private(set) var grids: [String: MonitorGrid] = MonitorGrid.loadAll()
     @Published private(set) var layouts: [WMCore.Layout] = []
     @Published private(set) var chosenLayout: [String: UUID] = [:]
     @Published private(set) var drag: BuilderDragPreview?
@@ -61,6 +67,34 @@ final class BuilderCanvasController: ObservableObject {
         }.store(in: &cancellables)
         map.load(builder.profile)
     }
+
+    // MARK: Grid
+
+    struct MonitorGrid: Codable, Equatable {
+        var isOn = false
+        var spec = GridSpec.medium
+
+        private static let key = "studio.builder.monitorGrids"
+        static func loadAll() -> [String: MonitorGrid] {
+            UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode([String: MonitorGrid].self, from: $0) } ?? [:]
+        }
+        static func save(_ grids: [String: MonitorGrid]) {
+            if let data = try? JSONEncoder().encode(grids) { UserDefaults.standard.set(data, forKey: key) }
+        }
+    }
+
+    func grid(_ display: String) -> MonitorGrid { grids[display] ?? MonitorGrid() }
+
+    func setGrid(_ display: String, _ change: (inout MonitorGrid) -> Void) {
+        var g = grid(display)
+        change(&g)
+        grids[display] = g
+        MonitorGrid.save(grids)
+    }
+
+    private var optionHeld: Bool { NSEvent.modifierFlags.contains(.option) }
+
+    private var magnetThreshold: CGFloat { MagnetSnap.canvasThreshold(zoom: map.canvasLocal.zoom) }
 
     // MARK: Zones
 
@@ -171,7 +205,19 @@ final class BuilderCanvasController: ObservableObject {
         let result = MapSnapping.snap(rect: rect, in: target.contentRect, zones: zones(on: target),
                                       edges: otherEdges(on: target.id, excluding: tile.windowID),
                                       option: MapSnapping.SnapOptions(disabled: snapOptionDisabled))
-        preview.rect = result.rect
+        var snapped = result.rect
+        preview.guides = []
+        if result.zoneName == nil, !optionHeld {
+            let g = grid(target.id)
+            if g.isOn { snapped = GridSnap.snapMove(snapped, spec: g.spec, in: target.contentRect) }
+            if magnetEnabled {
+                let m = MagnetSnap.snapMove(snapped, monitor: target.contentRect,
+                                            others: otherEdges(on: target.id, excluding: tile.windowID), threshold: magnetThreshold)
+                snapped = m.rect
+                preview.guides = m.guides
+            }
+        }
+        preview.rect = snapped
         preview.zoneName = result.zoneName
         preview.displayUUID = target.id
         drag = preview
@@ -199,6 +245,18 @@ final class BuilderCanvasController: ObservableObject {
             rect = ResizeHandles.snapMovingEdges(rect, handle: handle, xLines: xLines, yLines: yLines,
                                                  threshold: MapSnapping.defaultThreshold, minSize: minSize)
             rect = rect.intersection(monitor.contentRect)
+        }
+        preview.guides = []
+        if !optionHeld {
+            let g = grid(monitor.id)
+            if g.isOn { rect = GridSnap.snapResize(rect, handle: handle, spec: g.spec, in: monitor.contentRect, minSize: minSize) }
+            if magnetEnabled {
+                let m = MagnetSnap.snapResize(rect, handle: handle, monitor: monitor.contentRect,
+                                              others: otherEdges(on: monitor.id, excluding: tile.windowID),
+                                              threshold: magnetThreshold, minSize: minSize)
+                rect = m.rect
+                preview.guides = m.guides
+            }
         }
         preview.rect = rect
         preview.zoneName = nil
@@ -457,9 +515,10 @@ struct BuilderCanvasOverlay: View {
         ZStack(alignment: .topLeading) {
             background
             ForEach(layout.monitors) { monitor in zoneOverlay(monitor) }
+            ForEach(layout.monitors) { monitor in gridOverlay(monitor) }
             ForEach(layout.windows.sorted { $0.zIndex > $1.zIndex }) { tile in tileHitArea(tile) }
             if let tile = selectedTile { handles(for: tile) }
-            if let preview = controller.drag { ghost(preview) }
+            if let preview = controller.drag { ghost(preview); guideLines(preview) }
             ForEach(layout.thumbnails) { thumb in thumbnailHitArea(thumb) }
             ForEach(layout.monitors) { monitor in monitorControls(monitor) }
         }
@@ -513,6 +572,50 @@ struct BuilderCanvasOverlay: View {
                     .frame(width: rect.width, height: rect.height)
                     .position(x: rect.midX, y: rect.midY)
             }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// The grid lines over a monitor's visible area (G1).
+    @ViewBuilder private func gridOverlay(_ monitor: ProfileMapLayout.Monitor) -> some View {
+        let g = controller.grid(monitor.id)
+        if g.isOn {
+            let content = monitor.contentRect
+            let screen = local.toScreen(content)
+            Path { path in
+                for x in GridSnap.xLines(g.spec, in: content) {
+                    let sx = local.toScreen(CGPoint(x: x, y: content.minY)).x
+                    path.move(to: CGPoint(x: sx, y: screen.minY)); path.addLine(to: CGPoint(x: sx, y: screen.maxY))
+                }
+                for y in GridSnap.yLines(g.spec, in: content) {
+                    let sy = local.toScreen(CGPoint(x: content.minX, y: y)).y
+                    path.move(to: CGPoint(x: screen.minX, y: sy)); path.addLine(to: CGPoint(x: screen.maxX, y: sy))
+                }
+            }
+            .stroke(Color.secondary.opacity(0.35), lineWidth: 0.5)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// Magnet guide lines across the monitor the dragged tile is over (G3).
+    @ViewBuilder private func guideLines(_ preview: BuilderDragPreview) -> some View {
+        if !preview.guides.isEmpty, let monitor = controller.monitor(preview.displayUUID) {
+            let screen = local.toScreen(monitor.contentRect)
+            Path { path in
+                for guide in preview.guides {
+                    switch guide.axis {
+                    case .vertical:
+                        let x = local.toScreen(CGPoint(x: guide.position, y: 0)).x
+                        path.move(to: CGPoint(x: x, y: screen.minY)); path.addLine(to: CGPoint(x: x, y: screen.maxY))
+                    case .horizontal:
+                        let y = local.toScreen(CGPoint(x: 0, y: guide.position)).y
+                        path.move(to: CGPoint(x: screen.minX, y: y)); path.addLine(to: CGPoint(x: screen.maxX, y: y))
+                    }
+                }
+            }
+            .stroke(Color.pink, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
@@ -652,6 +755,12 @@ struct BuilderCanvasOverlay: View {
                 .monitorBarSlot()
                 .help("Snap to Layout zones and edges (hold Option to turn off while dragging)")
                 .accessibilityLabel("Snap to layout zones and edges")
+            GridControl(controller: controller, monitorID: monitor.id)
+            Toggle(isOn: $controller.magnetEnabled) { Label("Magnet", systemImage: "line.diagonal") }
+                .toggleStyle(.button).labelStyle(.iconOnly)
+                .monitorBarSlot()
+                .help("Magnet: while dragging or resizing, stick to other windows' edges and the monitor edges (Option turns off)")
+                .accessibilityLabel("Magnet to window and monitor edges")
             Button { controller.builder.addDesktop(onDisplay: monitor.id) } label: {
                 Label("Add Desktop", systemImage: "rectangle.stack.badge.plus")
             }
@@ -694,6 +803,61 @@ struct BuilderCanvasOverlay: View {
         .monitorBarSlot()
         .help("Layout zones to snap to: \(active?.name ?? "none")")
         .accessibilityLabel("Layout zones")
+    }
+}
+
+/// Grid toggle with a popover for the grid size (G1, G2).
+private struct GridControl: View {
+    @ObservedObject var controller: BuilderCanvasController
+    let monitorID: String
+    @State private var showing = false
+
+    var body: some View {
+        let g = controller.grid(monitorID)
+        HStack(spacing: 0) {
+            Toggle(isOn: Binding(get: { g.isOn }, set: { on in controller.setGrid(monitorID) { $0.isOn = on } })) {
+                Label("Grid", systemImage: "grid")
+            }
+            .toggleStyle(.button).labelStyle(.iconOnly)
+            .monitorBarSlot()
+            .help("Show a grid on this monitor and snap dragging and resizing to it (\(g.spec.columns) x \(g.spec.rows))")
+            .accessibilityLabel("Grid overlay")
+            Button { showing.toggle() } label: { Label("Grid size", systemImage: "chevron.down") }
+                .buttonStyle(.borderless).labelStyle(.iconOnly)
+                .frame(minWidth: 16, minHeight: 28)
+                .help("Choose the grid size")
+                .accessibilityLabel("Grid size")
+                .popover(isPresented: $showing, arrowEdge: .bottom) { popover }
+        }
+    }
+
+    private var popover: some View {
+        let g = controller.grid(monitorID)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Grid size").font(.headline)
+            ForEach(GridSpec.presets, id: \.name) { preset in
+                Button {
+                    controller.setGrid(monitorID) { $0.spec = preset.spec; $0.isOn = true }
+                } label: {
+                    HStack {
+                        Image(systemName: g.spec == preset.spec ? "checkmark" : "").frame(width: 14)
+                        Text("\(preset.name)  \(preset.spec.columns) x \(preset.spec.rows)")
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("\(preset.spec.columns) columns by \(preset.spec.rows) rows")
+            }
+            Divider()
+            Text("Custom").font(.subheadline)
+            Stepper("Columns: \(g.spec.columns)", value: Binding(get: { g.spec.columns }, set: { v in
+                controller.setGrid(monitorID) { $0.spec = GridSpec(columns: v, rows: $0.spec.rows); $0.isOn = true }
+            }), in: GridSpec.limits)
+            Stepper("Rows: \(g.spec.rows)", value: Binding(get: { g.spec.rows }, set: { v in
+                controller.setGrid(monitorID) { $0.spec = GridSpec(columns: $0.spec.columns, rows: v); $0.isOn = true }
+            }), in: GridSpec.limits)
+        }
+        .padding(12)
+        .frame(width: 210)
     }
 }
 

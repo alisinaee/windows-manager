@@ -78,6 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             HotkeyController.shared.start()
             SpacesServices.shared.start()
         }
+
+        // Headless debug run (P6.71): --debug-run or /tmp/wm-debug-run.txt, no menu bar click needed.
+        DebugHeadlessRun.startIfRequested()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

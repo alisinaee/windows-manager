@@ -45,6 +45,8 @@ final class BuilderCanvasController: ObservableObject {
     @Published private(set) var chosenLayout: [String: UUID] = [:]
     @Published private(set) var drag: BuilderDragPreview?
     @Published var isDropTargeted = false
+    /// Monitor whose zone editor sheet is open.
+    @Published var zoneEditorMonitor: String?
 
     private var noLayout: Set<String> = []
     private var dragCancelled = false
@@ -124,6 +126,53 @@ final class BuilderCanvasController: ObservableObject {
     func chooseLayout(_ id: UUID?, on display: String) {
         if let id { chosenLayout[display] = id; noLayout.remove(display) } else { chosenLayout[display] = nil; noLayout.insert(display) }
         objectWillChange.send()
+    }
+
+    func reloadLayouts() {
+        layouts = (try? LayoutStore().load()) ?? []
+        objectWillChange.send()
+    }
+
+    /// Saves the tile frames on this monitor's shown Desktop as a new Layout zone preset (saved layouts elsewhere stay untouched).
+    @discardableResult
+    func saveArrangementAsZones(on monitor: ProfileMapLayout.Monitor, name: String) -> Bool {
+        let shown = map.shownSpace(onDisplay: monitor.id)?.id
+        let tiles = map.layout.windows.filter { $0.displayUUID == monitor.id && !$0.isFullScreen && (shown == nil || $0.spaceID == shown) }
+        let f = monitor.contentRect
+        guard !tiles.isEmpty, f.width > 0, f.height > 0 else { return false }
+        let zones: [Zone] = tiles.enumerated().compactMap { index, tile in
+            let r = tile.rect.intersection(f)
+            guard !r.isNull, r.width > 0, r.height > 0 else { return nil }
+            let nr = NormalizedRect(x: (r.minX - f.minX) / f.width, y: (r.minY - f.minY) / f.height,
+                                    width: r.width / f.width, height: r.height / f.height)
+            return Zone(name: "Zone \(index + 1)", rect: nr)
+        }
+        guard !zones.isEmpty else { return false }
+        var all = (try? LayoutStore().load()) ?? []
+        let layout = WMCore.Layout(name: name, displayKey: monitor.id, zones: zones)
+        all.append(layout)
+        guard (try? LayoutStore().save(all)) != nil else { return false }
+        reloadLayouts()
+        chooseLayout(layout.id, on: monitor.id)
+        return true
+    }
+
+    /// Places the shown Desktop's tiles into a layout's zones, in order (reading order of the tiles' current positions).
+    func applyZones(_ layout: WMCore.Layout, on monitor: ProfileMapLayout.Monitor) {
+        let shown = map.shownSpace(onDisplay: monitor.id)?.id
+        let tiles = map.layout.windows
+            .filter { $0.displayUUID == monitor.id && !$0.isFullScreen && (shown == nil || $0.spaceID == shown) }
+            .sorted { ($0.rect.minY, $0.rect.minX) < ($1.rect.minY, $1.rect.minX) }
+        guard !tiles.isEmpty, !layout.zones.isEmpty else { return }
+        let f = monitor.contentRect
+        chooseLayout(layout.id, on: monitor.id)
+        builder.edit(kind: nil) { editor in
+            for (tile, zone) in zip(tiles, layout.zones) {
+                let r = CGRect(x: f.minX + zone.rect.x * f.width, y: f.minY + zone.rect.y * f.height,
+                               width: zone.rect.width * f.width, height: zone.rect.height * f.height)
+                try editor.setRelativeFrame(ofWindow: tile.windowID, relativeFrame: MapSnapping.relativeFrame(of: r, in: f))
+            }
+        }
     }
 
     /// Zone rects in canvas points, inside the monitor's visible part.
@@ -887,6 +936,19 @@ struct BuilderCanvasOverlay: View {
                 .help("Snap to the \(layout.name) zones on this monitor")
             }
             if matching.isEmpty { Text("No saved Layouts for this monitor") }
+            Divider()
+            Button("Edit zones…") { controller.zoneEditorMonitor = monitor.id }
+            Button("Save current arrangement as zones…") {
+                let name = "\(monitor.name) \(matching.count + 1)"
+                controller.saveArrangementAsZones(on: monitor, name: name)
+            }
+            if !matching.isEmpty {
+                Menu("Apply zones") {
+                    ForEach(matching) { layout in
+                        Button(layout.name) { controller.applyZones(layout, on: monitor) }
+                    }
+                }
+            }
         } label: {
             Label("Layout zones", systemImage: "square.grid.2x2")
         }
@@ -896,6 +958,15 @@ struct BuilderCanvasOverlay: View {
         .monitorBarSlot()
         .help("Layout zones to snap to: \(active?.name ?? "none")")
         .accessibilityLabel("Layout zones")
+        .sheet(isPresented: Binding(get: { controller.zoneEditorMonitor == monitor.id },
+                                    set: { if !$0 { controller.zoneEditorMonitor = nil; controller.reloadLayouts() } })) {
+            VStack(spacing: 0) {
+                LayoutEditorView(model: LayoutEditorModel())
+                Divider()
+                HStack { Spacer(); Button("Done") { controller.zoneEditorMonitor = nil; controller.reloadLayouts() }.keyboardShortcut(.defaultAction) }
+                    .padding(8)
+            }
+        }
     }
 }
 

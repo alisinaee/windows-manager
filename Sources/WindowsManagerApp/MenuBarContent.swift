@@ -36,9 +36,6 @@ struct MenuBarContent: View {
             MenuRow(title: "Setup…") {
                 Self.closePopup(); OnboardingWindowController.shared.show()
             }
-            MenuRow(title: "Layouts…") {
-                Self.closePopup(); LayoutEditorWindowController.shared.show()
-            }
             MenuRow(title: "Profiles…") {
                 Self.closePopup(); ProfileStudioWindowController.shared.show()
             }

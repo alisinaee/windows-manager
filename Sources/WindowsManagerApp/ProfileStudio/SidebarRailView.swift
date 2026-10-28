@@ -44,7 +44,7 @@ struct SidebarRailView: View {
 
     private func railIcon(_ row: ProfileStudioRow) -> some View {
         let selected = row.id == model.selectedID
-        return Button { model.selectedID = row.id } label: {
+        return Button { model.requestSelect(row.id) } label: {
             tile(icon: row.icon, tint: ProfileRowTint.color(for: row.id), selected: selected)
         }
         .buttonStyle(.plain)

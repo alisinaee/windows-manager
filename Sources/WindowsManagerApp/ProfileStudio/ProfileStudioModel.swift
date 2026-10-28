@@ -91,6 +91,8 @@ final class ProfileStudioModel: ObservableObject {
     let capture = CaptureChoiceModel()
     @Published var isSaveSheetPresented = false
     @Published var isLeaveConfirmPresented = false
+    @Published var isSwitchConfirmPresented = false
+    private var pendingSwitchID: UUID?
     /// "+ Add App" in the Edit toolbar was pressed; the app library UI observes this.
     @Published var isAddAppPresented = false
     /// Runs once after the next successful save (leave Edit mode, close the window).
@@ -249,6 +251,30 @@ final class ProfileStudioModel: ObservableObject {
         let b = enterNewDraft()
         Task { await b.start(from: .copyOf(id)) }
     }
+
+    /// Sidebar selection. In Edit mode with unsaved changes it asks (Save / Discard / Cancel) before switching.
+    func requestSelect(_ id: UUID?) {
+        guard let id, id != selectedID else { return }
+        if mode == .edit {
+            if hasUnsavedChanges {
+                pendingSwitchID = id
+                isSwitchConfirmPresented = true
+                return
+            }
+            leaveEdit()
+        }
+        selectedID = id
+    }
+
+    func confirmSwitch(save: Bool) {
+        guard let id = pendingSwitchID else { return }
+        pendingSwitchID = nil
+        isSwitchConfirmPresented = false
+        if save { saveThen { [weak self] in self?.leaveEdit(); self?.selectedID = id } }
+        else { leaveEdit(); selectedID = id }
+    }
+
+    func cancelSwitch() { pendingSwitchID = nil; isSwitchConfirmPresented = false }
 
     /// Leaving Edit mode: asks first when there are unsaved changes.
     func requestLeaveEdit() {

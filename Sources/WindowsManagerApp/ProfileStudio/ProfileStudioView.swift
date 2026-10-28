@@ -1,5 +1,6 @@
 import KeyboardShortcuts
 import SwiftUI
+import WMCore
 
 /// Profile Studio shell: profile list on the left, map placeholder and toolbar on the right.
 struct ProfileStudioView: View {
@@ -49,6 +50,13 @@ struct ProfileStudioView: View {
                     if let builder = model.builder {
                         StudioSaveSheet(builder: builder, onSaved: { model.didSave($0) }, onCancel: { model.cancelSave() })
                     }
+                }
+                .confirmationDialog("You have unsaved changes", isPresented: $model.isSwitchConfirmPresented, titleVisibility: .visible) {
+                    Button("Save…") { model.confirmSwitch(save: true) }
+                    Button("Discard Changes", role: .destructive) { model.confirmSwitch(save: false) }
+                    Button("Cancel", role: .cancel) { model.cancelSwitch() }
+                } message: {
+                    Text("Switching profiles throws away what you changed since the last save.")
                 }
                 .confirmationDialog("You have unsaved changes", isPresented: $model.isLeaveConfirmPresented, titleVisibility: .visible) {
                     Button("Save…") { model.saveThen { model.leaveEdit() } }
@@ -120,7 +128,7 @@ struct ProfileStudioView: View {
     }
 
     private var sidebar: some View {
-        let selection = Binding<UUID?>(get: { model.selectedID }, set: { model.selectedID = $0 })
+        let selection = Binding<UUID?>(get: { model.selectedID }, set: { model.requestSelect($0) })
         return VStack(spacing: 0) {
             HStack(spacing: 2) {
                 SidebarToggleButton(model: model)
@@ -143,7 +151,6 @@ struct ProfileStudioView: View {
             }
             .listStyle(.sidebar)
             .accessibilityLabel("Profiles")
-            .disabled(model.mode == .edit)
             if !model.skipped.isEmpty {
                 Text("Could not read: \(model.skipped.joined(separator: ", "))")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -443,10 +450,12 @@ struct StudioEditDetail: View {
     private func editRow(iconOnly: Bool, truncating: Bool) -> some View {
         let title = builder.nameText.isEmpty ? "Untitled profile" : builder.nameText
         return HStack(spacing: 10) {
-            Text(title).font(.title3.bold()).lineLimit(1).truncationMode(.tail)
-                .frame(maxWidth: truncating ? .infinity : nil, alignment: .leading)
-                .help(builder.isNewProfile ? "New profile (not saved yet)" : "Editing a saved profile")
-                .accessibilityLabel("\(title), \(builder.isNewProfile ? "new profile, not saved yet" : "editing a saved profile")")
+            ProfileIconPicker(current: (builder.profile?.icon ?? "").isEmpty ? Profile.defaultIcon : builder.profile!.icon) { builder.setIcon($0) }
+            TextField("Profile name", text: Binding(get: { builder.nameText }, set: { builder.setName($0) }))
+                .textFieldStyle(.plain).font(.title3.bold()).lineLimit(1)
+                .frame(minWidth: 120, maxWidth: truncating ? .infinity : 260, alignment: .leading)
+                .help(builder.isNewProfile ? "New profile (not saved yet). Edit the name here." : "Editing a saved profile. Edit the name here.")
+                .accessibilityLabel("Profile name, \(title)")
             Spacer(minLength: 8)
             StudioModePicker(model: model)
             Divider().frame(height: 18)

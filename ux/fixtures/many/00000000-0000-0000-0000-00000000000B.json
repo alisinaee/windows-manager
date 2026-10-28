@@ -1,0 +1,102 @@
+{
+  "createdAt": "2026-10-28T09:13:37.938Z",
+  "displays": [
+    {
+      "frame": [
+        [
+          0,
+          0
+        ],
+        [
+          2560,
+          1440
+        ]
+      ],
+      "isBuiltIn": false,
+      "isMain": true,
+      "modelID": 3988,
+      "name": "U32R59x",
+      "scale": 2,
+      "serial": 0,
+      "uuid": "92A7EEBC-4739-4A6C-8F33-C306D98F06F6",
+      "vendorID": 19501,
+      "visibleFrame": [
+        [
+          0,
+          30
+        ],
+        [
+          2560,
+          1354
+        ]
+      ]
+    }
+  ],
+  "icon": "pencil",
+  "id": "00000000-0000-0000-0000-00000000000B",
+  "monitorSetKey": "92A7EEBC-4739-4A6C-8F33-C306D98F06F6",
+  "name": "Writing",
+  "options": {
+    "launchMissingApps": true,
+    "otherApps": "leave",
+    "restoreFullScreen": true,
+    "restoreSpaceOrder": true,
+    "restoreSpaces": true
+  },
+  "schemaVersion": 1,
+  "spaces": [
+    {
+      "desktopNumber": 1,
+      "displayUUID": "92A7EEBC-4739-4A6C-8F33-C306D98F06F6",
+      "fullScreenWindowIDs": [],
+      "kind": "desktop",
+      "position": 0
+    }
+  ],
+  "updatedAt": "2026-10-28T09:13:37.940Z",
+  "windows": [
+    {
+      "app": {
+        "bundleID": "com.apple.TextEdit",
+        "name": "TextEdit"
+      },
+      "displayUUID": "92A7EEBC-4739-4A6C-8F33-C306D98F06F6",
+      "frame": [
+        [
+          40,
+          60
+        ],
+        [
+          600,
+          500
+        ]
+      ],
+      "id": "00000000-0000-0000-0000-00000000044D",
+      "indexInApp": 0,
+      "isFullScreen": false,
+      "isMinimized": false,
+      "placement": {
+        "desktop": {
+          "number": 1
+        }
+      },
+      "relativeFrame": [
+        [
+          0,
+          0
+        ],
+        [
+          0.234375,
+          0.36927621861152143
+        ]
+      ],
+      "restore": true,
+      "title": "Untitled",
+      "titleMatch": {
+        "kind": "exact",
+        "value": "Untitled"
+      },
+      "zIndex": 0
+    }
+  ]
+}

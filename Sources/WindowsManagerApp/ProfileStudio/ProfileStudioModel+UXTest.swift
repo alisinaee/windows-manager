@@ -1,0 +1,56 @@
+import AppKit
+import SwiftUI
+import WMCore
+
+/// Deterministic hooks for UX capture (P6.103). Used only by `UXTestRoute`, which runs only with WM_UX_TEST=1.
+extension ProfileStudioModel {
+    /// Wanted initial inspector tab for the next Edit session. NOT YET READ by the view: `StudioEditLocalState.tab`
+    /// should start from `ProfileStudioModel.uxInspectorTab ?? .inspector` (one-line change in ProfileStudioView.swift).
+    @MainActor static var uxInspectorTab: StudioInspectorTab?
+
+    /// The model of the open Studio window, found through its hosting controller.
+    @MainActor static func uxCurrent() -> ProfileStudioModel? {
+        for window in NSApp.windows {
+            if let hosting = window.contentViewController as? NSHostingController<ProfileStudioView> {
+                return hosting.rootView.model
+            }
+        }
+        return nil
+    }
+
+    /// Waits (up to ~4 s) until the profile list has loaded.
+    @MainActor func uxWaitLoaded() async {
+        for _ in 0..<80 where state == .loading {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
+    /// Selects a profile by name (case-insensitive), switches mode and opens a sheet. Returns false when the profile is unknown.
+    @MainActor @discardableResult
+    func uxApply(profile name: String?, mode wanted: UXOpenRoute.Mode?, sheet: UXOpenRoute.Sheet?) async -> Bool {
+        await uxWaitLoaded()
+        var found = true
+        if let name {
+            if let row = rows.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+                if mode == .edit { leaveEdit() }
+                selectedID = row.id
+            } else { found = false }
+        }
+        if wanted == .edit, mode != .edit, let id = selectedID {
+            startEditing(id)
+            for _ in 0..<80 { // wait for the builder map to open
+                if let phase = builder?.phase, "\(phase)" != "idle" { break }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        } else if wanted == .view, mode == .edit {
+            leaveEdit()
+        }
+        switch sheet {
+        case .save: if mode == .edit { isSaveSheetPresented = true }
+        case .capture: if mode == .edit { isReviewCapturePresented = true }
+        case .restore: isPreviewPresented = true
+        case nil: break
+        }
+        return found
+    }
+}

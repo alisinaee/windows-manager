@@ -87,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         guard !isDuplicate else { return }
         for url in urls {
+            if UXTestRoute.handleIfOpenRoute(url) { continue }   // UX capture route, WM_UX_TEST=1 only
             do {
                 let command = try ControlCommand.parse(url: url)
                 Task { @MainActor in

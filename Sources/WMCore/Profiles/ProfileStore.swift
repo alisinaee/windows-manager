@@ -82,7 +82,11 @@ public enum ProfileStoreError: Error, LocalizedError, Equatable {
 
 public final class ProfileStore: @unchecked Sendable {
     /// `~/Library/Application Support/WindowsManager/Profiles/`.
+    /// `WM_PROFILES_DIR` overrides it (UX fixtures, smoke tests).
     public static var defaultFolder: URL {
+        if let dir = ProcessInfo.processInfo.environment["WM_PROFILES_DIR"], !dir.isEmpty {
+            return URL(fileURLWithPath: dir, isDirectory: true)
+        }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         return support.appendingPathComponent("WindowsManager", isDirectory: true)

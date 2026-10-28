@@ -27,6 +27,17 @@ final class AppState: ObservableObject {
     /// Names shown in the Settings list.
     var profiles: [String] { savedProfiles.map(\.name) }
 
+    private static let debugModeKey = "debugMode"
+
+    /// Debug mode shows the live test panel (Debug window). Remembered across launches.
+    @Published var debugMode: Bool = UserDefaults.standard.bool(forKey: AppState.debugModeKey) {
+        didSet {
+            guard debugMode != oldValue else { return }
+            UserDefaults.standard.set(debugMode, forKey: AppState.debugModeKey)
+            if debugMode { showDebugWindow() } else { DebugWindowController.shared.close() }
+        }
+    }
+
     /// Set by init so URL handling in the app delegate can reach the state.
     static weak var current: AppState?
 
@@ -44,6 +55,14 @@ final class AppState: ObservableObject {
             Task { @MainActor in self?.refreshPermissions() }
         }
         drainPendingCommands()
+        if debugMode { showDebugWindow() }
+    }
+
+    /// Opens the Debug window. Closing it with its red button turns Debug mode off, so the menu follows the window.
+    private func showDebugWindow() {
+        let controller = DebugWindowController.shared
+        controller.onClose = { [weak self] in self?.debugMode = false }
+        controller.show(store: store) { [weak self] in self?.reloadProfiles() }
     }
 
     /// Runs the queued URL commands in arrival order, each once.

@@ -56,6 +56,10 @@ struct MenuBarContent: View {
                 NSApp.activate()
                 openSettings()
             }
+            MenuRow(title: (appState.debugMode ? "\u{2713} " : "    ") + "Debug") {
+                Self.closePopup(); appState.debugMode.toggle()
+            }
+            .help("Shows the live test panel for the window-restore scenarios")
             MenuRow(title: "Quit") {
                 NSApp.terminate(nil)
             }

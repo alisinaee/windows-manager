@@ -75,11 +75,43 @@ final class HotkeyController {
             KeyboardShortcuts.reset(.profile(id))
             registeredProfiles.remove(id)
         }
+        adoptTextShortcuts(profiles.map(\.id))
         for profile in profiles where !registeredProfiles.contains(profile.id) {
             registeredProfiles.insert(profile.id)
             let id = profile.id
             // Run by id, looked up at press time, so renames and deletions are honoured and duplicate names are safe.
             bind(.profile(id)) { AppState.current?.run(id: id) }
+        }
+    }
+
+    /// A profile with a text shortcut (`wm profile shortcut`, or `options.hotkey` in the file) but no
+    /// KeyboardShortcuts value gets that shortcut, so the CLI setting takes effect in the app.
+    private func adoptTextShortcuts(_ ids: [UUID]) {
+        guard let store = AppState.current?.store else { return }
+        for id in ids where KeyboardShortcuts.getShortcut(for: .profile(id)) == nil {
+            guard let text = (try? store.load(id))?.options.hotkey,
+                  let stored = ShortcutBridge.carbon(text: text) else { continue }
+            KeyboardShortcuts.setShortcut(
+                KeyboardShortcuts.Shortcut(carbonKeyCode: stored.carbonKeyCode, carbonModifiers: stored.carbonModifiers),
+                for: .profile(id))
+            AppInfo.logger.notice("Adopted shortcut \(text) of a profile from its saved text")
+        }
+    }
+
+    /// Called when the Studio recorder or suggestions change a profile's shortcut. Writes the text form into
+    /// `options.hotkey` when the shortcut can be written that way, otherwise clears it.
+    func recordProfileShortcut(_ id: UUID, _ shortcut: KeyboardShortcuts.Shortcut?) {
+        guard let store = AppState.current?.store, var profile = try? store.load(id) else { return }
+        let text = shortcut.flatMap {
+            ShortcutBridge.text(carbonKeyCode: $0.carbonKeyCode, carbonModifiers: $0.carbonModifiers)
+        }
+        guard profile.options.hotkey != text else { return }
+        profile.options.hotkey = text
+        do {
+            _ = try store.save(profile)
+            AppState.current?.reloadProfiles()
+        } catch {
+            AppInfo.logger.error("Could not save the shortcut text of a profile: \(error.localizedDescription)")
         }
     }
 

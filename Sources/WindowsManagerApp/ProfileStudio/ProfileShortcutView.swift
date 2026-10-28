@@ -23,6 +23,7 @@ struct ProfileShortcutView: View {
             HStack(spacing: 6) {
                 KeyboardShortcuts.Recorder(for: name) { shortcut in
                     current = shortcut
+                    HotkeyController.shared.recordProfileShortcut(profileID, shortcut)
                     DebugLog.log("studio", shortcut.map { "shortcut set for \(profileName): \($0)" } ?? "shortcut cleared for \(profileName)")
                 }
                 .id(recorderRevision)
@@ -95,6 +96,7 @@ struct ProfileShortcutView: View {
         KeyboardShortcuts.setShortcut(shortcut, for: name)
         current = shortcut
         recorderRevision += 1
+        HotkeyController.shared.recordProfileShortcut(profileID, shortcut)
         HotkeyController.shared.syncProfiles()
         DebugLog.log("studio", combo.map { "shortcut suggested for \(profileName): \(Self.text($0))" } ?? "shortcut cleared for \(profileName)")
         showSuggestions = false

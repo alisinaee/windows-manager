@@ -943,7 +943,14 @@ public final class LiveRestoreEnvironment: RestoreEnvironment {
 
     public func raise(_ handle: WindowHandle, app: AppRef) async -> RestoreActionResult {
         guard let element = handle.element else { return .failure("no Accessibility element") }
-        guard await Self.runOffMain({ WindowMover.raise(element) }) else { return .failure("the window did not accept AXRaise") }
+        let raised = await Self.runOffMain({ element.perform(kAXRaiseAction) })
+        if !raised.isSuccess {
+            // A window that is already the app's main window needs no raise; the app only has to come forward.
+            let alreadyMain = await Self.readBool(element, kAXMainAttribute) == true
+            guard alreadyMain, raised == .actionUnsupported || raised == .cannotComplete else {
+                return .failure("the window did not accept AXRaise (AXError \(raised.rawValue))")
+            }
+        }
         // AXRaise only orders the windows of one app; the app has to come forward too for the saved
         // stacking across apps. Failing to do so is not an error.
         let application = AXElement.application(pid: handle.pid)

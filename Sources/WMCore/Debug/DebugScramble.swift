@@ -9,6 +9,14 @@ extension DebugTestRunner {
     func scramble(_ s: DebugScenarioID, profile: Profile, sink: DebugSink) async {
         switch s {
         case .s1Cold:
+            // TextEdit reopens the windows it had when it quit (state restoration); with none it shows an Open
+            // panel (an untitled 280x168 window), so it is quit with two documents open, as on a normal day.
+            _ = await osa("tell application \"TextEdit\" to activate")
+            _ = await osa("tell application \"TextEdit\" to close every document saving no")
+            for text in ["A", "B"] {
+                _ = await osa("tell application \"TextEdit\" to make new document with properties {text:\"\(text)\"}")
+            }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             await quitFixtures(sink)
             await closeFinderWindows()
             sink.send(.log("cold: fixture apps quit; the number of Desktops cannot be reduced here, "

@@ -6,4 +6,5 @@ func registerAllCommands(_ r: Registry) {
     // registerProfileCommands(r)
     // registerRunCommands(r)
     // registerSystemCommands(r)
+    registerStatusCommands(r)
 }

@@ -57,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !isDuplicate else { return }
+        AppControlServer.shared.start()
         AppInfo.logger.notice("Windows Manager \(AppInfo.version) (\(AppInfo.build)) started, pid \(ProcessInfo.processInfo.processIdentifier)")
         AppInfo.logger.notice("SkyLight loaded: \(PrivateSymbols.isLoaded), Accessibility trusted: \(AXPermission.isTrusted())")
 

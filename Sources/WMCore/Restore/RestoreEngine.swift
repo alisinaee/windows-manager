@@ -874,11 +874,18 @@ public final class LiveRestoreEnvironment: RestoreEnvironment {
 
     public func setFrame(_ handle: WindowHandle, to frame: CGRect) async -> RestoreActionResult {
         guard let element = handle.element else { return .failure("no Accessibility element") }
+        // A window of a hidden app has to be shown again, otherwise the restore leaves it invisible.
+        if let app = NSRunningApplication(processIdentifier: handle.pid), app.isHidden { app.unhide() }
         let result = await Self.runOffMain { WindowMover.setFrame(element, to: frame) }
         if result.matched { return .ok(frame: result.actual) }
         let now = result.actual.map { RestoreFormat.rect($0) } ?? "unreadable"
         if result.minSizeHit && !result.refused {
             return .ok("minimum size reached (now \(now))", frame: result.actual)
+        }
+        // Fixed-size window (Calculator): the size write is rejected but the position is right. Not a failure.
+        if let actual = result.actual, result.steps.contains(where: { $0.write == .size && !$0.succeeded }),
+           WindowMover.positionMatches(actual.origin, frame.origin, tolerance: 2) {
+            return .ok("fixed size (now \(now))", frame: result.actual)
         }
         return .failure("the window refused the frame (now \(now))", frame: result.actual)
     }

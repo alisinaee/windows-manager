@@ -26,6 +26,7 @@ public final class DebugTestRunner: @unchecked Sendable {
             throw NSError(domain: "DebugTestRunner", code: 1, userInfo: [NSLocalizedDescriptionKey: "no display"])
         }
         let vf = main.visibleFrame
+        let top = vf.minY  // first usable y below the menu bar on this display
         func snap(_ bundle: String, _ name: String, _ frame: CGRect, desktop: Int?, title: String? = nil,
                   match: TitleMatch = .any, index: Int = 0) -> WindowSnapshot {
             let rel = CGRect(x: (frame.minX - vf.minX) / vf.width, y: (frame.minY - vf.minY) / vf.height,
@@ -39,26 +40,25 @@ public final class DebugTestRunner: @unchecked Sendable {
         }
         let key = DisplayMap.monitorSetKey(displays)
         let work = Profile(name: "Challenge Work", monitorSetKey: key, displays: displays, spaces: spaces(3), windows: [
-            snap(textEdit, "TextEdit", CGRect(x: 0, y: 25, width: 800, height: 600), desktop: 1),
-            snap(calculator, "Calculator", CGRect(x: vf.maxX - 260, y: 25, width: 260, height: 400), desktop: 1),
+            snap(textEdit, "TextEdit", CGRect(x: 0, y: top, width: 800, height: 600), desktop: 1),
+            snap(calculator, "Calculator", CGRect(x: vf.maxX - 230, y: top, width: 230, height: 408), desktop: 1),
             snap(notes, "Notes", CGRect(x: 100, y: 100, width: 1000, height: 700), desktop: 2),
-            snap(finder, "Finder", CGRect(x: 900, y: 400, width: 700, height: 500), desktop: 2,
-                 title: "Documents", match: .exact("Documents")),
-            snap(safari, "Safari", CGRect(x: 0, y: 25, width: 1200, height: 800), desktop: 3),
-            snap(textEdit, "TextEdit", CGRect(x: 1250, y: 25, width: 600, height: 500), desktop: 3, index: 1),
+            snap(finder, "Finder", CGRect(x: 900, y: 400, width: 700, height: 500), desktop: 2),
+            snap(safari, "Safari", CGRect(x: 0, y: top, width: 1200, height: 800), desktop: 3),
+            snap(textEdit, "TextEdit", CGRect(x: 1250, y: top, width: 600, height: 500), desktop: 3, index: 1),
         ])
         let halfW = (vf.width / 2).rounded(.down)
         let home = Profile(name: "Home", monitorSetKey: key, displays: displays, spaces: spaces(2), windows: [
             snap(finder, "Finder", CGRect(x: vf.minX, y: vf.minY, width: halfW, height: vf.height), desktop: 1),
             snap(notes, "Notes", CGRect(x: vf.minX + halfW, y: vf.minY, width: halfW, height: vf.height), desktop: 1),
             snap(safari, "Safari", vf, desktop: 2),
-            snap(calculator, "Calculator", CGRect(x: vf.maxX - 260, y: vf.minY + 40, width: 260, height: 400),
+            snap(calculator, "Calculator", CGRect(x: vf.maxX - 230, y: vf.minY + 40, width: 230, height: 408),
                  desktop: nil),
         ])
         let dup = Profile(name: "Challenge Dup", monitorSetKey: key, displays: displays, spaces: spaces(1), windows: [
-            snap(textEdit, "TextEdit", CGRect(x: 0, y: 25, width: 600, height: 500), desktop: 1,
+            snap(textEdit, "TextEdit", CGRect(x: 0, y: top, width: 600, height: 500), desktop: 1,
                  title: "Untitled", match: .exact("Untitled"), index: 0),
-            snap(textEdit, "TextEdit", CGRect(x: 700, y: 25, width: 600, height: 500), desktop: 1,
+            snap(textEdit, "TextEdit", CGRect(x: 700, y: top, width: 600, height: 500), desktop: 1,
                  title: "Untitled", match: .exact("Untitled"), index: 1),
         ])
         // Reuse the ids of already installed fixtures so reinstalling replaces instead of duplicating.

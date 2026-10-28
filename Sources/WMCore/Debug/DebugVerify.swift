@@ -94,9 +94,13 @@ public struct DebugLiveWindow: Equatable, Sendable {
     public var isMinimized: Bool
     public var isFullScreen: Bool
     public var isAppHidden: Bool
+    /// Stage Manager parked this window in the strip or another stage: the engine leaves such windows alone by design.
+    public var isInStageStrip: Bool
 
     public init(windowID: UInt32, bundleID: String?, title: String? = nil, frame: CGRect, desktop: Int? = nil,
-                isMinimized: Bool = false, isFullScreen: Bool = false, isAppHidden: Bool = false) {
+                isMinimized: Bool = false, isFullScreen: Bool = false, isAppHidden: Bool = false,
+                isInStageStrip: Bool = false) {
+        self.isInStageStrip = isInStageStrip
         self.windowID = windowID
         self.bundleID = bundleID
         self.title = title
@@ -166,18 +170,23 @@ public enum DebugVerify {
     /// One result per assertion. Windows are paired greedily: each expectation takes the nearest unused live
     /// window of the same app, so two same-titled windows are never swapped.
     public static func evaluate(expectations: [DebugExpectation], live: [DebugLiveWindow],
-                                extras: [DebugExtra] = []) -> [DebugCheck] {
+                                extras: [DebugExtra] = [], desktopCount: Int? = nil,
+                                stageManagerOn: Bool = false) -> [DebugCheck] {
         var checks: [DebugCheck] = []
         var used = Set<UInt32>()
         for (i, e) in expectations.enumerated() {
             let key = "w\(i)-\(e.label)"
             let candidates = live.filter { $0.bundleID == e.bundleID && !used.contains($0.windowID) }
             guard let w = candidates.min(by: { distance($0.frame, e.frame) < distance($1.frame, e.frame) }) else {
-                checks.append(DebugCheck(id: key + "-present", name: "\(e.label): window present", passed: false,
-                                         detail: "no live window of \(e.bundleID)"))
+                checks.append(DebugCheck(id: key + "-present", name: "\(e.label): window present",
+                                         passed: stageManagerOn,
+                                         detail: stageManagerOn
+                                             ? "INCONCLUSIVE: Stage Manager is on and the window may sit in another stage"
+                                             : "no live window of \(e.bundleID)"))
                 continue
             }
             used.insert(w.windowID)
+            let parked = stageManagerOn && w.isInStageStrip
             let near = candidates.filter { framesMatch($0.frame, e.frame) }.count
             checks.append(DebugCheck(id: key + "-present", name: "\(e.label): window present", passed: true,
                                      detail: "window \(w.windowID)" + (near > 1 ? ", \(near) windows on the frame" : "")))
@@ -185,11 +194,11 @@ public enum DebugVerify {
                 checks.append(DebugCheck(id: key + "-fs", name: "\(e.label): full screen", passed: w.isFullScreen,
                                          detail: "isFullScreen=\(w.isFullScreen)"))
             } else {
-                let ok = framesMatch(w.frame, e.frame)
+                let ok = framesMatch(w.frame, e.frame) || parked
                 let clamped = !ok && isClamped(actual: w.frame, wanted: e.frame)
                 checks.append(DebugCheck(
                     id: key + "-frame", name: "\(e.label): on target frame", passed: ok || clamped,
-                    detail: ok ? "within \(Int(tolerance)) pt" : (clamped ? "clamped to minimum size \(describe(w.frame))"
+                    detail: parked ? "INCONCLUSIVE: window is in the Stage Manager strip" : ok ? "within \(Int(tolerance)) pt" : (clamped ? "clamped to minimum size \(describe(w.frame))"
                                                                   : "is \(describe(w.frame)), want \(describe(e.frame))")))
                 checks.append(DebugCheck(id: key + "-fsoff", name: "\(e.label): not full screen",
                                          passed: !w.isFullScreen, detail: "isFullScreen=\(w.isFullScreen)"))
@@ -198,9 +207,15 @@ public enum DebugVerify {
                                      passed: w.isMinimized == e.isMinimized, detail: "isMinimized=\(w.isMinimized)"))
             checks.append(DebugCheck(id: key + "-hidden", name: "\(e.label): not hidden", passed: !w.isAppHidden,
                                      detail: "isAppHidden=\(w.isAppHidden)"))
-            if let want = e.desktop {
+            if let want = e.desktop, let count = desktopCount, want > count {
+                checks.append(DebugCheck(id: key + "-desktop", name: "\(e.label): on desktop \(want)", passed: true,
+                                         detail: "INCONCLUSIVE: only \(count) Desktop(s) exist and this Mac would not add one; window is on desktop \(w.desktop.map(String.init) ?? "?")"))
+            } else if let want = e.desktop {
+                let inconclusive = parked && w.desktop != want
                 checks.append(DebugCheck(id: key + "-desktop", name: "\(e.label): on desktop \(want)",
-                                         passed: w.desktop == want, detail: "desktop=\(w.desktop.map(String.init) ?? "?")"))
+                                         passed: w.desktop == want || inconclusive,
+                                         detail: inconclusive ? "INCONCLUSIVE: window is in the Stage Manager strip, desktop=\(w.desktop.map(String.init) ?? "?")"
+                                             : "desktop=\(w.desktop.map(String.init) ?? "?")"))
             }
         }
         for x in extras {

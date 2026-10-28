@@ -491,7 +491,8 @@ public enum RestorePlanner {
             } else if !(snapshot.isMinimized && live.isMinimized) {
                 // A window that leaves full screen keeps the screen-sized frame until it is set again.
                 let inPlace = WindowMover.frameMatches(live.frame, snapshot.frame, tolerance: frameTolerance)
-                if live.isFullScreen || !inPlace {
+                if live.isFullScreen || !inPlace || live.isAppHidden {
+                    // A hidden app gets a step too: placing the window shows the app again.
                     setFrame.append(.setFrame(target, frame: snapshot.frame, from: live.frame, beforeFullScreen: false))
                 }
             }

@@ -55,7 +55,8 @@ final class AppState: ObservableObject {
             Task { @MainActor in self?.refreshPermissions() }
         }
         drainPendingCommands()
-        if debugMode { showDebugWindow() }
+        // Not inside init: creating the SwiftUI window here can trap during layout.
+        if debugMode { DispatchQueue.main.async { [weak self] in self?.showDebugWindow() } }
     }
 
     /// Opens the Debug window. Closing it with its red button turns Debug mode off, so the menu follows the window.

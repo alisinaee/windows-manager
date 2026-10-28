@@ -9,6 +9,7 @@ let package = Package(
     products: [
         .library(name: "WMCore", targets: ["WMCore"]),
         .executable(name: "spaceslab", targets: ["spaceslab"]),
+        .executable(name: "wm", targets: ["wm"]),
         .executable(name: "WindowsManagerApp", targets: ["WindowsManagerApp"]),
     ],
     dependencies: [
@@ -26,6 +27,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "spaceslab",
+            dependencies: ["WMCore"]
+        ),
+        .executableTarget(
+            name: "wm",
             dependencies: ["WMCore"]
         ),
         .executableTarget(

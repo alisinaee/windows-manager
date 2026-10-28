@@ -23,7 +23,7 @@ func registerSettingsCommands(_ r: Registry) {
     })
 
     r.register(Command(["settings", "set"], summary: "Set one setting from text, e.g. wm settings set snap.gap 8",
-                       args: [CLIArg("key"), CLIArg("value")]) { a, _ in
+                       args: [CLIArg("key"), CLIArg("value")], mutates: true) { a, _ in
         let key = a.positionals[0]
         let text = a.positionals[1]
         let store = try settingsStore()
@@ -33,7 +33,7 @@ func registerSettingsCommands(_ r: Registry) {
         return CLIResult(data: data, text: "\(key) = \(value)")
     })
 
-    r.register(Command(["settings", "reset"], summary: "Remove a stored value so the default applies", args: [CLIArg("key")]) { a, _ in
+    r.register(Command(["settings", "reset"], summary: "Remove a stored value so the default applies", args: [CLIArg("key")], mutates: true) { a, _ in
         let key = a.positionals[0]
         let store = try settingsStore()
         try cliService { try store.reset(key) }

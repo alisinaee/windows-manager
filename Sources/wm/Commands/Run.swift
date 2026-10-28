@@ -37,7 +37,8 @@ func registerRunCommands(_ r: Registry) {
     r.register(Command(["run"], summary: "Restore a profile (streams NDJSON progress with --json)",
                        args: [CLIArg("profile", "Profile name or id")],
                        options: [CLIOption("dry-run", "Plan only, change nothing"),
-                                 CLIOption("yes", short: "y", "Do not ask for confirmation")]) { args, ctx in
+                                 CLIOption("yes", short: "y", "Do not ask for confirmation")],
+                       mutates: true, touchesWindows: true) { args, ctx in
         let profile = try loadProfileByQuery(args.positionals[0])
         let dry = args.flag("dry-run")
         if !dry { try requireAccessibility() }

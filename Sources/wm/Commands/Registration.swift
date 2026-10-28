@@ -16,4 +16,6 @@ func registerAllCommands(_ r: Registry) {
     registerPlanCommands(r)
     registerRunCommands(r)
     registerVerifyCommands(r)
+    registerSchemaCommands(r)
+    registerAgentGuideCommands(r)
 }

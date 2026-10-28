@@ -53,8 +53,8 @@ private func rectJSON(_ r: CGRect) -> JSONValue {
 }
 
 private func add(_ r: Registry, _ path: [String], _ summary: String, args: [CLIArg] = [],
-                 options: [CLIOption] = [], _ body: @escaping (ParsedArgs) throws -> CLIResult) {
-    r.register(Command(path, summary: summary, args: args, options: options) { a, _ in
+                 options: [CLIOption] = [], mutates: Bool = true, _ body: @escaping (ParsedArgs) throws -> CLIResult) {
+    r.register(Command(path, summary: summary, args: args, options: options, mutates: mutates) { a, _ in
         try service { try body(a) }
     })
 }
@@ -66,13 +66,13 @@ func registerProfileCommands(_ r: Registry) {
 
     // MARK: List, show, create, copy, rename, delete
 
-    add(r, ["profile", "list"], "List profiles") { _ in
+    add(r, ["profile", "list"], "List profiles", mutates: false) { _ in
         let list = profiles().list()
         let text = list.map { "\($0.name)\t\($0.id.uuidString)\t\($0.windowCount) windows" }.joined(separator: "\n")
         return CLIResult(data: try JSONValue.from(list), text: text.isEmpty ? "No profiles." : text)
     }
 
-    add(r, ["profile", "show"], "Show a profile in full", args: [profileArg]) { a in
+    add(r, ["profile", "show"], "Show a profile in full", args: [profileArg], mutates: false) { a in
         CLIResult(data: try JSONValue.from(try profiles().show(a.positionals[0])))
     }
 
@@ -294,7 +294,7 @@ func registerProfileCommands(_ r: Registry) {
 
     let itemArg = CLIArg("item", "Item ref: bundle id, app name or 1-based position")
 
-    add(r, ["profile", "launch-order", "get"], "Show the launch order and worst-case time", args: [profileArg]) { a in
+    add(r, ["profile", "launch-order", "get"], "Show the launch order and worst-case time", args: [profileArg], mutates: false) { a in
         let view = try LaunchOrderService(profiles: profiles()).get(a.positionals[0])
         let data: JSONValue = .object([
             "profileID": .string(view.profileID.uuidString),
@@ -330,7 +330,7 @@ func registerProfileCommands(_ r: Registry) {
     // MARK: Export and import
 
     add(r, ["profile", "export"], "Export a profile as JSON (to stdout, or --out FILE)", args: [profileArg],
-        options: [CLIOption("out", "File to write", takesValue: true, valueName: "file")]) { a in
+        options: [CLIOption("out", "File to write", takesValue: true, valueName: "file")], mutates: false) { a in
         let ref = a.positionals[0]
         if let out = a.value("out") {
             let url = URL(fileURLWithPath: out)

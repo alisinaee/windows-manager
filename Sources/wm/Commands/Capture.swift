@@ -6,7 +6,8 @@ func registerCaptureCommands(_ r: Registry) {
                        options: [CLIOption("name", short: "n", "Profile name", takesValue: true, valueName: "name"),
                                  CLIOption("select", short: "s",
                                            "Keep only matching windows: app:<name|bundle id>, desktop:<N>, fullscreen, minimized (repeatable)",
-                                           takesValue: true, valueName: "selector")]) { args, _ in
+                                           takesValue: true, valueName: "selector")],
+                       mutates: true, touchesWindows: true) { args, _ in
         guard let name = args.value("name")?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
             throw CLIFailure.usage("--name is required", hint: "wm capture --name Work")
         }

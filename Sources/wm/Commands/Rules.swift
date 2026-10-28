@@ -52,13 +52,13 @@ func registerRuleCommands(_ r: Registry) {
                            CLIOption("display", "Display UUID for --desktop", takesValue: true, valueName: "uuid"),
                            CLIOption("space", "Space id instead of a Desktop", takesValue: true, valueName: "id"),
                            CLIOption("title", "Only windows whose title contains this", takesValue: true, valueName: "text"),
-                       ]) { a, _ in
+                       ], mutates: true) { a, _ in
         let target = try pinTarget(from: a)
         let rule = try cliService { try RuleService().addPin(bundleID: a.positionals[0], titleContains: a.value("title"), target: target) }
         return CLIResult(data: try JSONValue.from(rule), text: rule.id.uuidString)
     })
 
-    r.register(Command(["rules", "pins", "remove"], summary: "Remove a pin rule by id", args: [CLIArg("id")]) { a, _ in
+    r.register(Command(["rules", "pins", "remove"], summary: "Remove a pin rule by id", args: [CLIArg("id")], mutates: true) { a, _ in
         guard let id = UUID(uuidString: a.positionals[0]) else { throw CLIFailure.usage("Pin rule id must be a UUID") }
         try cliService { try RuleService().removePin(id) }
         return CLIResult(data: .object(["removed": .string(id.uuidString)]), text: "removed \(id.uuidString)")
@@ -72,14 +72,15 @@ func registerRuleCommands(_ r: Registry) {
 
     r.register(Command(["rules", "window-rules", "set"], summary: "Set a window rule: ignore, alwaysRestore or pinToDisplay",
                        args: [CLIArg("bundleID"), CLIArg("action", "ignore | alwaysRestore | pinToDisplay")],
-                       options: [CLIOption("display", "Display UUID for pinToDisplay", takesValue: true, valueName: "uuid")]) { a, _ in
+                       options: [CLIOption("display", "Display UUID for pinToDisplay", takesValue: true, valueName: "uuid")],
+                       mutates: true) { a, _ in
         let action = try windowAction(from: a)
         let rule = try cliService { try RuleService().setWindowRule(bundleID: a.positionals[0], action: action) }
         return CLIResult(data: try JSONValue.from(rule), text: "\(rule.bundleID)")
     })
 
     r.register(Command(["rules", "window-rules", "remove"], summary: "Remove the window rule of an app",
-                       args: [CLIArg("bundleID")]) { a, _ in
+                       args: [CLIArg("bundleID")], mutates: true) { a, _ in
         let bundleID = a.positionals[0]
         try cliService { try RuleService().removeWindowRule(bundleID: bundleID) }
         return CLIResult(data: .object(["removed": .string(bundleID)]), text: "removed \(bundleID)")

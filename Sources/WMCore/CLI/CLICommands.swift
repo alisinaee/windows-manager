@@ -75,17 +75,26 @@ public struct Command {
     public var summary: String
     public var args: [CLIArg]
     public var options: [CLIOption]
+    /// True when the command can change stored state (profiles, settings, rules, layouts) or the desktop.
+    public var mutates: Bool
+    /// True when the command reads or moves real windows (run, capture, verify).
+    public var touchesWindows: Bool
     public var handler: (ParsedArgs, CLIContext) throws -> CLIResult
 
     public init(_ path: [String], summary: String, args: [CLIArg] = [], options: [CLIOption] = [],
+                mutates: Bool = false, touchesWindows: Bool = false,
                 handler: @escaping (ParsedArgs, CLIContext) throws -> CLIResult) {
-        self.path = path; self.summary = summary; self.args = args; self.options = options; self.handler = handler
+        self.path = path; self.summary = summary; self.args = args; self.options = options
+        self.mutates = mutates; self.touchesWindows = touchesWindows; self.handler = handler
     }
     public var name: String { path.joined(separator: " ") }
 
     public var descriptor: JSONValue {
         .object([
             "name": .string(name),
+            "path": .array(path.map { .string($0) }),
+            "mutates": .bool(mutates),
+            "touchesWindows": .bool(touchesWindows),
             "summary": .string(summary),
             "args": .array(args.map { .object(["name": .string($0.name), "summary": .string($0.summary),
                                                "required": .bool($0.required), "variadic": .bool($0.variadic)]) }),

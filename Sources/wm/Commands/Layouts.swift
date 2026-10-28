@@ -19,14 +19,15 @@ func registerLayoutCommands(_ r: Registry) {
 
     r.register(Command(["layouts", "create"], summary: "Create an empty layout",
                        args: [CLIArg("name")],
-                       options: [CLIOption("display", "Display UUID the layout is for (default: any)", takesValue: true, valueName: "uuid")]) { a, _ in
+                       options: [CLIOption("display", "Display UUID the layout is for (default: any)", takesValue: true, valueName: "uuid")],
+                       mutates: true) { a, _ in
         let layout = try cliService {
             try LayoutService().create(name: a.positionals[0], displayKey: a.value("display"))
         }
         return CLIResult(data: try JSONValue.from(layout), text: layoutLine(layout))
     })
 
-    r.register(Command(["layouts", "delete"], summary: "Delete a layout by id or name", args: [CLIArg("layout")]) { a, _ in
+    r.register(Command(["layouts", "delete"], summary: "Delete a layout by id or name", args: [CLIArg("layout")], mutates: true) { a, _ in
         let service = LayoutService()
         let ref = a.positionals[0]
         let layout = try cliService { try service.get(ref) }
@@ -36,7 +37,7 @@ func registerLayoutCommands(_ r: Registry) {
     })
 
     r.register(Command(["layouts", "rename"], summary: "Rename a layout",
-                       args: [CLIArg("layout"), CLIArg("newName")]) { a, _ in
+                       args: [CLIArg("layout"), CLIArg("newName")], mutates: true) { a, _ in
         let layout = try cliService { try LayoutService().rename(a.positionals[0], to: a.positionals[1]) }
         return CLIResult(data: try JSONValue.from(layout), text: layoutLine(layout))
     })

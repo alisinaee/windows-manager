@@ -3,7 +3,8 @@ import WMCore
 
 func registerVerifyCommands(_ r: Registry) {
     r.register(Command(["verify"], summary: "Compare live windows with a profile (exit 6 on mismatch)",
-                       args: [CLIArg("profile", "Profile name or id")]) { args, _ in
+                       args: [CLIArg("profile", "Profile name or id")],
+                       touchesWindows: true) { args, _ in
         let profile = try loadProfileByQuery(args.positionals[0])
         let plan = runOnMain { await RestoreEngine().preview(profile: profile) }
         let result = CLIVerifyResult(profile: profile, plan: plan)

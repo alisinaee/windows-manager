@@ -13,7 +13,7 @@ struct SidebarRailView: View {
             }
             .buttonStyle(.plain)
             .disabled(model.mode == .edit)
-            .help("New profile")
+            .help(model.mode == .edit ? "New profile (not available while editing)" : "New profile")
             .accessibilityLabel("New profile")
             ScrollView {
                 VStack(spacing: 6) {
@@ -38,7 +38,7 @@ struct SidebarRailView: View {
             .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(selected ? tint.opacity(0.30) : tint.opacity(0.14)))
             .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(selected ? tint.opacity(0.9) : Color.clear, lineWidth: 1.5))
+                .strokeBorder(selected ? Color.primary.opacity(0.75) : Color.clear, lineWidth: 1.5))
             .contentShape(Rectangle())
     }
 
@@ -48,7 +48,7 @@ struct SidebarRailView: View {
             tile(icon: row.icon, tint: ProfileRowTint.color(for: row.id), selected: selected)
         }
         .buttonStyle(.plain)
-        .help(row.name)
+        .help(selected ? "\(row.name) (selected profile)" : row.name)
         .accessibilityLabel(row.name)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -56,7 +56,8 @@ struct SidebarRailView: View {
 
 /// A stable colour per profile, shared by the full sidebar row and the collapsed rail.
 enum ProfileRowTint {
-    private static let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .red, .indigo]
+    /// No red here: a red icon reads as an error. Brown stands in for it.
+    private static let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .brown, .indigo]
 
     static func color(for id: UUID) -> Color {
         let sum = id.uuid.0 &+ id.uuid.5 &+ id.uuid.10 &+ id.uuid.15

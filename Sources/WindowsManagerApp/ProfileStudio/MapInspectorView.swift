@@ -19,11 +19,13 @@ struct MapInspectorView: View {
                     spaceDetails(space, profile)
                 } else {
                     Text("Select a window or a Desktop on the map to see its details.")
-                        .foregroundStyle(.secondary)
+                        .font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
                 }
             }
             .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(Color(nsColor: .controlBackgroundColor))
         .accessibilityElement(children: .contain)

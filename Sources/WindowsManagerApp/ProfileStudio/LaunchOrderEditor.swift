@@ -76,12 +76,12 @@ struct LaunchOrderEditor: View {
             .help("Launch apps one after another, or all at once")
             Button { moveSelected(by: -1, plan) } label: { Image(systemName: "arrow.up") }
                 .keyboardShortcut(.upArrow, modifiers: [.command, .option])
-                .help("Move the selected app up (Command-Option-Up)")
+                .help(canMove(-1, plan) ? "Move the selected app up (Command-Option-Up)" : "Select an app in the list to move it")
                 .accessibilityLabel("Move selected app up")
                 .disabled(!canMove(-1, plan))
             Button { moveSelected(by: 1, plan) } label: { Image(systemName: "arrow.down") }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .option])
-                .help("Move the selected app down (Command-Option-Down)")
+                .help(canMove(1, plan) ? "Move the selected app down (Command-Option-Down)" : "Select an app in the list to move it")
                 .accessibilityLabel("Move selected app down")
                 .disabled(!canMove(1, plan))
         }
@@ -93,7 +93,7 @@ struct LaunchOrderEditor: View {
             HStack {
                 addMenu(plan)
                 Spacer()
-                Label("Worst case: \(durationText(LaunchSequence.worstCaseDuration(plan: plan)))", systemImage: "clock")
+                Label("Longest wait: \(durationText(LaunchSequence.worstCaseDuration(plan: plan)))", systemImage: "clock")
                     .font(.callout)
             }
             Text(plan.mode == .sequential
@@ -104,7 +104,9 @@ struct LaunchOrderEditor: View {
             Text("Apps not in the list launch last, in profile order.")
                 .font(.caption).foregroundStyle(.secondary)
         }
-        .padding(8)
+        .padding(.horizontal, 8)
+        .padding(.top, 8)
+        .padding(.bottom, 14)
     }
 
     private func addMenu(_ plan: LaunchPlan) -> some View {
@@ -198,40 +200,53 @@ struct LaunchOrderEditor: View {
                     .accessibilityLabel("Move \(item.app.name) down")
                     .help("Move \(item.app.name) down in the launch order")
             }
-            HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
                 if item.withoutWindows {
                     Text("Waits until the app is ready").font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Picker("Wait for", selection: Binding(
-                        get: { item.wait },
-                        set: { wait in commit { LaunchSequence.settingWait($0, id: item.id, wait) } })) {
-                        Text("First window").tag(LaunchWait.windows)
-                        Text("App ready").tag(LaunchWait.appReady)
+                    HStack(spacing: 6) {
+                        Text("Wait for").font(.caption).foregroundStyle(.secondary).fixedSize()
+                        Picker("Wait for", selection: Binding(
+                            get: { item.wait },
+                            set: { wait in commit { LaunchSequence.settingWait($0, id: item.id, wait) } })) {
+                            Text("First window").tag(LaunchWait.windows)
+                            Text("App ready").tag(LaunchWait.appReady)
+                        }
+                        .labelsHidden()
+                        .controlSize(.small)
+                        .fixedSize()
+                        .help("Wait for the first window, or until the app is ready")
+                    }
+                }
+                HStack(spacing: 12) {
+                    Stepper(value: Binding(
+                        get: { item.delayAfter },
+                        set: { value in commit { LaunchSequence.settingDelay($0, id: item.id, value) } }),
+                            in: LaunchItem.delayRange, step: 1) {
+                        Text("then \(secondsText(item.delayAfter))")
+                            .font(.callout.monospacedDigit()).lineLimit(1).fixedSize()
                     }
                     .controlSize(.small)
                     .fixedSize()
-                    .help("Wait for the first window, or until the app is ready")
+                    .disabled(plan.mode == .parallel)
+                    .help(plan.mode == .parallel ? "Delays are ignored when apps launch at once." : "Seconds to wait after this app before the next one")
+                    .accessibilityLabel("Delay after \(item.app.name)")
+                    Stepper(value: Binding(
+                        get: { item.timeout ?? LaunchOptions.defaultTimeout },
+                        set: { value in commit { LaunchSequence.settingTimeout($0, id: item.id, value) } }),
+                            in: LaunchItem.timeoutRange, step: 5) {
+                        Text("max \(secondsText(item.timeout ?? LaunchOptions.defaultTimeout))")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(item.timeout == nil ? .secondary : .primary)
+                            .lineLimit(1).fixedSize()
+                    }
+                    .controlSize(.small)
+                    .fixedSize()
+                    .accessibilityLabel("Timeout for \(item.app.name)")
+                    .help(item.timeout == nil
+                          ? "Longest wait for \(item.app.name) before moving on (default)"
+                          : "Longest wait for \(item.app.name) before moving on")
                 }
-                Stepper(value: Binding(
-                    get: { item.delayAfter },
-                    set: { value in commit { LaunchSequence.settingDelay($0, id: item.id, value) } }),
-                        in: LaunchItem.delayRange, step: 1) {
-                    Text("then \(secondsText(item.delayAfter))").font(.callout.monospacedDigit())
-                }
-                .controlSize(.small)
-                .disabled(plan.mode == .parallel)
-                .help(plan.mode == .parallel ? "Delays are ignored when apps launch at once." : "Seconds to wait after this app before the next one")
-                .accessibilityLabel("Delay after \(item.app.name)")
-                Stepper(value: Binding(
-                    get: { item.timeout ?? LaunchOptions.defaultTimeout },
-                    set: { value in commit { LaunchSequence.settingTimeout($0, id: item.id, value) } }),
-                        in: LaunchItem.timeoutRange, step: 5) {
-                    Text("max \(secondsText(item.timeout ?? LaunchOptions.defaultTimeout))\(item.timeout == nil ? " (default)" : "")")
-                        .font(.callout.monospacedDigit())
-                }
-                .controlSize(.small)
-                .accessibilityLabel("Timeout for \(item.app.name)")
-                .help("Longest wait for \(item.app.name) before moving on")
             }
             .opacity(item.enabled ? 1 : 0.5)
             ForEach(itemIssues, id: \.message) { issue in

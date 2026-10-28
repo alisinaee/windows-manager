@@ -19,6 +19,7 @@ struct ProfileOptionsPanel: View {
                 if let error = builder.lastError { issueRow(error, symbol: "exclamationmark.triangle") }
             }
             .formStyle(.grouped)
+            .scrollIndicators(.visible)
             .accessibilityLabel("Profile options")
         } else {
             Text("No profile is open.").foregroundStyle(.secondary).padding()
@@ -50,7 +51,7 @@ struct ProfileOptionsPanel: View {
                 optionToggle("Restore Desktop order", isOn: \.restoreSpaceOrder,
                              caption: "Put full-screen Desktops back in their saved order.")
                     .disabled(!options.restoreSpaces)
-                Label("Changing the order needs the guarded repair, which asks for confirmation and can briefly flicker the screen.",
+                Label("This may move Desktops around. Windows Manager asks you to confirm first, and the screen can flicker briefly.",
                       systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -83,14 +84,14 @@ struct ProfileOptionsPanel: View {
     @ViewBuilder
     private func otherAppsSection(_ options: ProfileOptions) -> some View {
         Section("Other apps") {
-            Picker("What to do with other apps", selection: Binding(
+            Picker("Other apps", selection: Binding(
                 get: { builder.profile?.options.otherApps ?? options.otherApps },
                 set: { value in builder.setOptions { $0.otherApps = value } })) {
-                Text("Leave").tag(OtherAppsPolicy.leave)
+                Text("Leave alone").tag(OtherAppsPolicy.leave)
                 Text("Hide").tag(OtherAppsPolicy.hide)
-                Text("Ask before quitting").tag(OtherAppsPolicy.quit)
+                Text("Quit (ask first)").tag(OtherAppsPolicy.quit)
             }
-            .help("Choose what a restore does with apps outside this profile")
+            .help("Choose what a restore does with apps outside this profile: leave them alone, hide them, or quit them after you confirm")
             Text(otherAppsCaption(options.otherApps))
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -114,6 +115,8 @@ struct ProfileOptionsPanel: View {
             Toggle(title, isOn: Binding(
                 get: { builder.profile?.options[keyPath: keyPath] ?? false },
                 set: { value in builder.setOptions { $0[keyPath: keyPath] = value } }))
+                .toggleStyle(.switch)
+                .tint(.accentColor)
                 .help("Turn \(title) on or off")
             Text(caption)
                 .font(.caption).foregroundStyle(.secondary)

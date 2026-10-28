@@ -26,7 +26,8 @@ struct ProfileShortcutView: View {
                     DebugLog.log("studio", shortcut.map { "shortcut set for \(profileName): \($0)" } ?? "shortcut cleared for \(profileName)")
                 }
                 .id(recorderRevision)
-                .help("Click here, then press the shortcut to use for this profile")
+                .font(.callout)
+                .help("Click here, then press the shortcut to use for this profile. The same shortcut appears in Settings > Hotkeys.")
                 Button { showSuggestions = true } label: { Image(systemName: "lightbulb") }
                     .help("Suggested shortcuts")
                     .accessibilityLabel("Suggested shortcuts")
@@ -36,7 +37,7 @@ struct ProfileShortcutView: View {
                 Label("\(advice) It may clash with macOS.", systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             } else if current == nil {
-                Text("Press the field and type a combination, or pick a suggestion.")
+                Text("No shortcut yet. Click the field and press a combination, or pick a suggestion (lightbulb). Shortcuts also appear in Settings > Hotkeys.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }

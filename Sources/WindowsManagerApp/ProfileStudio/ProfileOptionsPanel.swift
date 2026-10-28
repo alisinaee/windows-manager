@@ -83,7 +83,7 @@ struct ProfileOptionsPanel: View {
 
     @ViewBuilder
     private func otherAppsSection(_ options: ProfileOptions) -> some View {
-        Section("Other apps") {
+        Section("When restoring") {
             Picker("Other apps", selection: Binding(
                 get: { builder.profile?.options.otherApps ?? options.otherApps },
                 set: { value in builder.setOptions { $0.otherApps = value } })) {

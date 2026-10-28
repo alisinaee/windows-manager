@@ -109,6 +109,8 @@ public struct LaunchResult: Equatable, Codable, Sendable {
     public var reopenCount: Int
     /// The last-resort reopen activated the app (it may have taken the focus).
     public var activatedToReopen: Bool
+    /// Windows created by pressing the app's File > New item because the app opened fewer than wanted.
+    public var createdWindows: Int = 0
     public var timings: Timings
 
     public init(app: AppRef, status: Status, pid: pid_t? = nil, windowCount: Int = 0, systemWindowCount: Int? = nil,
@@ -469,6 +471,8 @@ public final class AppLauncher: @unchecked Sendable {
         var firstWindowAt: TimeInterval?
         var upAt: TimeInterval?   // AX answers and the app finished launching: the reopen clock starts here
         var lastReopenAt: TimeInterval?
+        var lastCreateAt: TimeInterval?
+        var createdCount = 0
         var ending = Ending.timedOut
 
         let reopenLimit = options.activates ? 1 : (options.activateToReopen ? 2 : 1)
@@ -509,6 +513,18 @@ public final class AppLauncher: @unchecked Sendable {
                         result.reopenCount += 1
                         if activate && !options.activates { result.activatedToReopen = true }
                     }
+                }
+            }
+
+            // The app shows some windows but not all (a document window cannot be reopened by the app itself,
+            // for example an unsaved one): ask it for a new window through its File > New menu item.
+            if wanted > 0, isRegularApp, let upAt, !snapshot.frames.isEmpty, snapshot.frames.count < wanted,
+               createdCount < wanted, now - (lastCreateAt ?? upAt) >= options.reopenAfter,
+               watch.quiet(for: min(options.reopenAfter, 1.5), now: now) {
+                lastCreateAt = now
+                if await offMain({ Self.pressNewWindowMenuItem(pid: pid) }) {
+                    createdCount += 1
+                    result.createdWindows += 1
                 }
             }
 
@@ -589,6 +605,55 @@ public final class AppLauncher: @unchecked Sendable {
             }
             DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { gate.resume(.timedOut) }
         }
+    }
+
+    /// Presses the app's "New" menu item (Command-N, usually File > New) through Accessibility. The app does not
+    /// have to be in front. Returns whether an enabled item was found and pressed.
+    static func pressNewWindowMenuItem(pid: pid_t) -> Bool {
+        let appElement = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appElement, 2.0)
+        func children(_ e: AXUIElement) -> [AXUIElement] {
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(e, kAXChildrenAttribute as CFString, &value) == .success else { return [] }
+            return (value as? [AXUIElement]) ?? []
+        }
+        func string(_ e: AXUIElement, _ a: String) -> String? {
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(e, a as CFString, &value) == .success else { return nil }
+            return value as? String
+        }
+        func isNewItem(_ e: AXUIElement) -> Bool {
+            var enabled: CFTypeRef?
+            if AXUIElementCopyAttributeValue(e, kAXEnabledAttribute as CFString, &enabled) == .success,
+               (enabled as? Bool) == false { return false }
+            var modifiers: CFTypeRef?
+            _ = AXUIElementCopyAttributeValue(e, kAXMenuItemCmdModifiersAttribute as CFString, &modifiers)
+            let flags = (modifiers as? Int) ?? 0   // 0 is Command alone
+            return string(e, kAXMenuItemCmdCharAttribute)?.lowercased() == "n" && flags == 0
+        }
+        func search(_ e: AXUIElement, depth: Int) -> AXUIElement? {
+            guard depth < 4 else { return nil }
+            for child in children(e) {
+                let role = string(child, kAXRoleAttribute)
+                if role == kAXMenuRole {
+                    if let hit = search(child, depth: depth) { return hit }
+                } else if role == kAXMenuItemRole {
+                    if isNewItem(child) { return child }
+                    if let hit = search(child, depth: depth + 1) { return hit }
+                }
+            }
+            return nil
+        }
+        var bar: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXMenuBarAttribute as CFString, &bar) == .success,
+              let barElement = bar, CFGetTypeID(barElement) == AXUIElementGetTypeID() else { return false }
+        let menuBar = unsafeDowncast(barElement, to: AXUIElement.self)
+        for top in children(menuBar) where string(top, kAXTitleAttribute) != "Apple" {
+            if let item = search(top, depth: 0) {
+                return AXUIElementPerformAction(item, kAXPressAction as CFString) == .success
+            }
+        }
+        return false
     }
 
     /// Opening a running app again sends it a reopen event, which makes apps without windows create one.

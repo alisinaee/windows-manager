@@ -186,9 +186,11 @@ extension DebugTestRunner {
             if checks.allSatisfy(\.passed) { break }
             try? await Task.sleep(nanoseconds: 500_000_000)
         } while Date() < deadline
-        if !checks.allSatisfy(\.passed) {
+        do {
+            let smOn = await stageManagerOn()
+            sink.send(.log("verify: stageManagerOn=\(smOn)"))
             for w in await liveWindows() where w.bundleID.map(Self.fixtureBundles.contains) ?? false {
-                sink.send(.log("live: \(w.bundleID ?? "?") id \(w.windowID) \"\(w.title ?? "")\" \(DebugVerify.describe(w.frame)) d\(w.desktop.map(String.init) ?? "?") min=\(w.isMinimized) hidden=\(w.isAppHidden)"))
+                sink.send(.log("live: \(w.bundleID ?? "?") id \(w.windowID) \"\(w.title ?? "")\" \(DebugVerify.describe(w.frame)) d\(w.desktop.map(String.init) ?? "?") min=\(w.isMinimized) hidden=\(w.isAppHidden) strip=\(w.isInStageStrip)"))
             }
         }
         for c in checks { sink.send(.check(c)) }

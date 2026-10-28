@@ -5,7 +5,7 @@ func registerCaptureCommands(_ r: Registry) {
     r.register(Command(["capture"], summary: "Capture the current workspace into a new profile",
                        options: [CLIOption("name", short: "n", "Profile name", takesValue: true, valueName: "name"),
                                  CLIOption("select", short: "s",
-                                           "Keep only matching windows: app:<name|bundle id>, desktop:<N>, fullscreen, minimized (repeatable)",
+                                           "Keep only matching windows: app:<name|bundle id>, desktop:<N>, monitor:<uuid|name|index>, fullscreen, minimized (repeatable)",
                                            takesValue: true, valueName: "selector")],
                        mutates: true, touchesWindows: true) { args, _ in
         guard let name = args.value("name")?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
@@ -19,10 +19,11 @@ func registerCaptureCommands(_ r: Registry) {
         let captured = profile.windows.count
         let selectors = args.values("select")
         if !selectors.isEmpty {
+            try CLICaptureFilter.validateMonitors(in: profile, selectors: selectors)
             let ids = CLICaptureFilter.windowIDs(in: profile, selectors: selectors)
             if ids.isEmpty {
                 throw CLIFailure.usage("--select matched no captured window (\(captured) captured)",
-                                       hint: "Use app:<name>, desktop:<N>, fullscreen or minimized")
+                                       hint: "Use app:<name>, desktop:<N>, monitor:<uuid|name|index>, fullscreen or minimized")
             }
             var selection = CaptureSelection(tree: CaptureSelectionTree(profile: profile))
             selection.selectNone()

@@ -158,11 +158,16 @@ public enum CLIRunOutcome {
 // MARK: - Capture
 
 public enum CLICaptureFilter {
+    static let monitorPrefix = "monitor:"
+
     /// Window ids of `profile` matched by any selector. Selectors: `app:<name or bundle id>`, a bare app name or
-    /// bundle id, `desktop:<N>` (1-based Desktop on any monitor), `fullscreen`, `minimized`, `all`.
+    /// bundle id, `desktop:<N>` (1-based Desktop on any monitor), `monitor:<uuid|name|index>` (every window on that
+    /// monitor), `fullscreen`, `minimized`, `all`. A `monitor:` selector that names no single monitor picks nothing;
+    /// `validateMonitors` rejects it first.
     public static func windowIDs(in profile: Profile, selectors: [String]) -> Set<UUID> {
         var picked = Set<UUID>()
         let index = ProfileSpaceIndex(profile: profile)
+        let tree = CaptureSelectionTree(profile: profile)
         for raw in selectors {
             let sel = raw.trimmingCharacters(in: .whitespaces)
             let lower = sel.lowercased()
@@ -173,12 +178,54 @@ public enum CLICaptureFilter {
                 for space in index.spaces where space.desktopNumber == n { picked.formUnion(space.windowIDs) }
                 continue
             }
+            if lower.hasPrefix(monitorPrefix) {
+                let found = monitors(matching: String(sel.dropFirst(monitorPrefix.count)), in: tree.monitors)
+                if found.count == 1 {
+                    var selection = CaptureSelection(tree: tree)
+                    selection.selectNone()
+                    selection.toggle(monitor: found[0])
+                    picked.formUnion(selection.windowIDs)
+                }
+                continue
+            }
             let name = lower.hasPrefix("app:") ? String(lower.dropFirst(4)) : lower
             picked.formUnion(profile.windows.filter {
                 $0.app.name.lowercased() == name || $0.app.bundleID?.lowercased() == name
             }.map(\.id))
         }
         return picked
+    }
+
+    /// Throws a usage error (exit 2) when a `monitor:` selector names no monitor or more than one. The hint lists the
+    /// monitors of the capture, so the caller can retry with a uuid, a name part or an index.
+    public static func validateMonitors(in profile: Profile, selectors: [String]) throws {
+        let scanned = CaptureSelectionTree(profile: profile).monitors
+        for raw in selectors {
+            let sel = raw.trimmingCharacters(in: .whitespaces)
+            guard sel.lowercased().hasPrefix(monitorPrefix) else { continue }
+            let value = String(sel.dropFirst(monitorPrefix.count))
+            let found = monitors(matching: value, in: scanned)
+            if found.count == 1 { continue }
+            let listed = scanned.enumerated().map { "\($0.offset + 1) \(monitorLabel($0.element))" }
+            let available = listed.isEmpty ? "this capture has no monitors" : "available monitors: " + listed.joined(separator: "; ")
+            throw CLIFailure.usage(
+                found.isEmpty ? "--select \(sel) matches no monitor" : "--select \(sel) matches \(found.count) monitors",
+                hint: "Use monitor:<uuid|name part|1-based index>; \(available)")
+        }
+    }
+
+    /// The monitor a `monitor:` value names: its uuid (exact, ignoring case), a 1-based index when the value is digits,
+    /// otherwise the monitors whose name contains the value (ignoring case).
+    static func monitors(matching raw: String, in monitors: [CaptureSelectionTree.Monitor]) -> [CaptureSelectionTree.Monitor] {
+        let value = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !value.isEmpty else { return [] }
+        if let byUUID = monitors.first(where: { $0.displayUUID.lowercased() == value }) { return [byUUID] }
+        if let n = Int(value) { return monitors.indices.contains(n - 1) ? [monitors[n - 1]] : [] }
+        return monitors.filter { $0.display?.name.lowercased().contains(value) == true }
+    }
+
+    private static func monitorLabel(_ monitor: CaptureSelectionTree.Monitor) -> String {
+        "\(monitor.display?.name ?? "Unknown display") (\(monitor.displayUUID))"
     }
 }
 

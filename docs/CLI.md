@@ -64,7 +64,7 @@ Envelope: success `{"ok":true,"data":...}`; failure `{"ok":false,"error":{"code"
 
 | Command | M | W | Arguments and options |
 |---|---|---|---|
-| `wm capture` | M | W | `--name <name>` `--select <selector>` (repeatable: `app:`, `desktop:N`, `fullscreen`, `minimized`) |
+| `wm capture` | M | W | `--name <name>` `--select <selector>` (repeatable: `app:`, `desktop:N`, `monitor:<uuid\|name\|index>`, `fullscreen`, `minimized`; selectors combine as a union) |
 | `wm plan` | | | `<profile>`: dry-run plan grouped by phase |
 | `wm run` | M | W | `<profile>` `--dry-run` `--yes` (streams NDJSON with `--json`) |
 | `wm verify` | | W | `<profile>`: compare live windows with the profile (exit 6 on mismatch) |

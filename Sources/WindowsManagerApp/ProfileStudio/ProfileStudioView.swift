@@ -544,11 +544,33 @@ struct StudioEditDetail: View {
 
     private var inspector: some View {
         VStack(spacing: 0) {
-            Picker("Inspector", selection: Binding(get: { local.tab }, set: { local.tab = $0 })) {
-                ForEach(StudioInspectorTab.allCases) { Text($0.rawValue).tag($0) }
+            // Equal-width segments that share the panel width and shrink their text instead of
+            // overflowing, so the bar never clips at the inspector's minimum width.
+            HStack(spacing: 2) {
+                ForEach(StudioInspectorTab.allCases) { tab in
+                    let selected = local.tab == tab
+                    Button { local.tab = tab } label: {
+                        Text(tab.rawValue)
+                            .font(.callout)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 4)
+                            .foregroundStyle(selected ? Color.white : Color.primary)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.accentColor : Color.clear))
+                            .contentShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                    .help(tab.rawValue)
+                }
             }
-            .pickerStyle(.segmented).labelsHidden()
+            .padding(3)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.15)))
             .help("Switch between the Inspector, Options and Launch order tabs")
+            .accessibilityElement(children: .contain)
             .accessibilityLabel("Inspector tab")
             .padding(8)
             Divider()

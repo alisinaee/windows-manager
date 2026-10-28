@@ -122,6 +122,8 @@ struct AXWindowDetails: Equatable {
     /// The window's real frame from Accessibility. The window server reports thumbnail-sized bounds for windows
     /// on inactive Spaces and under Stage Manager, so this is the size to trust for those.
     var frame: CGRect?
+    /// Non-probing resize limits (settable flags only).
+    var resizeLimits: WindowResizeLimits?
 }
 
 public enum WorkspaceScanner {
@@ -226,13 +228,15 @@ public enum WorkspaceScanner {
                 guard let windowID = element.windowID else { continue }
                 let title = element.title.flatMap { $0.isEmpty ? nil : $0 }
                 result[windowID] = AXWindowDetails(title: title, documentPath: AXWindows.documentPath(of: element),
-                                                   isMinimized: element.isMinimized, frame: element.frame)
+                                                   isMinimized: element.isMinimized, frame: element.frame,
+                                                   resizeLimits: WindowResizeDetector.read(element))
             }
             // Windows on another Space are not in AXWindows; the app still hands them out directly.
             for (windowID, element) in AXRemoteWindows.directWindows(pid: pid) where result[windowID] == nil {
                 let title = element.title.flatMap { $0.isEmpty ? nil : $0 }
                 result[windowID] = AXWindowDetails(title: title, documentPath: AXWindows.documentPath(of: element),
-                                                   isMinimized: element.isMinimized, frame: element.frame)
+                                                   isMinimized: element.isMinimized, frame: element.frame,
+                                                   resizeLimits: WindowResizeDetector.read(element))
             }
         }
         return result
@@ -259,7 +263,8 @@ public enum WorkspaceScanner {
                 ax[windowID] = AXWindowDetails(
                     title: existing?.title ?? element.title.flatMap { $0.isEmpty ? nil : $0 },
                     documentPath: existing?.documentPath ?? AXWindows.documentPath(of: element),
-                    isMinimized: existing?.isMinimized ?? element.isMinimized, frame: element.frame)
+                    isMinimized: existing?.isMinimized ?? element.isMinimized, frame: element.frame,
+                    resizeLimits: existing?.resizeLimits ?? WindowResizeDetector.read(element))
             }
         }
     }
@@ -529,7 +534,8 @@ public enum WorkspaceScanner {
                 isMinimized: details?.isMinimized ?? false, indexInApp: index,
                 isOnCurrentSpace: !currentSpaceIDs.isDisjoint(with: window.spaceIDs),
                 isOnScreen: window.isOnScreen, isAppHidden: hiddenPIDs.contains(window.pid),
-                isStripThumbnail: isStripThumbnail, serverBounds: window.bounds))
+                isStripThumbnail: isStripThumbnail, serverBounds: window.bounds,
+                resizeLimits: details?.resizeLimits))
         }
 
         return WorkspaceScan(displays: displays, spaces: scanned, windows: windows, activeSpaceID: activeSpaceID,

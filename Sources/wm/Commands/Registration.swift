@@ -12,6 +12,7 @@ func registerAllCommands(_ r: Registry) {
     registerDebugTestsCommands(r)
     registerSpacesCommands(r)
     registerStatusCommands(r)
+    registerWindowLimitsCommands(r)
     registerCaptureCommands(r)
     registerPlanCommands(r)
     registerRunCommands(r)

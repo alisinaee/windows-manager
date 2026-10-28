@@ -295,6 +295,12 @@ final class BuilderCanvasController: ObservableObject {
         }
         guard var preview = drag else { return }
         let minSize = CGSize(width: MapSnapping.minimumWidth, height: MapSnapping.minimumHeight)
+        // A fixed width / height cannot be dragged; min / max are applied when the frame is saved.
+        var translation = translation
+        if let limits = window(tile.windowID)?.resizeLimits {
+            if limits.fixedWidth { translation.width = 0 }
+            if limits.fixedHeight { translation.height = 0 }
+        }
         var rect = ResizeHandles.resize(preview.startRect, handle: handle, by: translation, minSize: minSize,
                                         within: monitor.contentRect)
         if !snapOptionDisabled {
@@ -763,7 +769,13 @@ struct BuilderCanvasOverlay: View {
 
     private func handles(for tile: ProfileMapLayout.WindowTile) -> some View {
         let rect = local.toScreen(controller.drag?.windowID == tile.windowID ? (controller.drag?.rect ?? tile.rect) : tile.rect)
-        return ForEach(ResizeHandle.allCases, id: \.self) { handle in
+        let limits = controller.window(tile.windowID)?.resizeLimits
+        return ForEach(ResizeHandle.allCases.filter { handle in
+            // Hide a handle when every axis it moves is fixed.
+            let widthFixed = limits?.fixedWidth == true, heightFixed = limits?.fixedHeight == true
+            let movesX = handle.movesLeft || handle.movesRight, movesY = handle.movesTop || handle.movesBottom
+            return !((movesX && widthFixed && (!movesY || heightFixed)) || (movesY && heightFixed && !movesX))
+        }, id: \.self) { handle in
             let c = ResizeHandles.center(of: handle, in: rect)
             RoundedRectangle(cornerRadius: 2)
                 .fill(Color(nsColor: .controlBackgroundColor))

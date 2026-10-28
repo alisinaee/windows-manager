@@ -173,12 +173,15 @@ public struct WindowSnapshot: Codable, Hashable, Sendable, Identifiable {
     public var zoneName: String?
     /// Stage Manager state at capture time; nil in older profiles, when Stage Manager was off, or when unknown.
     public var stage: SavedStage?
+    /// Resize restrictions seen at capture (settable flags) or by a probe; nil = unknown, treated as resizable.
+    public var resizeLimits: WindowResizeLimits?
 
     public init(id: UUID = UUID(), app: AppRef, title: String? = nil, titleMatch: TitleMatch = .any,
                 documentPath: String? = nil, indexInApp: Int = 0, displayUUID: String, frame: CGRect,
                 relativeFrame: CGRect, placement: SpacePlacement, isFullScreen: Bool = false,
                 isMinimized: Bool = false, zIndex: Int = 0, restore: Bool = true,
-                origin: WindowOrigin? = nil, zoneName: String? = nil, stage: SavedStage? = nil) {
+                origin: WindowOrigin? = nil, zoneName: String? = nil, stage: SavedStage? = nil,
+                resizeLimits: WindowResizeLimits? = nil) {
         self.id = id
         self.app = app
         self.title = title
@@ -196,11 +199,12 @@ public struct WindowSnapshot: Codable, Hashable, Sendable, Identifiable {
         self.origin = origin
         self.zoneName = zoneName
         self.stage = stage
+        self.resizeLimits = resizeLimits
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, app, title, titleMatch, documentPath, indexInApp, displayUUID, frame, relativeFrame
-        case placement, isFullScreen, isMinimized, zIndex, restore, origin, zoneName, stage
+        case placement, isFullScreen, isMinimized, zIndex, restore, origin, zoneName, stage, resizeLimits
     }
 
     public init(from decoder: Decoder) throws {
@@ -222,6 +226,7 @@ public struct WindowSnapshot: Codable, Hashable, Sendable, Identifiable {
         origin = try c.decodeIfPresent(WindowOrigin.self, forKey: .origin)
         zoneName = try c.decodeIfPresent(String.self, forKey: .zoneName)
         stage = try c.decodeIfPresent(SavedStage.self, forKey: .stage)
+        resizeLimits = try c.decodeIfPresent(WindowResizeLimits.self, forKey: .resizeLimits)
     }
 }
 

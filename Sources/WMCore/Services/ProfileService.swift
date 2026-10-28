@@ -234,6 +234,18 @@ public struct ProfileService {
         return try edit(ref) { try $0.setFrame(ofWindow: window, frame: frame) }
     }
 
+    /// Like `setWindowFrame`, and says whether the window's resize limits changed the frame (`applied` is what was saved).
+    public func setWindowFrameReport(_ ref: String, window: UUID, frame: CGRect) throws
+        -> (profile: Profile, clamped: Bool, applied: CGRect) {
+        let p = try show(ref)
+        guard let w = p.windows.first(where: { $0.id == window }) else {
+            return (try setWindowFrame(ref, window: window, frame: frame), false, frame)
+        }
+        let applied = ProfileDraftEditor.clamped(frame, for: w)
+        let updated = try setWindowFrame(ref, window: window, frame: frame)
+        return (updated, applied != frame, applied)
+    }
+
     /// Sets a window's frame as fractions (0...1) of its monitor's visible frame.
     public func setWindowRelativeFrame(_ ref: String, window: UUID, relativeFrame: CGRect) throws -> Profile {
         guard relativeFrame.width > 0, relativeFrame.height > 0 else {

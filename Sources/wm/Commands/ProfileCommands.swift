@@ -224,8 +224,16 @@ func registerProfileCommands(_ r: Registry) {
             return try profileResult(p, "Window frame set (relative)")
         }
         let rect = try ProfileArgs.parseRect(a.positionals[2], flag: "frame")
-        let p = try profiles().setWindowFrame(ref, window: id, frame: rect)
-        return try profileResult(p, "Window frame set")
+        let report = try profiles().setWindowFrameReport(ref, window: id, frame: rect)
+        var data = try JSONValue.from(report.profile)
+        if case .object(var o) = data {
+            o["clamped"] = .bool(report.clamped)
+            if report.clamped { o["appliedFrame"] = rectJSON(report.applied) }
+            data = .object(o)
+        }
+        return CLIResult(data: data, text: report.clamped
+            ? "Window frame set, clamped to the app's size limits (\(Int(report.applied.width))x\(Int(report.applied.height)))"
+            : "Window frame set")
     }
 
     // MARK: Layout: zones, grid, auto layout

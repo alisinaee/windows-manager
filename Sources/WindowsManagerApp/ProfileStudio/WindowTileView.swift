@@ -139,6 +139,16 @@ struct WindowTileView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(3)
             }
+            if let message = window.resizeLimits?.fixedMessage, size.width >= 40, size.height >= 30 {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: metrics.font(10), weight: .semibold))
+                    .padding(3)
+                    .background(.regularMaterial, in: Circle())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(4)
+                    .help(message)
+                    .accessibilityHidden(true)
+            }
             if tile.isFullScreen && size.width >= 90 {
                 Text(tile.isSplitHalf ? "Split View" : "Full screen")
                     .font(.system(size: metrics.font(11), weight: .medium))
@@ -190,6 +200,7 @@ struct WindowTileView: View {
         let f = window.frame
         parts.append("\(Int(f.width))x\(Int(f.height)) at \(Int(f.minX)), \(Int(f.minY))")
         if let status { parts.append(ProfileMapModel.statusText(status)) }
+        if let message = window.resizeLimits?.fixedMessage { parts.append(message) }
         return parts.joined(separator: " · ")
     }
 
@@ -203,6 +214,7 @@ struct WindowTileView: View {
             text += ", \(phrase)"
         }
         if tile.isOnAllDesktops { text += ", on all Desktops" }
+        if let message = window.resizeLimits?.fixedMessage { text += ", " + message.lowercased() }
         if !tile.isRestored { text += ", not restored" }
         else if let status { text += ", " + ProfileMapModel.statusText(status) }
         return text

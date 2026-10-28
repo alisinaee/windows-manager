@@ -353,18 +353,27 @@ public struct ProfileDraftEditor {
         try edit { p in
             let i = try Self.windowIndex(id, in: p)
             let display = try Self.requireDisplay(p.windows[i].displayUUID, in: p)
+            let frame = Self.clamped(frame, for: p.windows[i])
             p.windows[i].frame = frame
             p.windows[i].relativeFrame = Self.relative(forFrame: frame, in: display)
             p.windows[i].zoneName = zoneName
         }
     }
 
+    /// `proposed` held to what the window accepts (fixed width / height, min / max); unchanged without known limits.
+    public static func clamped(_ proposed: CGRect, for window: WindowSnapshot) -> CGRect {
+        guard let limits = window.resizeLimits, limits.hasRestrictions else { return proposed }
+        return limits.clamp(proposed, current: window.frame)
+    }
+
     public mutating func setRelativeFrame(ofWindow id: UUID, relativeFrame: CGRect, zoneName: String? = nil) throws {
         try edit { p in
             let i = try Self.windowIndex(id, in: p)
             let display = try Self.requireDisplay(p.windows[i].displayUUID, in: p)
-            p.windows[i].relativeFrame = relativeFrame
-            p.windows[i].frame = Self.frame(forRelative: relativeFrame, in: display)
+            let frame = Self.clamped(Self.frame(forRelative: relativeFrame, in: display), for: p.windows[i])
+            p.windows[i].frame = frame
+            p.windows[i].relativeFrame = frame == Self.frame(forRelative: relativeFrame, in: display)
+                ? relativeFrame : Self.relative(forFrame: frame, in: display)
             p.windows[i].zoneName = zoneName
         }
     }

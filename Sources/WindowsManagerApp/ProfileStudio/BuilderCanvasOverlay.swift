@@ -21,6 +21,8 @@ struct BuilderDragPreview: Equatable {
     var thumbnailSpaceID: String?
     /// Magnet guide lines the rect is stuck to, canvas points.
     var guides: [MagnetSnap.Guide] = []
+    /// Neighbour tiles resized along with the dragged one (Link, G5), canvas points.
+    var linked: [UUID: CGRect] = [:]
 }
 
 @MainActor
@@ -31,6 +33,12 @@ final class BuilderCanvasController: ObservableObject {
     @Published var snapEnabled = true
     /// Magnet mode (G3): edges stick to monitor and tile edges while dragging, with guide lines.
     @Published var magnetEnabled = false
+    /// Linked resize (G5): resizing a shared edge also resizes the touching neighbour.
+    @Published var linkEnabled = false
+    /// Allow overlap (G5): off (default) keeps tiles apart and inside the monitor while dragging and resizing.
+    @Published var allowOverlap = false
+    /// Gap between tiles for Auto layout (G4), canvas points.
+    @Published var autoLayoutGap: CGFloat = AutoLayout.defaultGap
     /// Per-monitor grid settings (G1, G2), kept per Studio in UserDefaults.
     @Published private(set) var grids: [String: MonitorGrid] = MonitorGrid.loadAll()
     @Published private(set) var layouts: [WMCore.Layout] = []
@@ -217,6 +225,11 @@ final class BuilderCanvasController: ObservableObject {
                 preview.guides = m.guides
             }
         }
+        if !allowOverlap {
+            snapped = OverlapLock.constrainMove(snapped, monitor: target.contentRect,
+                                                others: otherEdges(on: target.id, excluding: tile.windowID),
+                                                fallback: preview.rect.size == snapped.size && target.id == preview.displayUUID ? preview.rect : tile.rect)
+        }
         preview.rect = snapped
         preview.zoneName = result.zoneName
         preview.displayUUID = target.id
@@ -258,6 +271,32 @@ final class BuilderCanvasController: ObservableObject {
                 preview.guides = m.guides
             }
         }
+        preview.linked = [:]
+        if !allowOverlap || linkEnabled {
+            let neighbours = map.layout.windows
+                .filter { $0.displayUUID == monitor.id && $0.windowID != tile.windowID && !$0.isFullScreen }
+                .map { LinkedResize.Neighbour(id: $0.windowID, rect: $0.rect) }
+            var linkedIDs: Set<UUID> = []
+            if linkEnabled {
+                let sides: [(Bool, LinkedResize.Side)] = [(handle.movesLeft, .left), (handle.movesRight, .right),
+                                                          (handle.movesTop, .top), (handle.movesBottom, .bottom)]
+                for (moves, side) in sides where moves {
+                    linkedIDs.formUnion(LinkedResize.sharedEdge(of: preview.startRect, side: side, among: neighbours).map(\.id))
+                }
+            }
+            if !allowOverlap {
+                rect = OverlapLock.constrainResize(rect, start: preview.startRect, handle: handle, monitor: monitor.contentRect,
+                                                   others: neighbours.filter { !linkedIDs.contains($0.id) }.map(\.rect),
+                                                   minSize: minSize)
+            }
+            if linkEnabled {
+                let linked = LinkedResize.apply(start: preview.startRect, proposed: rect, handle: handle,
+                                                neighbours: neighbours.filter { linkedIDs.contains($0.id) },
+                                                minSize: minSize)
+                rect = linked.rect
+                preview.linked = linked.neighbours
+            }
+        }
         preview.rect = rect
         preview.zoneName = nil
         drag = preview
@@ -272,7 +311,16 @@ final class BuilderCanvasController: ObservableObject {
         switch preview.kind {
         case .resize:
             guard let monitor = monitor(preview.displayUUID) else { return }
-            builder.resizeWindow(id, to: MapSnapping.relativeFrame(of: preview.rect, in: monitor.contentRect), zoneName: nil)
+            if preview.linked.isEmpty {
+                builder.resizeWindow(id, to: MapSnapping.relativeFrame(of: preview.rect, in: monitor.contentRect), zoneName: nil)
+            } else {
+                builder.edit(kind: "linkedResize") { editor in
+                    try editor.setRelativeFrame(ofWindow: id, relativeFrame: MapSnapping.relativeFrame(of: preview.rect, in: monitor.contentRect))
+                    for (other, rect) in preview.linked {
+                        try editor.setRelativeFrame(ofWindow: other, relativeFrame: MapSnapping.relativeFrame(of: rect, in: monitor.contentRect))
+                    }
+                }
+            }
         case .move:
             if let spaceID = preview.thumbnailSpaceID {
                 guard let space = map.index.space(id: spaceID) else { return }
@@ -300,6 +348,26 @@ final class BuilderCanvasController: ObservableObject {
         guard drag != nil else { return }
         dragCancelled = true
         drag = nil
+    }
+
+    // MARK: Auto layout (G4)
+
+    /// Candidate layouts for the tiles of the shown Desktop on a monitor.
+    func autoLayoutCandidates(on monitor: ProfileMapLayout.Monitor) -> [AutoLayout.Candidate] {
+        let shown = map.shownSpace(onDisplay: monitor.id)?.id
+        let items = map.layout.windows
+            .filter { $0.displayUUID == monitor.id && !$0.isFullScreen && (shown == nil || $0.spaceID == shown) }
+            .map { AutoLayout.Item(id: $0.windowID, bundleID: window($0.windowID)?.app.bundleID) }
+        return AutoLayout.candidates(items: items, visible: monitor.contentRect, gap: autoLayoutGap)
+    }
+
+    /// Applies a candidate as one undoable edit.
+    func applyAutoLayout(_ candidate: AutoLayout.Candidate, on monitor: ProfileMapLayout.Monitor) {
+        builder.edit(kind: nil) { editor in
+            for (id, rect) in candidate.frames {
+                try editor.setRelativeFrame(ofWindow: id, relativeFrame: MapSnapping.relativeFrame(of: rect, in: monitor.contentRect))
+            }
+        }
     }
 
     // MARK: Drops
@@ -518,7 +586,10 @@ struct BuilderCanvasOverlay: View {
             ForEach(layout.monitors) { monitor in gridOverlay(monitor) }
             ForEach(layout.windows.sorted { $0.zIndex > $1.zIndex }) { tile in tileHitArea(tile) }
             if let tile = selectedTile { handles(for: tile) }
-            if let preview = controller.drag { ghost(preview); guideLines(preview) }
+            if let preview = controller.drag {
+                ghost(preview); guideLines(preview)
+                ForEach(preview.linked.sorted { $0.key.uuidString < $1.key.uuidString }, id: \.key) { _, rect in linkedGhost(rect) }
+            }
             ForEach(layout.thumbnails) { thumb in thumbnailHitArea(thumb) }
             ForEach(layout.monitors) { monitor in monitorControls(monitor) }
         }
@@ -677,6 +748,15 @@ struct BuilderCanvasOverlay: View {
         }
     }
 
+    private func linkedGhost(_ rect: CGRect) -> some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .strokeBorder(Color.accentColor.opacity(0.7), style: StrokeStyle(lineWidth: 2, dash: [3, 3]))
+            .frame(width: local.toScreen(rect).width, height: local.toScreen(rect).height)
+            .position(x: local.toScreen(rect).midX, y: local.toScreen(rect).midY)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
     @ViewBuilder private func ghost(_ preview: BuilderDragPreview) -> some View {
         if let thumbID = preview.thumbnailSpaceID, let thumb = map.layout.thumbnails.first(where: { $0.id == thumbID }) {
             RoundedRectangle(cornerRadius: 5)
@@ -761,6 +841,19 @@ struct BuilderCanvasOverlay: View {
                 .monitorBarSlot()
                 .help("Magnet: while dragging or resizing, stick to other windows' edges and the monitor edges (Option turns off)")
                 .accessibilityLabel("Magnet to window and monitor edges")
+            Toggle(isOn: $controller.linkEnabled) { Label("Link", systemImage: "link") }
+                .toggleStyle(.button).labelStyle(.iconOnly)
+                .monitorBarSlot()
+                .help("Link: resizing an edge shared with a neighbour also resizes the neighbour, with no gap or overlap")
+                .accessibilityLabel("Linked resize")
+            Toggle(isOn: $controller.allowOverlap) {
+                Label("Allow overlap", systemImage: controller.allowOverlap ? "lock.open" : "lock")
+            }
+            .toggleStyle(.button).labelStyle(.iconOnly)
+            .monitorBarSlot()
+            .help(controller.allowOverlap ? "Overlap allowed: tiles can be placed freely" : "Locked: tiles cannot overlap or leave the monitor while dragging and resizing")
+            .accessibilityLabel("Allow overlap")
+            AutoLayoutControl(controller: controller, monitor: monitor)
             Button { controller.builder.addDesktop(onDisplay: monitor.id) } label: {
                 Label("Add Desktop", systemImage: "rectangle.stack.badge.plus")
             }
@@ -803,6 +896,68 @@ struct BuilderCanvasOverlay: View {
         .monitorBarSlot()
         .help("Layout zones to snap to: \(active?.name ?? "none")")
         .accessibilityLabel("Layout zones")
+    }
+}
+
+/// "Auto layout" button with a popover that previews 1-3 candidate layouts (G4).
+private struct AutoLayoutControl: View {
+    @ObservedObject var controller: BuilderCanvasController
+    let monitor: ProfileMapLayout.Monitor
+    @State private var showing = false
+
+    var body: some View {
+        Button { showing.toggle() } label: { Label("Auto layout", systemImage: "wand.and.stars") }
+            .buttonStyle(.borderless).labelStyle(.iconOnly)
+            .monitorBarSlot()
+            .help("Auto layout: arrange this Desktop's windows on \(monitor.name) by how many there are")
+            .accessibilityLabel("Auto layout")
+            .popover(isPresented: $showing, arrowEdge: .bottom) { popover }
+    }
+
+    private var popover: some View {
+        let candidates = controller.autoLayoutCandidates(on: monitor)
+        let content = monitor.contentRect
+        let aspect = content.height > 0 ? content.width / content.height : 1.6
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Auto layout").font(.headline)
+            if candidates.isEmpty {
+                Text("No windows on this Desktop").foregroundStyle(.secondary)
+            }
+            ForEach(Array(candidates.enumerated()), id: \.offset) { _, candidate in
+                Button {
+                    controller.applyAutoLayout(candidate, on: monitor)
+                    showing = false
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        preview(candidate, content: content).aspectRatio(aspect, contentMode: .fit).frame(width: 150)
+                        Text(candidate.name).font(.caption)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("Apply \(candidate.name)")
+                .accessibilityLabel("Apply \(candidate.name)")
+            }
+            Stepper("Gap \(Int(controller.autoLayoutGap)) pt", value: $controller.autoLayoutGap, in: 0...40, step: 4)
+                .font(.caption)
+        }
+        .padding(12)
+    }
+
+    private func preview(_ candidate: AutoLayout.Candidate, content: CGRect) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 3).fill(Color.secondary.opacity(0.12))
+                ForEach(candidate.frames.sorted { $0.key.uuidString < $1.key.uuidString }, id: \.key) { _, r in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.accentColor.opacity(0.35))
+                        .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Color.accentColor, lineWidth: 1))
+                        .frame(width: r.width / content.width * geo.size.width, height: r.height / content.height * geo.size.height)
+                        .offset(x: (r.minX - content.minX) / content.width * geo.size.width,
+                                y: (r.minY - content.minY) / content.height * geo.size.height)
+                }
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

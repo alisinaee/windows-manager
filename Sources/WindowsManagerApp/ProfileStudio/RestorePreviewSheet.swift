@@ -222,7 +222,7 @@ struct RestorePreviewSheet: View {
             Divider()
             footer
         }
-        .frame(minWidth: 560, idealWidth: 640, minHeight: 440, idealHeight: 560)
+        .frame(width: 640, height: 520)
         .onAppear { model.load() }
         .onDisappear { model.cancel() }
         .accessibilityElement(children: .contain)
@@ -237,6 +237,7 @@ struct RestorePreviewSheet: View {
             }
             Spacer()
             Button { model.load() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                .buttonStyle(.bordered)
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(model.phase == .loading)
                 .help("Scan your Mac again (Cmd+R)")
@@ -343,16 +344,41 @@ struct RestorePreviewSheet: View {
         }
     }
 
+    /// True when the plan opens this app, so the window is not really missing.
+    private func isLaunching(_ item: UnmatchedSnapshot, _ plan: RestorePlan) -> Bool {
+        plan.steps.contains { step in
+            if case .launch(let app, _) = step { return RestoreStepText.sameApp(app, item.app) }
+            return false
+        }
+    }
+
     private func notFound(_ plan: RestorePlan) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label("Not found (\(plan.unmatched.count))", systemImage: "exclamationmark.triangle")
-                .font(.body.bold())
-            ForEach(plan.unmatched, id: \.snapshotID) { item in
-                Text("\(item.label): \(item.reason)").font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        let launching = plan.unmatched.filter { isLaunching($0, plan) }
+        let missing = plan.unmatched.filter { !isLaunching($0, plan) }
+        return VStack(alignment: .leading, spacing: 14) {
+            if !launching.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Will launch (\(launching.count))", systemImage: "arrow.up.forward.app")
+                        .font(.body.bold())
+                    ForEach(launching, id: \.snapshotID) { item in
+                        Text(item.label).font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+            if !missing.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Not found (\(missing.count))", systemImage: "exclamationmark.triangle")
+                        .font(.body.bold())
+                    ForEach(missing, id: \.snapshotID) { item in
+                        Text("\(item.label): \(item.reason)").font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityElement(children: .combine)
             }
         }
-        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder private var footer: some View {
@@ -366,6 +392,7 @@ struct RestorePreviewSheet: View {
                 .help("Close the preview (Esc)")
             if let app = AppState.current {
                 RunProfileButton(app: app, profileID: profileID, profileName: profileName, title: "Run now")
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
             }
         }

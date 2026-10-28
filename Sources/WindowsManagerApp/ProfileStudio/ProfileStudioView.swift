@@ -19,15 +19,27 @@ struct ProfileStudioView: View {
                 ProgressView("Loading profiles…").frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let message):
                 messageView(icon: "exclamationmark.triangle", text: message, action: ("Try Again", { model.reload() }))
-            case .empty:
+            case .empty where model.mode == .view:
                 emptyState(icon: "rectangle.3.group", title: "No profiles yet",
-                           subtitle: "Capture the windows you have open now to make your first profile.") {
-                    Button("Capture…") { model.beginCapture() }
-                        .buttonStyle(.borderedProminent).controlSize(.large)
-                        .help("Capture the windows you have open now as a new profile")
-                        .accessibilityLabel("Capture profile from open windows")
+                           subtitle: "Capture the windows you have open now, or start a new profile and arrange it yourself.") {
+                    HStack(spacing: 10) {
+                        Button { model.beginCapture() } label: { Label("Capture current desktop", systemImage: "camera.viewfinder") }
+                            .buttonStyle(.borderedProminent).controlSize(.large)
+                            .help("Capture the windows you have open now as a new profile")
+                            .accessibilityLabel("Capture current desktop as a profile")
+                        Button { model.beginNewProfile() } label: { Label("New profile", systemImage: "plus") }
+                            .buttonStyle(.bordered).controlSize(.large)
+                            .help("Start a new profile from the current workspace, as an editable draft")
+                            .accessibilityLabel("New profile")
+                    }
+                    if AppState.current?.isAccessibilityTrusted == false {
+                        Label("Capture needs Accessibility permission: allow it in System Settings > Privacy & Security > Accessibility.",
+                              systemImage: "lock")
+                            .font(.callout).foregroundStyle(.orange)
+                            .multilineTextAlignment(.center).frame(maxWidth: 360)
+                    }
                 }
-            case .loaded:
+            case .loaded, .empty:
                 GeometryReader { geo in
                     HStack(spacing: 0) {
                         if model.isSidebarShown {
@@ -222,7 +234,7 @@ struct ProfileStudioView: View {
             .toggleStyle(.button)
             .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
             .keyboardShortcut("l", modifiers: .command)
-            .help("Show what is missing now: compare this profile with your Mac (Cmd+L). Only scans: nothing is moved.")
+            .help("Compare: check this profile against the windows on your Mac now and mark what is missing or moved (Cmd+L). Only scans: nothing is moved.")
             .accessibilityLabel("Compare with your Mac")
             if model.isComparing {
                 ProgressView().controlSize(.small)
@@ -268,6 +280,7 @@ struct StudioRunControl: View {
             } label: { Label("Run", systemImage: "play.fill") }
                 .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
                 .keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.borderedProminent)
                 .disabled(!app.canAct)
                 .help((studioRunBlockReason(app) ?? "Restore \(profileName) now") + " (Cmd+Return)")
                 .accessibilityLabel("Run profile \(profileName)")
@@ -350,7 +363,12 @@ func studioBottomBar<Legend: View>(@ViewBuilder _ legend: () -> Legend) -> some 
     HStack(spacing: 12) {
         legend()
         Spacer(minLength: 8)
-        DebugLogToggle().padding(.trailing, 12)
+        // The debug switch lives in a small debug menu, out of the everyday footer.
+        Menu { DebugLogToggle() } label: { Image(systemName: "ant") }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .help("Debug options")
+            .accessibilityLabel("Debug options")
+            .padding(.trailing, 12)
     }
 }
 
@@ -456,6 +474,12 @@ struct StudioEditDetail: View {
                 .frame(minWidth: 120, maxWidth: truncating ? .infinity : 260, alignment: .leading)
                 .help(builder.isNewProfile ? "New profile (not saved yet). Edit the name here." : "Editing a saved profile. Edit the name here.")
                 .accessibilityLabel("Profile name, \(title)")
+            if builder.isDirty {
+                Label("Unsaved", systemImage: "circle.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.orange).labelStyle(.titleAndIcon)
+                    .help("You have changes that are not saved yet. Save keeps them; Cancel asks what to do first.")
+                    .accessibilityLabel("Unsaved changes")
+            }
             Spacer(minLength: 8)
             StudioModePicker(model: model)
             Divider().frame(height: 18)
@@ -476,7 +500,7 @@ struct StudioEditDetail: View {
             }
             .toggleStyle(.button)
             .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
-            .help("Keep the draft in sync with your real windows (updates every 2 s)")
+            .help("Live: the draft follows your real windows and updates every 2 s. Off: the draft changes only when you edit it.")
             .accessibilityLabel("Live sync")
             if !iconOnly {
                 Text(statusText)
@@ -499,7 +523,7 @@ struct StudioEditDetail: View {
                 }
             Button { model.requestLeaveEdit() } label: { Label("Cancel", systemImage: "xmark") }
                 .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
-                .help("Leave Edit mode, asking first if there are unsaved changes")
+                .help("Leave Edit mode. With unsaved changes you are asked to save, discard them, or keep editing.")
                 .accessibilityLabel("Cancel editing")
             Button { model.saveThen(nil) } label: { Label("Save", systemImage: "square.and.arrow.down") }
                 .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))

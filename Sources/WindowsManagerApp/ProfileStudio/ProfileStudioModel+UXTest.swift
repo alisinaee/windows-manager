@@ -27,8 +27,12 @@ extension ProfileStudioModel {
 
     /// Selects a profile by name (case-insensitive), switches mode and opens a sheet. Returns false when the profile is unknown.
     @MainActor @discardableResult
-    func uxApply(profile name: String?, mode wanted: UXOpenRoute.Mode?, sheet: UXOpenRoute.Sheet?) async -> Bool {
+    func uxApply(profile name: String?, mode wanted: UXOpenRoute.Mode?, sheet: UXOpenRoute.Sheet?,
+                 selectTile: Int? = nil, saveName: String? = nil) async -> Bool {
         await uxWaitLoaded()
+        // A sheet left by the previous route must not show in this state.
+        isPreviewPresented = false; isSaveSheetPresented = false; isReviewCapturePresented = false; isCopyPickerPresented = false
+        try? await Task.sleep(for: .milliseconds(400))
         var found = true
         if let name {
             if let row = rows.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
@@ -53,8 +57,21 @@ extension ProfileStudioModel {
             for _ in 0..<200 where capture.stage != .ready { try? await Task.sleep(for: .milliseconds(50)) }
             isReviewCapturePresented = mode == .edit && capture.stage == .ready
         }
+        if let n = selectTile, mode == .edit, let b = builder, let p = b.profile {
+            let onScreen = p.windows.filter { $0.displayUUID == b.selectedDisplayUUID }
+            let pool = onScreen.isEmpty ? p.windows : onScreen
+            if pool.indices.contains(n) {
+                b.selectedWindowID = pool[n].id
+            } else if let last = pool.last {
+                b.selectedWindowID = last.id
+            }
+        }
         switch sheet {
-        case .save: if mode == .edit { isSaveSheetPresented = true }
+        case .save:
+            if mode == .edit {
+                if let saveName { builder?.setName(saveName) }
+                isSaveSheetPresented = true
+            }
         case .capture: break
         case .restore: isPreviewPresented = true
         case nil: break

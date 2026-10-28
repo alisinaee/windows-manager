@@ -9,6 +9,13 @@ final class UXOpenRouteTests: XCTestCase {
                                       inspectorTab: .launch, appearance: .dark, size: CGSize(width: 900, height: 600)))
     }
 
+    func testNewKeys() throws {
+        let r = try UXOpenRoute.parse(url: URL(string: "windowsmanager://open?section=onboarding&permission=after&selectTile=2&saveName=Work%20Setup")!)
+        XCTAssertEqual(r, UXOpenRoute(section: .onboarding, permission: .after, selectTile: 2, saveName: "Work Setup"))
+        XCTAssertThrowsError(try UXOpenRoute.parse(url: URL(string: "windowsmanager://open?section=studio&selectTile=-1")!))
+        XCTAssertThrowsError(try UXOpenRoute.parse(url: URL(string: "windowsmanager://open?section=onboarding&permission=x")!))
+    }
+
     func testSectionOnly() throws {
         let r = try UXOpenRoute.parse(url: URL(string: "windowsmanager://open?section=popover")!)
         XCTAssertEqual(r, UXOpenRoute(section: .popover))

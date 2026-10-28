@@ -27,11 +27,21 @@ public struct UXOpenRoute: Equatable, Sendable {
     public var inspectorTab: InspectorTab?
     public var appearance: Appearance?
     public var size: CGSize?
+    /// Onboarding only: shows the Accessibility step as granted or not (display only, the real permission is untouched).
+    public var permission: Permission?
+    /// Zero-based index of the tile to select in Edit mode.
+    public var selectTile: Int?
+    /// Pre-fills the name in the Save sheet (an existing name shows the conflict case).
+    public var saveName: String?
+
+    public enum Permission: String, Sendable { case before, after }
 
     public init(section: Section, profile: String? = nil, mode: Mode? = nil, sheet: Sheet? = nil,
-                inspectorTab: InspectorTab? = nil, appearance: Appearance? = nil, size: CGSize? = nil) {
+                inspectorTab: InspectorTab? = nil, appearance: Appearance? = nil, size: CGSize? = nil,
+                permission: Permission? = nil, selectTile: Int? = nil, saveName: String? = nil) {
         self.section = section; self.profile = profile; self.mode = mode; self.sheet = sheet
         self.inspectorTab = inspectorTab; self.appearance = appearance; self.size = size
+        self.permission = permission; self.selectTile = selectTile; self.saveName = saveName
     }
 
     /// True only when `WM_UX_TEST=1`.
@@ -71,8 +81,14 @@ public struct UXOpenRoute: Equatable, Sendable {
             }
             size = CGSize(width: w, height: h)
         }
+        var tile: Int?
+        if let t = raw("selectTile") {
+            guard let n = Int(t), n >= 0 else { throw ParseError.invalid(key: "selectTile", value: t) }
+            tile = n
+        }
         return UXOpenRoute(section: section, profile: raw("profile"), mode: try pick("mode", Mode.self),
                            sheet: try pick("sheet", Sheet.self), inspectorTab: try pick("inspectorTab", InspectorTab.self),
-                           appearance: try pick("appearance", Appearance.self), size: size)
+                           appearance: try pick("appearance", Appearance.self), size: size,
+                           permission: try pick("permission", Permission.self), selectTile: tile, saveName: raw("saveName"))
     }
 }

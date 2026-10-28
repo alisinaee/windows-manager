@@ -28,11 +28,21 @@ enum OnboardingStep: Int, CaseIterable {
 @MainActor
 final class OnboardingModel: ObservableObject {
     @Published var step: OnboardingStep = .accessibility
-    @Published private(set) var report: SystemReport = SystemChecks.report()
+    @Published private(set) var report: SystemReport = OnboardingModel.currentReport()
+
+    /// UX capture only (WM_UX_TEST=1, `permission=before|after`): shows the Accessibility step as granted or not.
+    /// Display only; the real permission is never touched.
+    @MainActor static var uxAccessibilityOverride: Bool?
+
+    private static func currentReport() -> SystemReport {
+        var r = SystemChecks.report()
+        if let o = uxAccessibilityOverride { r.accessibilityTrusted = o }
+        return r
+    }
 
     /// Re-reads Accessibility trust and the Spaces settings. Cheap, read only, never shows a dialog.
     func refresh() {
-        let latest = SystemChecks.report()
+        let latest = Self.currentReport()
         if latest != report { report = latest }
     }
 

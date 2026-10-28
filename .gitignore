@@ -31,3 +31,6 @@ lab-results/
 
 # Local dev signing (scripts/make-dev-cert.sh)
 .signing/
+
+# UX capture screenshots (scripts/ux-capture.sh)
+ux/shots/

@@ -380,7 +380,7 @@ enum StudioInspectorTab: String, CaseIterable, Identifiable {
 
 @MainActor
 final class StudioEditLocalState: ObservableObject {
-    @Published var tab: StudioInspectorTab = .inspector
+    @Published var tab: StudioInspectorTab = ProfileStudioModel.uxInspectorTab ?? .inspector
 }
 
 /// Edit mode: header and edit bar, the builder map and the inspector tabs.

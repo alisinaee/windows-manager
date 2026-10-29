@@ -161,7 +161,23 @@ final class RestorePreviewModel: ObservableObject {
     @Published var expansion: [RestorePhase: Bool] = [:]
     private var task: Task<Void, Never>?
 
-    init(profileID: UUID) { self.profileID = profileID }
+    let scope: RestoreScope
+    @Published private(set) var isRunning = false
+    @Published private(set) var runResult: String?
+
+    init(profileID: UUID, scope: RestoreScope = .whole) { self.profileID = profileID; self.scope = scope }
+
+    /// Runs only the scoped part (the whole profile goes through `AppState.run`).
+    func runScoped() {
+        guard let profile, !isRunning else { return }
+        isRunning = true; runResult = nil
+        let scope = scope
+        Task { [weak self] in
+            let report = await RestoreEngine().run(profile, scope: scope)
+            self?.runResult = report.summary
+            self?.isRunning = false
+        }
+    }
 
     func isExpanded(_ phase: RestorePhase, count: Int) -> Bool { expansion[phase] ?? (count <= 6) }
 
@@ -185,7 +201,7 @@ final class RestorePreviewModel: ObservableObject {
             do {
                 let profile = try await Task.detached(priority: .userInitiated) { try store.load(id) }.value
                 guard !Task.isCancelled else { return }
-                let plan = await RestoreEngine().preview(profile: profile)
+                let plan = await RestoreEngine().preview(profile: profile, scope: scope)
                 guard !Task.isCancelled, let self else { return }
                 self.profile = profile
                 self.plan = plan
@@ -204,14 +220,16 @@ final class RestorePreviewModel: ObservableObject {
 struct RestorePreviewSheet: View {
     let profileID: UUID
     let profileName: String
+    let scope: RestoreScope
     var onClose: () -> Void
     @StateObject private var model: RestorePreviewModel
 
-    init(profileID: UUID, profileName: String, onClose: @escaping () -> Void) {
+    init(profileID: UUID, profileName: String, scope: RestoreScope = .whole, onClose: @escaping () -> Void) {
         self.profileID = profileID
         self.profileName = profileName
+        self.scope = scope
         self.onClose = onClose
-        _model = StateObject(wrappedValue: RestorePreviewModel(profileID: profileID))
+        _model = StateObject(wrappedValue: RestorePreviewModel(profileID: profileID, scope: scope))
     }
 
     var body: some View {
@@ -236,6 +254,7 @@ struct RestorePreviewSheet: View {
                 Text("Nothing is changed until you press Run now.").font(.callout).foregroundStyle(.secondary)
             }
             Spacer()
+            scopeChip
             Button { model.load() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                 .buttonStyle(.bordered)
                 .keyboardShortcut("r", modifiers: .command)
@@ -243,6 +262,15 @@ struct RestorePreviewSheet: View {
                 .help("Scan your Mac again (Cmd+R)")
         }
         .padding(16)
+    }
+
+    /// "Whole profile" or "Desktop 2 on DELL only".
+    private var scopeChip: some View {
+        let text = scope.isWhole ? "Whole profile" : (model.profile.map { scope.describe(profile: $0) } ?? "Part of the profile")
+        return Text(text).font(.callout).lineLimit(1)
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(Capsule().fill((scope.isWhole ? Color.secondary : Color.blue).opacity(0.15)))
+            .accessibilityLabel("Scope: \(text)")
     }
 
     @ViewBuilder private var content: some View {
@@ -386,15 +414,26 @@ struct RestorePreviewSheet: View {
             if let app = AppState.current {
                 RunStatusLine(app: app)
             }
+            if model.isRunning { ProgressView().controlSize(.small) }
+            if let result = model.runResult { Text(result).font(.callout).foregroundStyle(.secondary).lineLimit(2) }
             Spacer()
             Button("Close", role: .cancel, action: onClose)
                 .keyboardShortcut(.cancelAction)
                 .help("Close the preview (Esc)")
             if let app = AppState.current {
-                RunProfileButton(app: app, profileID: profileID, profileName: profileName, title: "Run now")
-                    .buttonStyle(.borderedProminent)
-                    .tint(.blue)
-                    .keyboardShortcut(.defaultAction)
+                if scope.isWhole {
+                    RunProfileButton(app: app, profileID: profileID, profileName: profileName, title: "Run now")
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        .keyboardShortcut(.defaultAction)
+                } else {
+                    Button { model.runScoped() } label: { Label("Run now (scope only)", systemImage: "play.fill") }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!app.canAct || model.isRunning || model.profile == nil)
+                        .help(studioRunBlockReason(app) ?? "Restore only \(scope.describe(profile: model.profile ?? Profile.emptyForMap))")
+                }
             }
         }
         .padding(16)

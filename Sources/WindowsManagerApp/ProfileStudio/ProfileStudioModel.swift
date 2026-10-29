@@ -78,6 +78,8 @@ final class ProfileStudioModel: ObservableObject {
     @Published private(set) var compareError: String?
     /// The Restore preview sheet is showing.
     @Published var isPreviewPresented = false
+    /// The part of the profile the Restore preview (and its Run now) covers; `.whole` for the plain preview.
+    @Published var previewScope: RestoreScope = .whole
 
     // MARK: Edit mode (UI7)
 

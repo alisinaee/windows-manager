@@ -182,7 +182,7 @@ struct ProfileStudioView: View {
                 StudioMapHost(row: row, model: model)
             }
             .sheet(isPresented: $model.isPreviewPresented) {
-                RestorePreviewSheet(profileID: row.id, profileName: row.name) { model.isPreviewPresented = false }
+                RestorePreviewSheet(profileID: row.id, profileName: row.name, scope: model.previewScope) { model.isPreviewPresented = false }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
                 // The Studio window coming back to the front: refresh the comparison (never polls).
@@ -246,7 +246,7 @@ struct ProfileStudioView: View {
                     .accessibilityLabel("Refresh comparison")
             }
             Divider().frame(height: 18)
-            Button { DebugLog.log("studio", "preview restore opened: \(row.name)"); model.isPreviewPresented = true } label: { Label("Preview restore", systemImage: "list.bullet.rectangle") }
+            Button { DebugLog.log("studio", "preview restore opened: \(row.name)"); model.previewScope = .whole; model.isPreviewPresented = true } label: { Label("Preview restore", systemImage: "list.bullet.rectangle") }
                 .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
                 .keyboardShortcut("p", modifiers: [.command, .shift])
                 .help("Preview restore: see what a restore would do, step by step (Cmd+Shift+P)")
@@ -336,10 +336,42 @@ struct StudioMapHost: View {
 
     private var mapPane: some View {
         VStack(spacing: 0) {
+            scopeBar
+            Divider()
             ProfileMapCanvas(model: map, onSync: { model.setCompare(true); model.refreshCompare() })
             Divider()
             studioBottomBar { MapLegendView(showsStatus: map.status != nil, showsStageStrip: map.usesStageManager) }
         }
+    }
+
+    /// The monitor the map focuses, and the Desktop it shows there (nil for a full-screen Space).
+    private var focusedScope: (monitor: RestoreScope, desktop: RestoreScope?, monitorName: String)? {
+        guard let uuid = map.focusedDisplayUUID, let profile = map.profile else { return nil }
+        let name = profile.displays.first { $0.uuid == uuid }?.name ?? uuid
+        var desktop: RestoreScope?
+        if let space = map.shownSpace(onDisplay: uuid), space.kind == .desktop, let n = space.desktopNumber {
+            desktop = RestoreScope(desktops: [SpaceRef(displayUUID: uuid, desktopNumber: n)])
+        }
+        return (RestoreScope(displays: [uuid]), desktop, name)
+    }
+
+    private var scopeBar: some View {
+        let focus = focusedScope
+        return HStack(spacing: 8) {
+            Button {
+                if let scope = focus?.desktop { model.previewScope = scope; model.isPreviewPresented = true }
+            } label: { Label("Apply this desktop only", systemImage: "rectangle.on.rectangle") }
+                .disabled(focus?.desktop == nil)
+                .help(focus?.desktop == nil ? "The shown Space is not a Desktop" : "Preview and apply only the Desktop shown on \(focus?.monitorName ?? "this monitor")")
+            Button {
+                if let scope = focus?.monitor { model.previewScope = scope; model.isPreviewPresented = true }
+            } label: { Label("Apply this monitor only", systemImage: "display") }
+                .disabled(focus == nil)
+                .help("Preview and apply only \(focus?.monitorName ?? "the focused monitor")")
+            Spacer()
+        }
+        .buttonStyle(.bordered).controlSize(.small)
+        .padding(.horizontal, 12).padding(.vertical, 6)
     }
 
     private var inspectorPane: MapInspectorView {

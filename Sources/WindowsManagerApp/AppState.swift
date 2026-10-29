@@ -116,19 +116,20 @@ final class AppState: ObservableObject {
     }
 
     /// Reads each profile off the main thread to list its Desktops and monitors for the Run submenu.
+    private let scopeLoader = LatestOnly<[UUID: [RunScopeChoice]]>()
+
     private func loadScopeChoices() {
         let summaries = savedProfiles
         let store = self.store
-        Task { [weak self] in
-            let choices: [UUID: [RunScopeChoice]] = await Task.detached(priority: .utility) {
+        scopeLoader.load({
+            await Task.detached(priority: .utility) {
                 var result: [UUID: [RunScopeChoice]] = [:]
                 for summary in summaries {
                     if let profile = try? store.load(summary.id) { result[summary.id] = RunScopeChoice.choices(for: profile) }
                 }
                 return result
             }.value
-            self?.scopeChoices = choices
-        }
+        }, apply: { [weak self] choices in self?.scopeChoices = choices })
     }
 
     var canAct: Bool { isAccessibilityTrusted && !status.isBusy }
@@ -238,9 +239,13 @@ final class AppState: ObservableObject {
         guard checkCanStart() else { return }
         status = .running("Capturing the workspace…")
         Task { [weak self] in
-            let scan = await CaptureSession.run { CaptureSession.scanWorkspace() }
-            let (profile, warnings) = ProfileCapture.makeProfile(name: "Capture", from: scan)
+            let outcome = await SelectiveCaptureScan.outcome(await CaptureSession.runTimed { CaptureSession.scanWorkspace() })
             guard let self else { return }
+            guard case .success(let scan) = outcome else {
+                if case .failure(let failure) = outcome { self.status = .failure(failure.message) }
+                return
+            }
+            let (profile, warnings) = ProfileCapture.makeProfile(name: "Capture", from: scan)
             let stamp = DateFormatter()
             stamp.dateFormat = "HH.mm.ss"
             self.status = .idle

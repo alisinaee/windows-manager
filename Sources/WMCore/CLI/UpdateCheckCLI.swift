@@ -94,19 +94,47 @@ public enum UpdateCheck {
     }
 
     public static func liveFetch(_ url: URL) throws -> Data {
+        try fetchSync(url, wait: 20) { request, done in
+            URLSession.shared.dataTask(with: request) { data, response, error in done(data, response, error) }.resume()
+        }
+    }
+
+    /// Blocks up to `wait` seconds for `start`'s completion. Only the first outcome counts: a callback that arrives after
+    /// the timeout is ignored and never touches the returned value.
+    static func fetchSync(_ url: URL, wait: TimeInterval,
+                          start: (URLRequest, @escaping @Sendable (Data?, URLResponse?, Error?) -> Void) -> Void) throws -> Data {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
         request.setValue("wm-cli", forHTTPHeaderField: "User-Agent")
         let sem = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var out: Result<Data, Error> = .failure(ServiceError.failed("No response."))
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error { out = .failure(error) }
+        let box = FetchBox()
+        start(request) { data, response, error in
+            let result: Result<Data, Error>
+            if let error { result = .failure(error) }
             else if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                out = .failure(ServiceError.failed("The appcast server answered \(http.statusCode)."))
-            } else { out = .success(data ?? Data()) }
-            sem.signal()
-        }.resume()
-        _ = sem.wait(timeout: .now() + 20)
-        return try out.get()
+                result = .failure(ServiceError.failed("The appcast server answered \(http.statusCode)."))
+            } else { result = .success(data ?? Data()) }
+            if box.set(result) { sem.signal() }
+        }
+        _ = sem.wait(timeout: .now() + wait)
+        return try box.close().get()
+    }
+
+    private final class FetchBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: Result<Data, Error>?
+        private var closed = false
+        func set(_ r: Result<Data, Error>) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard !closed, value == nil else { return false }
+            value = r
+            return true
+        }
+        /// Takes the result and ignores every later write.
+        func close() -> Result<Data, Error> {
+            lock.lock(); defer { lock.unlock() }
+            closed = true
+            return value ?? .failure(ServiceError.failed("No response."))
+        }
     }
 }
 

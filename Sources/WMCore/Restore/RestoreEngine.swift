@@ -1081,11 +1081,7 @@ public final class LiveRestoreEnvironment: RestoreEnvironment {
             // A window that is already the app's main window needs no raise; the app only has to come forward.
             let alreadyMain = await Self.readBool(element, kAXMainAttribute) == true
             guard alreadyMain, raised == .actionUnsupported || raised == .cannotComplete else {
-                // Stage Manager: a window of another stage answers "action unsupported"; it cannot be raised here.
-                if raised == .actionUnsupported || raised == .attributeUnsupported {
-                    return .skipped("the window cannot be raised (it sits in another Stage Manager stage or Space)")
-                }
-                return .failure("the window did not accept AXRaise (AXError \(raised.rawValue))")
+                return RaiseOutcome.result(for: raised, stageManagerOn: StageManagerState.read().isOn)
             }
         }
         // AXRaise only orders the windows of one app; the app has to come forward too for the saved

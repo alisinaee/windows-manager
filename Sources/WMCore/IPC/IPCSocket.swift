@@ -20,6 +20,9 @@ enum IPCSocket {
         let dir = (path as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
+        // The socket is created with the process umask until the chmod below; keep everyone else out of its
+        // directory (it may have existed with looser permissions, which createDirectory leaves alone).
+        chmod(dir, 0o700)
         unlink(path)
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw IPCError.io("socket: \(String(cString: strerror(errno)))") }

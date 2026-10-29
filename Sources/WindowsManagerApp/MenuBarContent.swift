@@ -84,8 +84,25 @@ struct MenuBarContent: View {
                 .padding(.vertical, 4)
         } else {
             ForEach(appState.savedProfiles) { profile in
-                MenuRow(title: "Run \(profile.name)") { appState.run(profile) }
+                let choices = appState.scopeChoices[profile.id] ?? []
+                if choices.count > 1 {
+                    HStack(spacing: 0) {
+                        MenuRow(title: "Run \(profile.name)") { appState.run(profile) }
+                        Menu {
+                            ForEach(choices) { choice in
+                                Button(choice.title) { appState.run(profile, scope: choice.scope) }
+                            }
+                        } label: { Text("Scope") }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help("Run the whole profile, one Desktop or one monitor")
+                        .accessibilityLabel("Run \(profile.name) scope")
+                    }
                     .disabled(!appState.canAct)
+                } else {
+                    MenuRow(title: "Run \(profile.name)") { appState.run(profile) }
+                        .disabled(!appState.canAct)
+                }
             }
         }
     }
@@ -121,7 +138,9 @@ struct MenuBarContent: View {
     }
 
     @ViewBuilder private var captureSection: some View {
-        if appState.isNamingCapture {
+        if let pending = appState.pendingCapture {
+            captureChoiceView(pending)
+        } else if appState.isNamingCapture {
             HStack(spacing: 6) {
                 TextField("Profile name", text: $appState.captureName)
                     .textFieldStyle(.roundedBorder)
@@ -137,6 +156,9 @@ struct MenuBarContent: View {
                 .disabled(!appState.canAct)
                 .help("Name a new profile and save the current workspace to it")
                 .accessibilityLabel("Capture current workspace")
+            MenuRow(title: "Choose what to save…") { appState.beginSelectiveCapture() }
+                .disabled(!appState.canAct)
+                .help("Capture now, then tick the monitors, Desktops and windows to keep")
             MenuRow(title: "Capture now (3 s)") {
                 // Close the popup first so it is not in the capture; the countdown gives the stage time to settle.
                 Self.closePopup(); appState.captureNow()
@@ -144,6 +166,46 @@ struct MenuBarContent: View {
             .disabled(!appState.canAct)
             .help("Closes this menu, waits 3 seconds, then saves the current workspace as a new profile")
             .accessibilityLabel("Capture now in 3 seconds")
+        }
+    }
+
+    private func captureChoiceView(_ pending: PendingCapture) -> some View {
+        let binding = Binding<PendingCapture>(get: { appState.pendingCapture ?? pending }, set: { appState.pendingCapture = $0 })
+        let selection = binding.wrappedValue.selection
+        return VStack(alignment: .leading, spacing: 2) {
+            Text("Choose what to save (\(selection.selectedWindows) of \(selection.totalWindows) windows)")
+                .font(.footnote).foregroundStyle(.secondary)
+            ForEach(selection.tree.monitors) { monitor in
+                Toggle(monitor.display?.name ?? "Monitor", isOn: Binding(
+                    get: { binding.wrappedValue.selection.state(of: monitor) != .off },
+                    set: { _ in binding.wrappedValue.selection.toggle(monitor: monitor) }))
+                    .font(.callout.bold())
+                ForEach(monitor.groups) { group in
+                    Toggle(Self.groupTitle(group), isOn: Binding(
+                        get: { binding.wrappedValue.selection.state(of: group) != .off },
+                        set: { _ in binding.wrappedValue.selection.toggle(group: group) }))
+                        .padding(.leading, 14)
+                }
+            }
+            TextField("Profile name", text: Binding(get: { binding.wrappedValue.name }, set: { binding.wrappedValue.name = $0 }))
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Button("Save") { appState.saveSelectiveCapture() }
+                    .disabled(!selection.hasSelection || binding.wrappedValue.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button("Cancel") { appState.cancelSelectiveCapture() }
+            }
+        }
+        .toggleStyle(.checkbox)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+    }
+
+    private static func groupTitle(_ group: CaptureSelectionTree.Group) -> String {
+        let count = "\(group.windowIDs.count) window(s)"
+        switch group.kind {
+        case .desktop: return "Desktop \(group.desktopNumber ?? 0), \(count)"
+        case .fullScreen: return "Full-screen Space, \(count)"
+        default: return "Other windows, \(count)"
         }
     }
 

@@ -18,6 +18,10 @@ final class AppState: ObservableObject {
     @Published private(set) var status: MenuStatus = .idle
     @Published var isNamingCapture = false
     @Published var captureName = ""
+    /// Per-profile scope choices for the menu's Run submenu (loaded with the profile list).
+    @Published private(set) var scopeChoices: [UUID: [RunScopeChoice]] = [:]
+    /// A fresh capture waiting for "Choose what to save…" ticks; nil when none is open.
+    @Published var pendingCapture: PendingCapture?
     let store = ProfileStore()
     @Published private(set) var isAccessibilityTrusted: Bool = AXPermission.isTrusted()
 
@@ -106,6 +110,23 @@ final class AppState: ObservableObject {
 
     func reloadProfiles() {
         savedProfiles = store.list().sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        loadScopeChoices()
+    }
+
+    /// Reads each profile off the main thread to list its Desktops and monitors for the Run submenu.
+    private func loadScopeChoices() {
+        let summaries = savedProfiles
+        let store = self.store
+        Task { [weak self] in
+            let choices: [UUID: [RunScopeChoice]] = await Task.detached(priority: .utility) {
+                var result: [UUID: [RunScopeChoice]] = [:]
+                for summary in summaries {
+                    if let profile = try? store.load(summary.id) { result[summary.id] = RunScopeChoice.choices(for: profile) }
+                }
+                return result
+            }.value
+            self?.scopeChoices = choices
+        }
     }
 
     var canAct: Bool { isAccessibilityTrusted && !status.isBusy }
@@ -167,16 +188,16 @@ final class AppState: ObservableObject {
 
     /// Restores a saved profile. The engine is main-actor bound (it awaits every step), so the UI stays
     /// responsive while it runs; the file read happens off the main thread.
-    func run(_ summary: ProfileSummary) {
+    func run(_ summary: ProfileSummary, scope: RestoreScope = .whole) {
         guard checkCanStart() else { return }
-        DebugLog.log("run", "start profile=\(summary.name) id=\(summary.id)")
+        DebugLog.log("run", "start profile=\(summary.name) id=\(summary.id) scope=\(scope.isWhole ? "whole" : "partial")")
         status = .running("Loading \(summary.name)…")
         let store = self.store
         Task { [weak self] in
             do {
                 let profile = try await Task.detached(priority: .userInitiated) { try store.load(summary.id) }.value
                 let engine = RestoreEngine()
-                let report = await engine.run(profile) { event in
+                let report = await engine.run(profile, scope: scope) { event in
                     DebugLog.log("run", "progress \(event.message)")
                     Task { @MainActor in self?.showProgress(event) }
                 }
@@ -209,6 +230,53 @@ final class AppState: ObservableObject {
     }
 
     func cancelCapture() { isNamingCapture = false }
+
+    /// Menu "Choose what to save…": captures now, then lets the user tick monitors, Desktops and windows before saving.
+    func beginSelectiveCapture() {
+        guard checkCanStart() else { return }
+        status = .running("Capturing the workspace…")
+        Task { [weak self] in
+            let scan = await CaptureSession.run { CaptureSession.scanWorkspace() }
+            let (profile, warnings) = ProfileCapture.makeProfile(name: "Capture", from: scan)
+            guard let self else { return }
+            let stamp = DateFormatter()
+            stamp.dateFormat = "HH.mm.ss"
+            self.status = .idle
+            self.pendingCapture = PendingCapture(
+                profile: profile, warningCount: warnings.count,
+                selection: CaptureSelection(tree: CaptureSelectionTree(profile: profile)),
+                name: "Capture " + stamp.string(from: Date()))
+        }
+    }
+
+    func cancelSelectiveCapture() { pendingCapture = nil }
+
+    /// Saves the ticked part of the pending capture as a new profile.
+    func saveSelectiveCapture() {
+        guard let pending = pendingCapture else { return }
+        let name = pending.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, pending.selection.hasSelection else { return }
+        pendingCapture = nil
+        var profile = pending.selection.applying(to: pending.profile)
+        let store = self.store
+        Task { [weak self] in
+            let outcome: Result<String, Error> = await Task.detached(priority: .userInitiated) {
+                do {
+                    profile.name = ProfileTransfer.uniqueName(name, among: store.list().map(\.name))
+                    let saved = try store.save(profile)
+                    return .success("Saved \(saved.name): \(saved.windows.count) window(s), \(saved.apps.count) app(s)")
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+            guard let self else { return }
+            switch outcome {
+            case .success(let text): self.status = .success(text)
+            case .failure(let error): self.status = .failure("Capture failed: \(error.localizedDescription)")
+            }
+            self.reloadProfiles()
+        }
+    }
 
     /// Menu "Capture now (3 s)": names the profile by the time and captures after a short pause, so the menu can close first.
     func captureNow(afterSeconds seconds: Int = 3) {
@@ -255,5 +323,41 @@ final class AppState: ObservableObject {
             }
             self.reloadProfiles()
         }
+    }
+}
+
+/// A capture waiting for the user's ticks (menu "Choose what to save…").
+struct PendingCapture {
+    var profile: Profile
+    var warningCount: Int
+    var selection: CaptureSelection
+    var name: String
+}
+
+/// One entry of the Run submenu: a title and the scope it runs.
+struct RunScopeChoice: Identifiable {
+    var id: String
+    var title: String
+    var scope: RestoreScope
+
+    /// Whole profile, then one entry per Desktop ("Desktop N (Monitor)") and, with several monitors, one per monitor.
+    static func choices(for profile: Profile) -> [RunScopeChoice] {
+        var result = [RunScopeChoice(id: "whole", title: "Whole profile", scope: .whole)]
+        let tree = CaptureSelectionTree(profile: profile)
+        let multi = profile.displays.count > 1
+        for monitor in tree.monitors {
+            let name = monitor.display?.name ?? monitor.displayUUID
+            for group in monitor.groups {
+                guard group.kind == .desktop, let number = group.desktopNumber else { continue }
+                result.append(RunScopeChoice(
+                    id: "\(monitor.displayUUID)#\(number)", title: multi ? "Desktop \(number) (\(name))" : "Desktop \(number)",
+                    scope: RestoreScope(desktops: [SpaceRef(displayUUID: monitor.displayUUID, desktopNumber: number)])))
+            }
+            if multi {
+                result.append(RunScopeChoice(id: "monitor-\(monitor.displayUUID)", title: "Monitor \(name)",
+                                             scope: RestoreScope(displays: [monitor.displayUUID])))
+            }
+        }
+        return result
     }
 }

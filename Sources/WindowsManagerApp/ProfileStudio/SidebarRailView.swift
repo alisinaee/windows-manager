@@ -161,7 +161,11 @@ struct StudioInspectorSplit<Main: View, Inspector: View>: View {
         return Button { layout.toggleCollapsed() } label: {
             Group {
                 if vertical {
-                    Image(systemName: symbol).frame(width: 22).frame(maxHeight: .infinity)
+                    VStack(spacing: 8) {
+                        Image(systemName: symbol)
+                        Text("Details").font(.caption2).fixedSize().rotationEffect(.degrees(90)).frame(width: 14, height: 44)
+                    }
+                    .frame(width: 22).frame(maxHeight: .infinity)
                 } else {
                     HStack(spacing: 6) {
                         Image(systemName: symbol)

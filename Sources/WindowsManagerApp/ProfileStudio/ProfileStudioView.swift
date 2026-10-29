@@ -396,8 +396,13 @@ struct StudioMapHost: View {
         .padding(.horizontal, 12).padding(.vertical, 6)
     }
 
-    private var inspectorPane: MapInspectorView {
-        return MapInspectorView(map: map, plan: model.comparePlan, isCompareOn: model.isCompareOn)
+    /// Same chrome as the Edit inspector: the tab bar (View has only the Inspector tab), a divider, then the content.
+    private var inspectorPane: some View {
+        VStack(spacing: 0) {
+            StudioInspectorTabBar(tabs: [.inspector], selection: .constant(.inspector))
+            Divider()
+            MapInspectorView(map: map, plan: model.comparePlan, isCompareOn: model.isCompareOn)
+        }
     }
 
     var body: some View {
@@ -419,7 +424,7 @@ func studioBottomBar<Legend: View>(@ViewBuilder _ legend: () -> Legend) -> some 
         legend()
         Spacer(minLength: 8)
         // The debug switch lives in a small debug menu, out of the everyday footer.
-        Menu { DebugLogToggle() } label: { Image(systemName: "ant") }
+        Menu { DebugLogToggle() } label: { Label("Debug", systemImage: "ant").labelStyle(.titleAndIcon).font(.caption) }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             .help("Debug options")
             .accessibilityLabel("Debug options")
@@ -441,6 +446,42 @@ struct StudioModePicker: View {
         .frame(width: 120)
         .accessibilityLabel("Mode")
         .help("Switch between viewing and editing the profile")
+    }
+}
+
+/// Equal-width segments that share the panel width and shrink their text instead of overflowing.
+struct StudioInspectorTabBar: View {
+    let tabs: [StudioInspectorTab]
+    @Binding var selection: StudioInspectorTab
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(tabs) { tab in
+                let selected = selection == tab
+                Button { selection = tab } label: {
+                    Text(tab.rawValue)
+                        .font(.callout)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 4)
+                        .foregroundStyle(selected ? Color.white : Color.primary)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.accentColor : Color.clear))
+                        .contentShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .help(tab.rawValue)
+            }
+        }
+        .padding(3)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.15)))
+        .help(tabs.count > 1 ? "Switch between the Inspector, Options and Launch order tabs" : "Details of the selected window")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Inspector tab")
+        .padding(8)
     }
 }
 
@@ -494,6 +535,8 @@ struct StudioEditDetail: View {
                     inspector
                 }
             }
+            .onChange(of: builder.isDirty) { _, _ in model.titleChanged() }
+            .onChange(of: builder.nameText) { _, _ in model.titleChanged() }
         }
     }
 
@@ -633,35 +676,7 @@ struct StudioEditDetail: View {
 
     private var inspector: some View {
         VStack(spacing: 0) {
-            // Equal-width segments that share the panel width and shrink their text instead of
-            // overflowing, so the bar never clips at the inspector's minimum width.
-            HStack(spacing: 2) {
-                ForEach(StudioInspectorTab.allCases) { tab in
-                    let selected = local.tab == tab
-                    Button { local.tab = tab } label: {
-                        Text(tab.rawValue)
-                            .font(.callout)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 4)
-                            .foregroundStyle(selected ? Color.white : Color.primary)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.accentColor : Color.clear))
-                            .contentShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
-                    .help(tab.rawValue)
-                }
-            }
-            .padding(3)
-            .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.15)))
-            .help("Switch between the Inspector, Options and Launch order tabs")
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Inspector tab")
-            .padding(8)
+            StudioInspectorTabBar(tabs: StudioInspectorTab.allCases, selection: $local.tab)
             Divider()
             switch local.tab {
             case .inspector: MapInspectorView(map: map, plan: nil, isCompareOn: false)

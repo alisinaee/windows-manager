@@ -70,10 +70,10 @@ extension ProfileStudioModel {
                 b.selectedWindowID = last.id
             }
         }
+        if mode == .edit, let saveName { builder?.setName(saveName) }   // makes the draft dirty without a sheet
         switch sheet {
         case .save:
             if mode == .edit {
-                if let saveName { builder?.setName(saveName) }
                 isSaveSheetPresented = true
             }
         case .capture: break   // opened above, after the capture is ready

@@ -26,6 +26,8 @@ struct LaunchOrderEditor: View {
                 if plan.items.isEmpty {
                     emptyState
                 } else {
+                    orderBar(plan)
+                    Divider()
                     list(plan, profile)
                 }
                 Divider()
@@ -74,6 +76,16 @@ struct LaunchOrderEditor: View {
             .labelsHidden()
             .accessibilityLabel("Launch mode")
             .help("Launch apps one after another, or all at once")
+        }
+        .padding(8)
+    }
+
+    /// Reorder controls sit right above the list they move, apart from the Sequential / At once picker.
+    private func orderBar(_ plan: LaunchPlan) -> some View {
+        HStack(spacing: 8) {
+            Text("Order").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text("Select an app, then move it").font(.caption).foregroundStyle(.secondary)
+            Spacer()
             Button { moveSelected(by: -1, plan) } label: { Image(systemName: "arrow.up") }
                 .keyboardShortcut(.upArrow, modifiers: [.command, .option])
                 .help(canMove(-1, plan) ? "Move the selected app up (Command-Option-Up)" : "Select an app in the list to move it")
@@ -85,7 +97,7 @@ struct LaunchOrderEditor: View {
                 .accessibilityLabel("Move selected app down")
                 .disabled(!canMove(1, plan))
         }
-        .padding(8)
+        .padding(.horizontal, 8).padding(.vertical, 4)
     }
 
     private func footer(_ plan: LaunchPlan) -> some View {

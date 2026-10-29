@@ -32,7 +32,7 @@ final class ProfileStudioModel: ObservableObject {
     @Published private(set) var rows: [ProfileStudioRow] = []
     @Published private(set) var state: ProfileStudioLoadState = .loading
     @Published var selectedID: UUID? { didSet { if oldValue != selectedID { DebugLog.log("studio", "profile selected: \(selectedRow?.name ?? "none")"); titleChanged(); selectionChangedForCompare() } } }
-    @Published var mode: ProfileStudioMode = .view { didSet { if oldValue != mode { DebugLog.log("studio", "mode: \(mode == .edit ? "Edit" : "View")") } } }
+    @Published var mode: ProfileStudioMode = .view { didSet { if oldValue != mode { DebugLog.log("studio", "mode: \(mode == .edit ? "Edit" : "View")"); titleChanged() } } }
     /// Names of profiles that could not be read (shown as a warning, the rest still load).
     @Published private(set) var skipped: [String] = []
 
@@ -77,7 +77,7 @@ final class ProfileStudioModel: ObservableObject {
     // MARK: Edit mode (UI7)
 
     /// The Builder session of Edit mode; nil in View mode.
-    @Published private(set) var builder: ProfileBuilderModel?
+    @Published private(set) var builder: ProfileBuilderModel? { didSet { titleChanged() } }
     /// "Copy of a profile…" from the New profile menu.
     @Published var isCopyPickerPresented = false
     /// "Review capture" popover: unticking windows removes them from the new draft.
@@ -139,6 +139,10 @@ final class ProfileStudioModel: ObservableObject {
     var selectedRow: ProfileStudioRow? { rows.first { $0.id == selectedID } }
 
     var windowTitle: String {
+        if mode == .edit, let b = builder {
+            let name = b.nameText.isEmpty ? "Untitled profile" : b.nameText
+            return b.isDirty ? "Profiles - \(name) - Edited" : "Profiles - \(name)"
+        }
         if let name = selectedRow?.name { return "Profiles - \(name)" }
         return "Profiles"
     }
@@ -449,5 +453,5 @@ final class ProfileStudioModel: ObservableObject {
         AppState.current?.beginCapture()
     }
 
-    private func titleChanged() { onTitleChange?(windowTitle) }
+    func titleChanged() { onTitleChange?(windowTitle) }
 }

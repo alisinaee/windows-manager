@@ -23,6 +23,10 @@ restore-preview|many|section=studio&profile=Work&mode=view&sheet=restore
 studio-narrow|many|section=studio&profile=Work&mode=view&size=600x450
 studio-wide|many|section=studio&profile=Work&mode=view&size=1500x900
 studio-dark-edit|many|section=studio&profile=Work&mode=edit&appearance=dark
+studio-edit-dirty|many|section=studio&profile=Work&mode=edit&saveName=Work%20(edited)|unsaved marker in title and toolbar
+studio-light-view|many|section=studio&profile=Review&mode=view&appearance=light
+studio-light-edit|many|section=studio&profile=Work&mode=edit&selectTile=0&appearance=light
+studio-light-launch|many|section=studio&profile=Work&mode=edit&inspectorTab=launch&appearance=light
 settings|many|section=settings
 debug|many|section=debug'
 if [ "${1:-}" = "--query" ]; then

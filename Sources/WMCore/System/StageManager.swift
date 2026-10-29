@@ -86,7 +86,7 @@ public enum StageManager {
     }
 
     /// How far apart two thumbnails may sit (along the strip) and still belong to the same stage, in points.
-    static let stageGapLimit: CGFloat = 30
+    static let stageGapLimit: CGFloat = 10
 
     /// Records the Stage Manager state in `scan` and, when it is on, marks the windows that sit in the strip or
     /// in another stage (`LiveWindow.isInStageStrip`) and fills `LiveWindow.stage`. Minimized and full-screen
@@ -137,8 +137,8 @@ public enum StageManager {
     }
 
     /// Groups the strip thumbnails of `windows` into stages, by index into `windows`. Two thumbnails on the same
-    /// display share a stage when their rectangles overlap or sit less than `stageGapLimit` apart along the strip:
-    /// vertically, or horizontally when the strip is on the right edge of its display. Thumbnails on different
+    /// display share a stage when their rectangles overlap or sit less than `stageGapLimit` apart (this Mac's four one-app stages sit 24-28 pt apart, so the limit is small) along the strip:
+    /// vertically (the strip stacks stages vertically on either edge). Thumbnails on different
     /// displays never share a stage. Stages come back top to bottom. Uses the window-server bounds, which the
     /// thumbnail keeps (`serverBounds`), and falls back to `frame`.
     static func clusterThumbnails(_ windows: [LiveWindow], displays: [DisplayIdentity]) -> [[Int]] {
@@ -157,10 +157,8 @@ public enum StageManager {
             for b in items.indices where b > a {
                 guard let display = items[a].display, items[b].display == display else { continue }
                 let first = items[a].rect, second = items[b].rect
-                let onRightEdge = first.midX > displays[display].frame.midX
-                let gap = onRightEdge
-                    ? max(first.minX, second.minX) - min(first.maxX, second.maxX)
-                    : max(first.minY, second.minY) - min(first.maxY, second.maxY)
+                // The strip stacks its stages vertically on either edge.
+                let gap = max(first.minY, second.minY) - min(first.maxY, second.maxY)
                 if gap < stageGapLimit {
                     let (rootA, rootB) = (root(a), root(b))
                     parent[rootB] = rootA

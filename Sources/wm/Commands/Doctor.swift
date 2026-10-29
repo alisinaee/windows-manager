@@ -40,7 +40,7 @@ private func doctorItems() -> [DoctorItem] {
                                          loadError: PrivateSymbols.loadError)
 
     // A missing key means the macOS default: Stage Manager off, Spaces rearranged by recent use.
-    let stageManager = defaultsBool(domain: "com.apple.WindowManager", key: "GloLevelEnabled") ?? false
+    let stageManager = StageManagerProvider.live.isEnabled() ?? false
     let rearrange = defaultsBool(domain: "com.apple.dock", key: "mru-spaces") ?? true
 
     var healthDetail = health.overall.rawValue

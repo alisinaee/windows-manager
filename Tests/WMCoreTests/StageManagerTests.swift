@@ -234,6 +234,26 @@ import Testing
         #expect(result.windows.map(\.stage?.group) == [2, 1])
     }
 
+    @Test func realStripOfFourOneAppStagesIsFourGroups() {
+        // Measured on the dev Mac (Stage Manager on): thumbnails at x=15, gaps of 24-28 pt between stages.
+        let display = DisplayIdentity(uuid: "MAIN", name: "Main", frame: CGRect(x: 0, y: 0, width: 2560, height: 1440),
+                                      visibleFrame: CGRect(x: 0, y: 0, width: 2560, height: 1415), isMain: true, isBuiltIn: false)
+        let rects = [CGRect(x: 15, y: 478, width: 80, height: 124), CGRect(x: 15, y: 626, width: 96, height: 97),
+                     CGRect(x: 15, y: 751, width: 74, height: 115), CGRect(x: 15, y: 890, width: 55, height: 102)]
+        let windows = rects.enumerated().map { Self.thumbnail(UInt32($0.offset + 1), Self.terminal, at: $0.element) }
+        let result = StageManager.annotate(F.scan(windows.reversed(), displays: [display]), provider: .fixed(true))
+        #expect(result.windows.sorted { $0.windowID < $1.windowID }.map(\.stage?.group) == [1, 2, 3, 4])
+    }
+
+    @Test func rightEdgeStripStacksVerticallyToo() {
+        let display = DisplayIdentity(uuid: "MAIN", name: "Main", frame: CGRect(x: 0, y: 0, width: 2560, height: 1440),
+                                      visibleFrame: CGRect(x: 0, y: 0, width: 2560, height: 1415), isMain: true, isBuiltIn: false)
+        let upper = Self.thumbnail(1, Self.terminal, at: CGRect(x: 2440, y: 400, width: 100, height: 100))
+        let lower = Self.thumbnail(2, Self.v2box, at: CGRect(x: 2440, y: 530, width: 100, height: 100))
+        let result = StageManager.annotate(F.scan([upper, lower], displays: [display]), provider: .fixed(true))
+        #expect(result.windows.map(\.stage?.group) == [1, 2])
+    }
+
     @Test func thumbnailsOnDifferentDisplaysNeverShareAGroup() {
         // The two rectangles overlap in y, but one is on PHL and the other on the built-in display.
         let phlThumb = Self.thumbnail(1, Self.terminal, at: CGRect(x: 1300, y: -60, width: 118, height: 97))

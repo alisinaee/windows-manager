@@ -101,7 +101,7 @@ extension DebugTestRunner {
     // MARK: Restore
 
     @MainActor
-    private func runEngine(_ profile: Profile, sink: DebugSink) async -> RestoreReport {
+    func runEngine(_ profile: Profile, sink: DebugSink) async -> RestoreReport {
         let engine = RestoreEngine()
         engine.configuration.addMissingDesktops = true
         return await engine.run(profile, dryRun: false) { p in

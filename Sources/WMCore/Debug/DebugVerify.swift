@@ -69,15 +69,44 @@ public enum DebugEvent: Sendable {
     case log(String)
 }
 
+/// Verdict of one scenario run. INCONCLUSIVE and SKIPPED are never failures.
+public enum DebugRunStatus: String, Sendable, CaseIterable {
+    case pass = "PASS", fail = "FAIL", inconclusive = "INCONCLUSIVE", skipped = "SKIPPED"
+
+    /// CLI exit code of a whole run: 0 all passed, 1 any failed, 2 otherwise (inconclusive or skipped).
+    public static func exitCode(_ statuses: [DebugRunStatus]) -> Int32 {
+        if statuses.isEmpty || statuses.contains(.fail) { return 1 }
+        return statuses.allSatisfy { $0 == .pass } ? 0 : 2
+    }
+}
+
 public struct DebugRunResult: Sendable {
-    public var scenario: DebugScenarioID
+    /// Legacy scenario, nil for a power-user scenario.
+    public var scenario: DebugScenarioID?
+    /// Registry id (`wm debug run --scenario`).
+    public var scenarioID: String
+    public var title: String
+    public var status: DebugRunStatus
     public var passed: Bool
     public var checks: [DebugCheck]
     public var log: [String]
 
     public init(scenario: DebugScenarioID, passed: Bool, checks: [DebugCheck], log: [String]) {
         self.scenario = scenario
+        self.scenarioID = scenario.rawValue
+        self.title = scenario.title
+        self.status = passed ? .pass : .fail
         self.passed = passed
+        self.checks = checks
+        self.log = log
+    }
+
+    public init(scenarioID: String, title: String, status: DebugRunStatus, checks: [DebugCheck], log: [String]) {
+        self.scenario = nil
+        self.scenarioID = scenarioID
+        self.title = title
+        self.status = status
+        self.passed = status == .pass
         self.checks = checks
         self.log = log
     }

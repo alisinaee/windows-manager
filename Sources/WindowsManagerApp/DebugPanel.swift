@@ -30,7 +30,7 @@ struct DebugPanel: View {
 
     private var scenarioList: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(DebugScenarioID.allCases, id: \.self) { scenario in
+            ForEach(DebugRunnerRegistry.entries) { scenario in
                 HStack(alignment: .center, spacing: 8) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(scenario.title).fontWeight(.medium)
@@ -39,8 +39,10 @@ struct DebugPanel: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
-                    if let result = model.results[scenario] {
-                        badge(result.passed ? "PASS" : "FAIL", passed: result.passed)
+                    if let status = model.lastStatus[scenario.id] {
+                        badge(status)
+                    } else {
+                        Text("not run").font(.caption).foregroundStyle(.secondary)
                     }
                     Button("Run") { model.run(scenario) }
                         .disabled(model.isBusy)
@@ -48,27 +50,25 @@ struct DebugPanel: View {
                 .padding(6)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(model.focus == scenario ? Color.accentColor.opacity(0.12) : Color.clear)
+                        .fill(model.focus == scenario.id ? Color.accentColor.opacity(0.12) : Color.clear)
                 )
                 .contentShape(Rectangle())
-                .onTapGesture { model.focus = scenario }
+                .onTapGesture { model.focus = scenario.id }
             }
         }
     }
 
     @ViewBuilder private var liveSection: some View {
-        if let focus = model.focus {
+        if let focusID = model.focus, let focus = DebugRunnerRegistry.entry(id: focusID) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         Text(focus.title).font(.subheadline).fontWeight(.semibold)
                         Spacer(minLength: 4)
-                        if let result = model.results[focus] {
-                            badge(result.passed ? "PASSED" : "FAILED", passed: result.passed)
-                        }
+                        if let status = model.lastStatus[focus.id] { badge(status) }
                     }
                     HStack(spacing: 6) {
-                        if model.running == focus {
+                        if model.running == focus.id {
                             ProgressView().controlSize(.small)
                         }
                         Text(model.phase.isEmpty ? "Idle" : model.phase)
@@ -131,13 +131,14 @@ struct DebugPanel: View {
         }
     }
 
-    private func badge(_ text: String, passed: Bool) -> some View {
-        Text(text)
+    private func badge(_ status: DebugRunStatus) -> some View {
+        let color: Color = status == .pass ? .green : status == .fail ? .red : status == .inconclusive ? .orange : .gray
+        return Text(status.rawValue)
             .font(.caption.bold())
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .foregroundStyle(.white)
-            .background(Capsule().fill(passed ? Color.green : Color.red))
+            .background(Capsule().fill(color))
     }
 
     private static func icon(_ status: DebugStepStatus) -> String {

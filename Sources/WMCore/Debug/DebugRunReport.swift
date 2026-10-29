@@ -11,7 +11,9 @@ public enum DebugRunReport {
     public static func document(results: [DebugRunResult], error: String?, generatedAt: Date = Date()) -> JSONValue {
         let items: [JSONValue] = results.map { result in
             .object([
-                "scenario": .string(result.scenario.rawValue),
+                "scenario": .string(result.scenarioID),
+                "title": .string(result.title),
+                "status": .string(result.status.rawValue),
                 "passed": .bool(result.passed),
                 "checks": .array(result.checks.map { check in
                     .object(["id": .string(check.id), "name": .string(check.name),
@@ -29,6 +31,19 @@ public enum DebugRunReport {
         return .object(root)
     }
 
+    /// Last status per scenario id from a debug-run.json document (older files without "status" map passed to PASS/FAIL).
+    public static func lastStatuses(from data: Data) -> [String: DebugRunStatus] {
+        guard let root = try? JSONDecoder().decode(JSONValue.self, from: data),
+              case .object(let obj) = root, case .array(let items)? = obj["results"] else { return [:] }
+        var out: [String: DebugRunStatus] = [:]
+        for item in items {
+            guard case .object(let o) = item, case .string(let id)? = o["scenario"] else { continue }
+            if case .string(let st)? = o["status"], let status = DebugRunStatus(rawValue: st) { out[id] = status }
+            else if case .bool(let ok)? = o["passed"] { out[id] = ok ? .pass : .fail }
+        }
+        return out
+    }
+
     /// Scenarios for a value: "all" (any case) or one raw value. Nil when the value names no scenario.
     public static func scenarios(for value: String) -> [DebugScenarioID]? {
         if value.lowercased() == "all" { return DebugScenarioID.allCases }
@@ -36,8 +51,8 @@ public enum DebugRunReport {
     }
 
     /// The NDJSON event for one runner event (`phase`, `step` or `check`). Log lines stay in debug-tests.log only.
-    public static func progress(for event: DebugEvent, scenario: DebugScenarioID) -> (event: String, fields: [String: JSONValue])? {
-        let base: [String: JSONValue] = ["scenario": .string(scenario.rawValue)]
+    public static func progress(for event: DebugEvent, scenarioID: String) -> (event: String, fields: [String: JSONValue])? {
+        let base: [String: JSONValue] = ["scenario": .string(scenarioID)]
         switch event {
         case .phase(let phase):
             return ("phase", base.merging(["phase": .string(phase)]) { $1 })

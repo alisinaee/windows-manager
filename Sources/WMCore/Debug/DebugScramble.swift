@@ -477,3 +477,18 @@ extension DebugTestRunner {
         try? await Task.sleep(nanoseconds: 500_000_000)
     }
 }
+
+extension DebugTestRunner {
+    /// Power-user scramble (P6.126): open the apps of the profile, then shift every window +200 and halve its size.
+    func scramblePowerUser(profile: Profile, sink: DebugSink) async {
+        var seen = Set<String>()
+        for w in profile.windows {
+            guard let bundle = w.app.bundleID, seen.insert(bundle).inserted else { continue }
+            await launch(bundle)
+        }
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        await shiftAll(profile, sink)
+        sink.send(.log("shifted: apps opened, frames moved +200 and halved"))
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+    }
+}

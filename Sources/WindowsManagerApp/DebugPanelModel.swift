@@ -7,19 +7,21 @@ import WMCore
 @MainActor
 final class DebugPanelModel: ObservableObject {
     /// Scenario whose live view is shown (the running one, or the last one run).
-    @Published var focus: DebugScenarioID?
-    @Published private(set) var running: DebugScenarioID?
+    @Published var focus: String?
+    @Published private(set) var running: String?
     @Published private(set) var isRunningAll = false
     @Published private(set) var phase = ""
     @Published private(set) var steps: [DebugStepRow] = []
     @Published private(set) var checks: [DebugCheck] = []
-    @Published private(set) var results: [DebugScenarioID: DebugRunResult] = [:]
+    @Published private(set) var results: [String: DebugRunResult] = [:]
+    /// Status of the last run per scenario id, also from the previous app session (debug-run.json).
+    @Published private(set) var lastStatus: [String: DebugRunStatus] = DebugRunnerRegistry.lastStatuses()
     @Published private(set) var fixtureMessage = ""
     @Published private(set) var copyMessage = ""
 
     private let store: ProfileStore
     private let onProfilesChanged: () -> Void
-    private var queue: [DebugScenarioID] = []
+    private var queue: [DebugRunnerEntry] = []
 
     init(store: ProfileStore, onProfilesChanged: @escaping () -> Void) {
         self.store = store
@@ -34,14 +36,15 @@ final class DebugPanelModel: ObservableObject {
         guard !isBusy else { return }
         do {
             let profiles = try DebugTestRunner.installFixtureProfiles(into: store)
-            fixtureMessage = "Installed \(profiles.count) fixture profile(s)"
+            _ = try DebugFixtures.installPowerUserFixtures(into: store)
+            fixtureMessage = "Installed \(profiles.count + DebugFixtures.scenarios.count) fixture profile(s)"
             onProfilesChanged()
         } catch {
             fixtureMessage = "Install failed: \(error.localizedDescription)"
         }
     }
 
-    func run(_ scenario: DebugScenarioID) {
+    func run(_ scenario: DebugRunnerEntry) {
         guard !isBusy else { return }
         queue = [scenario]
         startNext()
@@ -49,7 +52,7 @@ final class DebugPanelModel: ObservableObject {
 
     func runAll() {
         guard !isBusy else { return }
-        queue = DebugScenarioID.allCases
+        queue = DebugRunnerRegistry.entries
         isRunningAll = true
         startNext()
     }
@@ -62,8 +65,8 @@ final class DebugPanelModel: ObservableObject {
             return
         }
         let scenario = queue.removeFirst()
-        running = scenario
-        focus = scenario
+        running = scenario.id
+        focus = scenario.id
         phase = "Starting \(scenario.title)…"
         steps = []
         checks = []
@@ -76,9 +79,10 @@ final class DebugPanelModel: ObservableObject {
         Task { [weak self] in
             let result = await runner.run(scenario, onEvent: sink)
             guard let self else { return }
-            self.results[scenario] = result
+            self.results[scenario.id] = result
+            self.lastStatus[scenario.id] = result.status
             self.running = nil
-            self.phase = result.passed ? "Passed" : "Failed"
+            self.phase = result.status.rawValue.capitalized
             self.startNext()
         }
     }
@@ -108,10 +112,11 @@ final class DebugPanelModel: ObservableObject {
 
     /// Results of the runs so far, as JSON in the same spirit as the lab results files.
     func resultJSON() -> String {
-        let items: [[String: Any]] = DebugScenarioID.allCases.compactMap { id in
+        let items: [[String: Any]] = DebugRunnerRegistry.entries.map(\.id).compactMap { id in
             guard let result = results[id] else { return nil }
             return [
-                "scenario": id.rawValue,
+                "scenario": id,
+                "status": result.status.rawValue,
                 "passed": result.passed,
                 "checks": result.checks.map { check -> [String: Any] in
                     ["id": "\(check.id)", "name": check.name, "passed": check.passed, "detail": check.detail]

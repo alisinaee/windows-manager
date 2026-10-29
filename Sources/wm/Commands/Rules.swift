@@ -28,7 +28,40 @@ private func windowAction(from a: ParsedArgs) throws -> WindowRuleAction {
     }
 }
 
+/// Parses `on|off|true|false|yes|no` for the `wm rules auto` flags; nil when absent.
+private func boolOption(_ a: ParsedArgs, _ name: String) throws -> Bool? {
+    guard let text = a.value(name) else { return nil }
+    switch text.lowercased() {
+    case "on", "true", "yes", "1": return true
+    case "off", "false", "no", "0": return false
+    default: throw CLIFailure.usage("--\(name) must be on or off")
+    }
+}
+
+private func secondsOption(_ a: ParsedArgs, _ name: String) throws -> Double? {
+    guard let text = a.value(name) else { return nil }
+    guard let v = Double(text) else { throw CLIFailure.usage("--\(name) must be a number of seconds") }
+    return v
+}
+
 func registerRuleCommands(_ r: Registry) {
+    r.register(Command(["rules", "auto"], summary: "Change auto profile settings: --enabled, --monitor-change, --wake, --unlock (on|off), --delay, --cooldown (seconds)",
+                       options: [
+                           CLIOption("enabled", "on or off", takesValue: true, valueName: "on|off"),
+                           CLIOption("monitor-change", "Run the mapped profile when the monitor set changes", takesValue: true, valueName: "on|off"),
+                           CLIOption("wake", "Trigger on wake", takesValue: true, valueName: "on|off"),
+                           CLIOption("unlock", "Trigger on unlock", takesValue: true, valueName: "on|off"),
+                           CLIOption("delay", "Seconds to wait after the trigger (0-3600)", takesValue: true, valueName: "s"),
+                           CLIOption("cooldown", "Minimum seconds between runs (0-3600)", takesValue: true, valueName: "s"),
+                       ], mutates: true) { a, _ in
+        let settings = try cliService {
+            try RuleService().updateAutoProfile(enabled: try boolOption(a, "enabled"), monitorChange: try boolOption(a, "monitor-change"),
+                                                wake: try boolOption(a, "wake"), unlock: try boolOption(a, "unlock"),
+                                                delaySeconds: try secondsOption(a, "delay"), cooldownSeconds: try secondsOption(a, "cooldown"))
+        }
+        return CLIResult(data: try JSONValue.from(settings), text: "enabled=\(settings.enabled)")
+    })
+
     r.register(Command(["rules", "list"], summary: "Show auto profile settings, pin rules and window rules") { _, _ in
         let service = RuleService()
         let data = JSONValue.object([

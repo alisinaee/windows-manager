@@ -27,6 +27,7 @@ Envelope: success `{"ok":true,"data":...}`; failure `{"ok":false,"error":{"code"
 | `wm doctor` | | | Check Accessibility, screen recording, SkyLight, Stage Manager and Spaces settings |
 | `wm status` | | | Show app and permission status |
 | `wm spaces` | | | List displays, Desktops, full-screen Spaces and windows (read-only) |
+| `wm windows limits` | | | `<app>` `--probe --yes`: which windows of an app refuse resizing (`--probe` nudges real windows by 8 pt and restores them, so it is W) |
 | `wm debug list` | | | List live debug scenarios |
 | `wm debug results` | | | Show the last headless debug run |
 | `wm report` | M | | `--title T` `--description D` `--include-profile NAME` `--out DIR` (default ~/Desktop) `--submit` (needs `gh`; the only network use). Writes a redacted zip and prints the prefilled issue URL |
@@ -97,9 +98,26 @@ Envelope: success `{"ok":true,"data":...}`; failure `{"ok":false,"error":{"code"
 | `wm rules pins` | | | List Space pin rules |
 | `wm rules pins add` | M | | `<bundleID>` `--desktop <n>` `--display <uuid>` `--space <id>` `--title <text>` |
 | `wm rules pins remove` | M | | `<id>` |
+| `wm rules auto` | M | | `--enabled on\|off` `--monitor-change on\|off` `--wake on\|off` `--unlock on\|off` `--delay <s>` `--cooldown <s>` (0-3600 s): auto profile triggers |
 | `wm rules window-rules` | | | List per-app window rules |
 | `wm rules window-rules set` | M | | `<bundleID> <ignore\|alwaysRestore\|pinToDisplay>` `--display <uuid>` |
 | `wm rules window-rules remove` | M | | `<bundleID>` |
+
+## GUI features without a CLI command (gaps, P6.86)
+
+| GUI feature | Status |
+|---|---|
+| Auto profile monitor-set to profile mapping | Service `RuleService.setAutoProfileMapping` exists; no command yet (`wm rules auto` sets triggers and delays only) |
+| Layout zone editing (add, move, resize zones) | Only create, rename, delete layouts; zones are GUI-only. Use `wm profile zone` / `grid` to place windows |
+| Global hotkeys (workspace switch, snap zones, move to display) | GUI-only (Hotkeys tab). Per-profile shortcuts work: `wm profile shortcut` |
+| Space preference backups (back up, restore) | GUI-only (Space guard); restore changes system preferences, so it stays GUI |
+| Space guard watch and auto fix | Settings keys `spaceGuard.watchEnabled`, `spaceGuard.autoFix` via `wm settings` |
+| Virtual workspaces | Settings keys `virtualWorkspaces*` via `wm settings`; switching is in the old `spaceslab virtual` lab command |
+| Snap-on-drag | Settings keys `snap.*` via `wm settings`; the drag itself is GUI-only |
+| Launch at login, Sparkle updates, onboarding | GUI-only |
+| Window listing and moving an arbitrary live window | `wm spaces` lists windows; moving arbitrary windows outside a profile is not exposed (use a profile: `wm profile window add`, `wm run`) |
+| Menu bar scoped Run (monitor, Desktop, app) | CLI equivalent: `wm run --monitor --desktop --app` |
+| Shortcuts / Siri intents | App Intents only |
 
 ## Debug
 

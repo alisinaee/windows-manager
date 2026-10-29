@@ -73,3 +73,8 @@ Reviewed 14 distinct shots. Many target states are still wrong (see UX-019): cap
 - ProfileOptionsPanel.swift: UX-027
 - SidebarRailView.swift: UX-028 plus UX-012
 - ProfileShortcutView.swift: UX-002; LaunchOrderEditor.swift: UX-017; TileStackView.swift: UX-004; MapInspectorView.swift: UX-018
+
+# Sign-off (P6.102, code check)
+Code and fix commits (43fdd4b, c6cea50, 7115a07, 6d52b22, 75b26f1, 84b371f, 46090b1) checked against round 2. Each line in findings.jsonl now has `status`. Shots exist for sections: studio view/edit/sidebar/narrow/wide, inspector, sheets (save, capture, restore, shortcut), onboarding, settings, debug, popover (ux/shots, shots-check, shots-live).
+Open (not fixed in code): UX-004 tiles still clumped/not scaled to the saved frames (unverified in a new shot), UX-016 Debug log toggle still in the footer, UX-017 order arrows still beside the mode picker, UX-018 inspector chrome differs between modes, UX-023 window title lacks an unsaved marker, UX-029 no light-mode or increased-contrast shots.
+No re-review shots were taken after rounds 2-3; statuses rest on code and commit diffs.

@@ -72,4 +72,9 @@ public enum ShortcutAdvice {
         if combo == ownCombo { return nil }
         return taken[combo].map { "Already used by \($0)" }
     }
+
+    /// The first suggestion nobody else uses: the safest set first, then the lighter one. Nil when all 18 are taken.
+    public static func firstFreeSuggestion(taken: [ShortcutCombo: String], ownCombo: ShortcutCombo?) -> ShortcutCombo? {
+        (hyperSuggestions + lightSuggestions).first { taken[$0] == nil || $0 == ownCombo }
+    }
 }

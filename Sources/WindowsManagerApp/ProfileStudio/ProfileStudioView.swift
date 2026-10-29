@@ -58,6 +58,11 @@ struct ProfileStudioView: View {
                     StudioCopyPickerSheet(profiles: model.rows, onCopy: { model.beginCopy(of: $0) },
                                           onCancel: { model.isCopyPickerPresented = false })
                 }
+                .sheet(isPresented: $model.isReviewCapturePresented) {
+                    if let builder = model.builder {
+                        CaptureReviewPanel(capture: model.capture, builder: builder, onDone: { model.isReviewCapturePresented = false })
+                    }
+                }
                 .sheet(isPresented: $model.isSaveSheetPresented) {
                     if let builder = model.builder {
                         StudioSaveSheet(builder: builder, onSaved: { model.didSave($0) }, onCancel: { model.cancelSave() })
@@ -253,7 +258,8 @@ struct ProfileStudioView: View {
                 .accessibilityLabel("Preview restore")
             Divider().frame(height: 18)
             if let app = AppState.current {
-                StudioRunControl(app: app, profileID: row.id, profileName: row.name, iconOnly: iconOnly)
+                StudioRunControl(app: app, profileID: row.id, profileName: row.name, iconOnly: iconOnly,
+                                 showEditor: $model.isShortcutEditorPresented)
             }
         }
     }
@@ -268,7 +274,7 @@ struct StudioRunControl: View {
     var iconOnly: Bool
 
     @State private var shortcut: KeyboardShortcuts.Shortcut?
-    @State private var showEditor = false
+    @Binding var showEditor: Bool
 
     private var isSaved: Bool { app.savedProfiles.contains { $0.id == profileID } }
 
@@ -289,16 +295,27 @@ struct StudioRunControl: View {
                 DebugLog.log("studio", "shortcut chip opened: \(profileName)")
                 showEditor = true
             } label: {
-                Text(shortcut.map { $0.description } ?? "Set shortcut")
-                    .font(shortcut == nil ? .callout : .callout.monospaced()).lineLimit(1)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.15)))
-                    .foregroundStyle(shortcut == nil && isSaved ? .secondary : .primary)
+                if let shortcut {
+                    Text(shortcut.description).font(.callout.monospaced()).lineLimit(1)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.15)))
+                } else if isSaved {
+                    // Enabled and obviously clickable: accent colour, keyboard icon, outline.
+                    Label("Set shortcut", systemImage: "keyboard").font(.callout).lineLimit(1)
+                        .foregroundStyle(Color.blue)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.blue.opacity(0.7), lineWidth: 1))
+                } else {
+                    // Not saved yet: say why in the label itself instead of only dimming it.
+                    Label("Save to set shortcut", systemImage: "keyboard").font(.callout).lineLimit(1)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                }
             }
             .buttonStyle(.plain)
             .disabled(!isSaved)
-            .help(isSaved ? "Run shortcut: click to set or change it" : "Set shortcut is off because this profile is not saved yet. Save it first, then set a shortcut here.")
-            .accessibilityLabel(shortcut.map { "Run shortcut \($0.description), change" } ?? "Set run shortcut")
+            .help(isSaved ? "Run shortcut: click to set or change it" : "A run shortcut belongs to a saved profile. Save this profile first, then set a shortcut here.")
+            .accessibilityLabel(shortcut.map { "Run shortcut \($0.description), change" } ?? (isSaved ? "Set run shortcut" : "Run shortcut: save the profile first"))
             .popover(isPresented: $showEditor, arrowEdge: .bottom) {
                 ProfileShortcutView(profileID: profileID, profileName: profileName).padding(12).frame(width: 280)
             }

@@ -46,3 +46,28 @@ import Testing
         #expect(ShortcutAdvice.conflict(for: ShortcutAdvice.hyperSuggestions[2], taken: taken, ownCombo: nil) == nil)
     }
 }
+
+@Suite struct ShortcutSuggestionTests {
+    @Test func firstFreeIsTheFirstSafeComboWhenNothingIsTaken() {
+        #expect(ShortcutAdvice.firstFreeSuggestion(taken: [:], ownCombo: nil) == ShortcutAdvice.hyperSuggestions[0])
+    }
+
+    @Test func takenCombosAreSkipped() {
+        let hyper = ShortcutAdvice.hyperSuggestions
+        let taken = [hyper[0]: "profile A", hyper[1]: "Snap zone 1"]
+        #expect(ShortcutAdvice.firstFreeSuggestion(taken: taken, ownCombo: nil) == hyper[2])
+    }
+
+    @Test func fallsBackToLighterSetThenNil() {
+        var taken: [ShortcutCombo: String] = [:]
+        for c in ShortcutAdvice.hyperSuggestions { taken[c] = "x" }
+        #expect(ShortcutAdvice.firstFreeSuggestion(taken: taken, ownCombo: nil) == ShortcutAdvice.lightSuggestions[0])
+        for c in ShortcutAdvice.lightSuggestions { taken[c] = "x" }
+        #expect(ShortcutAdvice.firstFreeSuggestion(taken: taken, ownCombo: nil) == nil)
+    }
+
+    @Test func ownComboCountsAsFree() {
+        let own = ShortcutAdvice.hyperSuggestions[0]
+        #expect(ShortcutAdvice.firstFreeSuggestion(taken: [own: "this"], ownCombo: own) == own)
+    }
+}

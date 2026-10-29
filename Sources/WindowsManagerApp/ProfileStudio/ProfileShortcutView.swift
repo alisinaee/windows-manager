@@ -58,6 +58,11 @@ struct ProfileShortcutView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Control + Option + Command + number is the safest choice: macOS and apps almost never use it. Control + Option + number is lighter but a few apps bind it. Shortcuts already used here are greyed out.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if let free = ShortcutAdvice.firstFreeSuggestion(taken: taken, ownCombo: own), free != own {
+                    Button { assign(free) } label: { Label("Use next free: \(Self.text(free))", systemImage: "wand.and.stars").frame(maxWidth: .infinity) }
+                        .buttonStyle(.borderedProminent)
+                        .help("Pick the first safe shortcut no other hotkey uses")
+                }
                 suggestionGroup("Safest", ShortcutAdvice.hyperSuggestions, taken: taken, own: own)
                 suggestionGroup("Lighter", ShortcutAdvice.lightSuggestions, taken: taken, own: own)
                 if current != nil {

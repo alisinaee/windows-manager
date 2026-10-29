@@ -102,11 +102,6 @@ struct NewProfileMenu: View {
         .disabled(model.mode == .edit && !canReview)
         .help("More ways to start: blank, a copy of a profile, or review the captured windows")
         .accessibilityLabel("More ways to start a profile")
-        .popover(isPresented: $model.isReviewCapturePresented, arrowEdge: .bottom) {
-            if let builder = model.builder {
-                CaptureReviewPanel(capture: capture, builder: builder, onDone: { model.isReviewCapturePresented = false })
-            }
-        }
     }
 }
 

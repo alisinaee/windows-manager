@@ -8,7 +8,8 @@ struct DebugPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            scenarioList
+            ScrollView { scenarioList }
+                .frame(minHeight: 120, maxHeight: 240)
             Divider()
             liveSection
             footer
@@ -92,6 +93,14 @@ struct DebugPanel: View {
                                     .lineLimit(2)
                             }
                         }
+                    }
+
+                    if !model.logLines.isEmpty {
+                        Text("Log").font(.footnote).fontWeight(.semibold)
+                        Text(model.logLines.suffix(40).joined(separator: "\n"))
+                            .font(.caption.monospaced()).foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     if !model.checks.isEmpty {

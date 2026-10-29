@@ -13,6 +13,8 @@ final class DebugPanelModel: ObservableObject {
     @Published private(set) var phase = ""
     @Published private(set) var steps: [DebugStepRow] = []
     @Published private(set) var checks: [DebugCheck] = []
+    /// Live log lines of the focused run (newest last, bounded).
+    @Published private(set) var logLines: [String] = []
     @Published private(set) var results: [String: DebugRunResult] = [:]
     /// Status of the last run per scenario id, also from the previous app session (debug-run.json).
     @Published private(set) var lastStatus: [String: DebugRunStatus] = DebugRunnerRegistry.lastStatuses()
@@ -70,6 +72,7 @@ final class DebugPanelModel: ObservableObject {
         phase = "Starting \(scenario.title)…"
         steps = []
         checks = []
+        logLines = []
         copyMessage = ""
 
         let runner = DebugTestRunner(store: store)
@@ -103,8 +106,8 @@ final class DebugPanelModel: ObservableObject {
             } else {
                 checks.append(check)
             }
-        case .log:
-            break
+        case .log(let line):
+            logLines = DebugLogTail.append(line, to: logLines)
         }
     }
 

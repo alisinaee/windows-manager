@@ -21,6 +21,9 @@ final class FakeRestoreEnvironment: RestoreEnvironment {
     /// When set, `setFrame` reports this frame instead of the requested one (a window with a minimum size).
     var biggerFrame: CGRect?
 
+    /// Call name -> reason: the call ends as skipped (a raise of a window in another stage).
+    var skips: [String: String] = [:]
+
     private(set) var calls: [String] = []
     private(set) var sleeps: [TimeInterval] = []
     private(set) var scanCount = 0
@@ -52,6 +55,7 @@ final class FakeRestoreEnvironment: RestoreEnvironment {
             }
         }
         if let reason = failures[name] { return .failure(reason) }
+        if let reason = skips[name] { return .skipped(reason) }
         return .ok(frame: frame)
     }
 

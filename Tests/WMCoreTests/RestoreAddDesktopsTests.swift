@@ -159,6 +159,33 @@ final class FakeDesktopAdder: DesktopAdding {
         #expect(report.totals.failed == 1)
     }
 
+    /// Mission Control animates the windows; the rescan after an add must wait for that, or it plans moves for
+    /// windows that are already in place (S7 re-run).
+    @Test func rescanWaitsAfterTheAddStep() async {
+        let env = FakeRestoreEnvironment(scans: [Self.liveChromeAndSlack(desktopsOnA: 2)])
+        let adder = FakeDesktopAdder(count: 2)
+        adder.failure = "Mission Control did not open"
+        _ = await Self.engine(env, adder: adder).run(Self.chromeOnThreeSlackOnTwo())
+
+        let scans = env.calls.enumerated().filter { $0.element == "scan" }.map(\.offset)
+        #expect(scans.count >= 2)
+        let between = env.calls[scans[0]..<scans[1]]
+        #expect(between.contains { $0.hasPrefix("sleep:") })
+    }
+
+    @Test func raiseOfAWindowInAnotherStageEndsSkippedNotFailed() async {
+        let profile = F.profile([F.snap(1, F.chrome, z: 1), F.snap(2, F.slack, z: 0)])
+        let env = FakeRestoreEnvironment(scans: [F.scan([F.live(101, F.chrome), F.live(102, F.slack)])])
+        // Live order chrome, slack but saved slack in front: both are raised.
+        env.skips["raise:102"] = "the window cannot be raised"
+        let report = await RestoreEngine(environment: env).run(profile)
+        let raises = report.steps.filter { $0.kind == "raise" }
+        #expect(!raises.isEmpty)
+        #expect(raises.allSatisfy { $0.status.isDone || $0.status.isSkipped })
+        #expect(raises.contains { $0.status.isSkipped })
+        #expect(report.totals.failed == 0)
+    }
+
     @Test func addThatDoesNotGrowTheCountFails() async {
         let profile = Self.chromeOnThreeSlackOnTwo()
         let env = FakeRestoreEnvironment(scans: [Self.liveChromeAndSlack(desktopsOnA: 2)])

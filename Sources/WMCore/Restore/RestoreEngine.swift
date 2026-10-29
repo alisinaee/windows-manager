@@ -38,11 +38,19 @@ public struct RestoreActionResult: Equatable, Sendable {
     public var detail: String?
     /// The frame read back (frame changes only).
     public var frame: CGRect?
+    /// Set when the step could not apply and nothing is wrong with it (the window sits in another Stage Manager
+    /// stage and cannot be raised); the step ends as skipped, not failed.
+    public var skippedReason: String?
 
-    public init(succeeded: Bool, detail: String? = nil, frame: CGRect? = nil) {
+    public init(succeeded: Bool, detail: String? = nil, frame: CGRect? = nil, skippedReason: String? = nil) {
         self.succeeded = succeeded
         self.detail = detail
         self.frame = frame
+        self.skippedReason = skippedReason
+    }
+
+    public static func skipped(_ reason: String) -> RestoreActionResult {
+        RestoreActionResult(succeeded: false, detail: reason, skippedReason: reason)
     }
 
     public static func ok(_ detail: String? = nil, frame: CGRect? = nil) -> RestoreActionResult {
@@ -319,6 +327,9 @@ public final class RestoreEngine {
                 for step in addSteps { recordSkipped(step, reason: "cancelled", state: state) }
             } else {
                 for step in addSteps { await execute(step, state: state) }
+                // Driving Mission Control animates every window (they are drawn scaled for a moment); a scan now
+                // would read those transient frames and plan moves for windows that are already in place.
+                await environment.sleep(configuration.settleDelay)
                 planAgain = true
             }
             plan = plan.removing(.addDesktop)
@@ -753,6 +764,7 @@ public final class RestoreEngine {
             return Outcome(status: .failed("timed out after \(Self.format(timeout)) s"))
         }
         if result.succeeded { return Outcome(status: .done, note: result.detail, frame: result.frame) }
+        if let reason = result.skippedReason { return Outcome(status: .skipped(reason), frame: result.frame) }
         return Outcome(status: .failed(result.detail ?? "refused"), frame: result.frame)
     }
 
@@ -1069,6 +1081,10 @@ public final class LiveRestoreEnvironment: RestoreEnvironment {
             // A window that is already the app's main window needs no raise; the app only has to come forward.
             let alreadyMain = await Self.readBool(element, kAXMainAttribute) == true
             guard alreadyMain, raised == .actionUnsupported || raised == .cannotComplete else {
+                // Stage Manager: a window of another stage answers "action unsupported"; it cannot be raised here.
+                if raised == .actionUnsupported || raised == .attributeUnsupported {
+                    return .skipped("the window cannot be raised (it sits in another Stage Manager stage or Space)")
+                }
                 return .failure("the window did not accept AXRaise (AXError \(raised.rawValue))")
             }
         }

@@ -1,4 +1,5 @@
 import SwiftUI
+import WMCore
 
 /// Menu shown from the menu bar item: profiles with Run, Capture, status.
 struct MenuBarContent: View {

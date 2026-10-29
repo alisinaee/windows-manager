@@ -22,6 +22,19 @@ enum CaptureSession {
         return result
     }
 
+    /// Like `run`, but gives up after `limit` (default 15 s): the windows are shown again and nil is returned, so a hung
+    /// scan ends with an error instead of a Studio that never comes back (P6.132). A late scan result is dropped.
+    static func runTimed(limit: Duration = CaptureTimeout.defaultLimit, _ scan: @escaping @Sendable () -> WorkspaceScan) async -> WorkspaceScan? {
+        let (hidden, keyBefore) = hideOwnWindows()
+        try? await Task.sleep(for: settleDelay)
+        let result = await CaptureTimeout.race(limit: limit) {
+            await Task.detached(priority: .userInitiated) { scan() }.value
+        }
+        restore(hidden, keyBefore: keyBefore)
+        if result == nil { DebugLog.log("capture", "scan timed out after \(limit); windows shown again") }
+        return result
+    }
+
     /// The workspace as WMCore scans it, minus our own app's windows (matched by bundle id or owner name), so a
     /// captured profile never contains Windows Manager itself.
     nonisolated static func scanWorkspace() -> WorkspaceScan {

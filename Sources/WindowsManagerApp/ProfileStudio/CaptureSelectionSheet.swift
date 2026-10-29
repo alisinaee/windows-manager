@@ -85,11 +85,10 @@ struct NewProfileMenu: View {
 
     var body: some View {
         Menu {
-            if model.mode == .view {
-                Button("From current workspace") { model.beginNewProfile() }.help("Start a profile from the windows open now")
-                Button("Blank on these monitors") { model.beginBlankProfile() }.help("Start an empty profile on these monitors")
-                Button("Copy of a profile…") { model.isCopyPickerPresented = true }.help("Start from a copy of a saved profile")
-            }
+            // Enabled in Edit mode too: a press there shows the same notice as the New profile button.
+            Button("From current workspace") { model.beginNewProfile() }.help("Start a profile from the windows open now")
+            Button("Blank on these monitors") { model.beginBlankProfile() }.help("Start an empty profile on these monitors")
+            Button("Copy of a profile…") { model.requestCopyPicker() }.help("Start from a copy of a saved profile")
             if canReview {
                 Button("Review capture…") { model.isReviewCapturePresented = true }.help("Untick the captured windows to leave out")
             }
@@ -99,7 +98,6 @@ struct NewProfileMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .disabled(model.mode == .edit && !canReview)
         .help("More ways to start: blank, a copy of a profile, or review the captured windows")
         .accessibilityLabel("More ways to start a profile")
     }

@@ -139,9 +139,11 @@ final class ProfileBuilderModel: ObservableObject {
 
     /// Reads the live workspace into a draft capture, with the Studio's own windows out of the way (`CaptureSession`).
     /// Nothing in the Builder changes.
-    func captureWorkspace() async -> Result<(Profile, [String]), CaptureFailure> {
+    func captureWorkspace(timeout: Duration = CaptureTimeout.defaultLimit) async -> Result<(Profile, [String]), CaptureFailure> {
         DebugLog.log("studio", "capture start: current workspace")
-        let scan = await CaptureSession.run { CaptureSession.scanWorkspace() }
+        guard let scan = await CaptureSession.runTimed(limit: timeout, { CaptureSession.scanWorkspace() }) else {
+            return .failure(CaptureFailure(CaptureTimeout.message))
+        }
         let (captured, notes) = await Task.detached { ProfileCapture.makeProfile(name: "Current workspace", from: scan) }.value
         guard !captured.displays.isEmpty else {
             DebugLog.log("studio", "capture failed: no monitors read")

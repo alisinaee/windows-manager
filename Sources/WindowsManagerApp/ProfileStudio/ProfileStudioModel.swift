@@ -249,6 +249,13 @@ final class ProfileStudioModel: ObservableObject {
         Task { await b.start(from: .blank) }
     }
 
+    /// "Copy of a profile…" in the menu: opens the picker, or says why not in Edit mode.
+    func requestCopyPicker() {
+        if let why = NewProfileGate.refusal(isEditing: mode == .edit, hasUnsavedChanges: hasUnsavedChanges) { newProfileNotice = why; return }
+        newProfileNotice = nil
+        isCopyPickerPresented = true
+    }
+
     /// "Copy of a profile…": the picked saved profile opens as a draft.
     func beginCopy(of id: UUID) {
         if let why = NewProfileGate.refusal(isEditing: mode == .edit, hasUnsavedChanges: hasUnsavedChanges) { newProfileNotice = why; return }

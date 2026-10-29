@@ -91,6 +91,23 @@ public final class LayoutService: @unchecked Sendable {
         return layout
     }
 
+    /// Renames and/or moves a zone (any argument left nil stays as it is). The new rect is validated like a new zone.
+    @discardableResult
+    public func updateZone(in idOrName: String, zone zoneRef: String, name: String? = nil, rect: NormalizedRect? = nil) throws -> Layout {
+        var layout = try find(idOrName, in: try load())
+        let zone = try Self.findZone(zoneRef, in: layout)
+        guard let i = layout.zones.firstIndex(where: { $0.id == zone.id }) else { throw ServiceError.notFound("No zone \"\(zoneRef)\".") }
+        if let name {
+            let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !clean.isEmpty else { throw ServiceError.invalid("Zone name is empty.") }
+            layout.zones[i].name = clean
+        }
+        if let rect { layout.zones[i].rect = rect }
+        try Self.validate(zones: [layout.zones[i]])
+        try save { try store.upsert(layout) }
+        return layout
+    }
+
     /// Removes a zone by id or name, and its app assignments.
     @discardableResult
     public func removeZone(from idOrName: String, zone zoneRef: String) throws -> Layout {

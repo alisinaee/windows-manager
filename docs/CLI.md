@@ -80,6 +80,10 @@ Envelope: success `{"ok":true,"data":...}`; failure `{"ok":false,"error":{"code"
 | `wm layouts create` | M | | `<name>` `--display <uuid>` |
 | `wm layouts rename` | M | | `<layout> <newName>` |
 | `wm layouts delete` | M | | `<layout>` |
+| `wm layouts zones list` | | | `<layout>` |
+| `wm layouts zones add` | M | | `<layout> <name>` `--rect x,y,w,h` (fractions 0-1 of the display, origin top-left) |
+| `wm layouts zones set` | M | | `<layout> <zone>` `--rect x,y,w,h` `--name <text>` (move, resize, rename) |
+| `wm layouts zones remove` | M | | `<layout> <zone>` |
 
 ## Settings
 
@@ -99,25 +103,40 @@ Envelope: success `{"ok":true,"data":...}`; failure `{"ok":false,"error":{"code"
 | `wm rules pins add` | M | | `<bundleID>` `--desktop <n>` `--display <uuid>` `--space <id>` `--title <text>` |
 | `wm rules pins remove` | M | | `<id>` |
 | `wm rules auto` | M | | `--enabled on\|off` `--monitor-change on\|off` `--wake on\|off` `--unlock on\|off` `--delay <s>` `--cooldown <s>` (0-3600 s): auto profile triggers |
+| `wm rules auto-map` | | | `list`: monitor set to profile mappings plus the current monitor set key |
+| `wm rules auto-map set` | M | | `<profile>` `--key <monitorSetKey>` (default: displays connected now) |
+| `wm rules auto-map remove` | M | | `--key <monitorSetKey>` (default: displays connected now) |
 | `wm rules window-rules` | | | List per-app window rules |
 | `wm rules window-rules set` | M | | `<bundleID> <ignore\|alwaysRestore\|pinToDisplay>` `--display <uuid>` |
 | `wm rules window-rules remove` | M | | `<bundleID>` |
+
+## System: hotkeys, backups, windows, updates
+
+| Command | M | W | Arguments and options |
+|---|---|---|---|
+| `wm hotkeys list` | | | Global hotkeys (workspace, snap zone, window size, move to display) and profile hotkeys found in the store |
+| `wm hotkeys set` | M | | `<name> <combo>` e.g. `workspace.next ctrl+opt+cmd+right`; needs a modifier; refuses system shortcuts and combos already used (exit 1). Keys: letters, digits, arrows, `space`, `return`, `tab`, `esc`, `f1`-`f12`, `minus`, `equal`, `comma`, `period`, `slash`, `semicolon`, `quote`, `backslash`, `leftbracket`, `rightbracket`, `grave`. The app reads hotkeys at launch: restart it to apply |
+| `wm hotkeys clear` | M | | `<name>` |
+| `wm backup list` | | | Space order backups, newest first |
+| `wm backup create` | M | | `--reason <text>`: reads `com.apple.spaces` and the Mission Control shortcuts, writes one file in `~/Library/Application Support/WindowsManager/Backups` |
+| `wm backup restore` | M | | `<backup>` (file name, unique prefix or `latest`) `--yes` `--no-dock-restart`: imports the preferences and restarts the Dock. Without `--yes` it refuses (exit 2) |
+| `wm windows list` | | | `--app <name>` `--space <id>` `--on-screen` `--all` (include windows with no Space): id, app, pid, title, Space (Desktop number or full-screen), frame. Read-only; to move windows use a profile |
+| `wm updates check` | | | `--app <path>`: reads `SUFeedURL` from the installed app, fetches the appcast, compares builds. Read-only, never downloads or installs; reports "not configured" while there is no feed URL |
 
 ## GUI features without a CLI command (gaps, P6.86)
 
 | GUI feature | Status |
 |---|---|
-| Auto profile monitor-set to profile mapping | Service `RuleService.setAutoProfileMapping` exists; no command yet (`wm rules auto` sets triggers and delays only) |
-| Layout zone editing (add, move, resize zones) | Only create, rename, delete layouts; zones are GUI-only. Use `wm profile zone` / `grid` to place windows |
-| Global hotkeys (workspace switch, snap zones, move to display) | GUI-only (Hotkeys tab). Per-profile shortcuts work: `wm profile shortcut` |
-| Space preference backups (back up, restore) | GUI-only (Space guard); restore changes system preferences, so it stays GUI |
+| Moving or closing an arbitrary live window | `wm windows list` lists them; moving windows outside a profile is not exposed (use a profile: `wm profile window add`, `wm run`) |
+| Launch at login | Not feasible: `SMAppService.mainApp` registers the calling process's own bundle, so from `wm` it would register `wm`, not the app, and `sfltool dumpbtm` needs root. Use the app's Settings or System Settings > General > Login Items |
+| Installing an update (Sparkle) | The download and install UI is Sparkle's and only the app links it. `wm updates check` covers the version check |
+| Live hotkey reload | `wm hotkeys` edits the stored shortcuts; the running app picks them up at its next launch |
 | Space guard watch and auto fix | Settings keys `spaceGuard.watchEnabled`, `spaceGuard.autoFix` via `wm settings` |
 | Virtual workspaces | Settings keys `virtualWorkspaces*` via `wm settings`; switching is in the old `spaceslab virtual` lab command |
 | Snap-on-drag | Settings keys `snap.*` via `wm settings`; the drag itself is GUI-only |
-| Launch at login, Sparkle updates, onboarding | GUI-only |
-| Window listing and moving an arbitrary live window | `wm spaces` lists windows; moving arbitrary windows outside a profile is not exposed (use a profile: `wm profile window add`, `wm run`) |
+| Onboarding | GUI-only |
 | Menu bar scoped Run (monitor, Desktop, app) | CLI equivalent: `wm run --monitor --desktop --app` |
-| Shortcuts / Siri intents | App Intents only |
+| Shortcuts / Siri intents | App Intents only; the same actions are `wm run`, `wm profile` |
 
 ## Debug
 

@@ -291,7 +291,6 @@ struct StudioRunControl: View {
                 app.run(id: profileID)
             } label: { Label("Run", systemImage: "play.fill") }
                 .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
-                .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)
                 .tint(.blue)
                 .disabled(!app.canAct)
@@ -409,7 +408,7 @@ struct StudioMapHost: View {
         }
         .task(id: row) { map.load(try? AppState.current?.store.load(row.id)) }
         .onChange(of: model.liveStatus) { _, newValue in map.status = newValue }
-        .onAppear { map.status = model.liveStatus }
+        .onAppear { map.status = model.liveStatus; model.activeMap = map }
     }
 }
 
@@ -504,7 +503,7 @@ struct StudioEditDetail: View {
     private var libraryAndMap: some View {
         VStack(spacing: 0) {
             BuilderMapCanvas(map: map, builder: builder)
-                .onAppear { builder.mapModel = map }
+                .onAppear { builder.mapModel = map; model.activeMap = map }
             Divider()
             studioBottomBar { MapLegendView(showsStatus: false) }
         }

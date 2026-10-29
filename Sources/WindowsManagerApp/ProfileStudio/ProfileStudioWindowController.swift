@@ -11,7 +11,7 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
     static let minSize = NSSize(width: 560, height: 420)
 
     private var window: NSWindow?
-    private let model = ProfileStudioModel()
+    let model = ProfileStudioModel()
 
     /// Shows the studio (or brings the open one forward). With `profileID` it selects that profile.
     func show(profileID: UUID? = nil) {

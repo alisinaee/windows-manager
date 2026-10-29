@@ -79,7 +79,6 @@ struct SidebarToggleButton: View {
             Image(systemName: "sidebar.left").frame(width: 32, height: 28).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .keyboardShortcut("s", modifiers: [.command, .option])
         .help(model.isSidebarShown ? "Hide the sidebar (Cmd+Opt+S)" : "Show the sidebar (Cmd+Opt+S)")
         .accessibilityLabel(model.isSidebarShown ? "Hide sidebar" : "Show sidebar")
     }

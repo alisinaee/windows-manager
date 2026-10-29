@@ -107,7 +107,22 @@ final class ProfileStudioModel: ObservableObject {
     private var compareInFlight = false
     private var closeCancellable: AnyCancellable?
 
+    /// The map the zoom menu commands act on (set by whichever map host is on screen).
+    weak var activeMap: ProfileMapModel?
+    /// True while the Studio window is the key window; the app menu items are disabled otherwise.
+    @Published private(set) var isFront = false
+    private var keyObservers: [AnyCancellable] = []
+
     init() {
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            NotificationCenter.default.publisher(for: name)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    let front = Self.isStudioWindow(NSApp.keyWindow)
+                    if self?.isFront != front { self?.isFront = front }
+                }
+                .store(in: &keyObservers)
+        }
         // Closing the Studio stops the Live sync of its draft (the draft itself stays, as the window is reopened).
         closeCancellable = NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)
             .compactMap { $0.object as? NSWindow }

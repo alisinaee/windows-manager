@@ -150,7 +150,6 @@ struct ProfileMapCanvas: View {
                     .accessibilityLabel("Next Desktop").help("Next Desktop (Cmd+])")
             }
             Button { model.zoomBy(1 / 1.25) } label: { Image(systemName: "minus.magnifyingglass") }
-                .keyboardShortcut("-", modifiers: .command)
                 .accessibilityLabel("Zoom out").help("Zoom out (Cmd+-)")
             Slider(value: Binding(get: { model.zoom }, set: { model.setZoom($0) }),
                    in: CanvasViewport.zoomRange)
@@ -159,17 +158,14 @@ struct ProfileMapCanvas: View {
                 .accessibilityValue("\(Int((model.zoom * 100).rounded())) percent")
                 .help("Hold Space and drag to pan, pinch or Cmd+scroll to zoom")
             Button { model.zoomBy(1.25) } label: { Image(systemName: "plus.magnifyingglass") }
-                .keyboardShortcut("=", modifiers: .command)
                 .accessibilityLabel("Zoom in").help("Zoom in (Cmd+=)")
             Button { model.actualSize() } label: {
                 Text("\(Int((model.zoom * 100).rounded()))%")
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
                     .frame(width: 40, alignment: .trailing)
             }
-            .keyboardShortcut("0", modifiers: .command)
             .accessibilityLabel("Reset zoom to 100 percent").help("Reset zoom to 100% (Cmd+0)")
             Button("Fit") { model.fit() }
-                .keyboardShortcut("1", modifiers: .command)
                 .help("Fit the map to the window (Cmd+1)")
             Button { model.zoomToSelection() } label: { Image(systemName: "scope") }
                 .keyboardShortcut("2", modifiers: .command)

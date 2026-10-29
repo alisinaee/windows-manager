@@ -119,7 +119,7 @@ struct ProfilesSettingsTab: View {
 
     private func delete(_ id: UUID) {
         do {
-            try appState.store.delete(id)
+            try appState.profileService.delete(id.uuidString)
             appState.reloadProfiles()
             model.select(nil, store: appState.store)
             model.message = "Moved to Trash."
@@ -128,12 +128,12 @@ struct ProfilesSettingsTab: View {
 
     private func export(_ id: UUID) {
         do {
-            let profile = try appState.store.load(id)
+            let profile = try appState.profileService.show(id.uuidString)
             let panel = NSSavePanel()
             panel.allowedContentTypes = [.json]
             panel.nameFieldStringValue = "\(profile.name).json"
             guard panel.runModal() == .OK, let url = panel.url else { return }
-            try ProfileTransfer.export(profile).write(to: url, options: .atomic)
+            try appState.profileService.exportData(id.uuidString).write(to: url, options: .atomic)
             model.message = "Exported to \(url.lastPathComponent)."
         } catch { fail(error) }
     }
@@ -145,9 +145,7 @@ struct ProfilesSettingsTab: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let data = try Data(contentsOf: url)
-            let profile = try ProfileTransfer.importProfile(data, existingNames: appState.savedProfiles.map(\.name),
-                                                            source: url.lastPathComponent)
-            let saved = try appState.store.save(profile)
+            let saved = try appState.profileService.importData(data, source: url.lastPathComponent)
             appState.reloadProfiles()
             model.select(saved.id, store: appState.store)
             model.message = "Imported \(saved.name)."

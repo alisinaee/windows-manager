@@ -23,6 +23,8 @@ final class AppState: ObservableObject {
     /// A fresh capture waiting for "Choose what to save…" ticks; nil when none is open.
     @Published var pendingCapture: PendingCapture?
     let store = ProfileStore()
+    /// The Core service over `store`; screens call it instead of the store for what the CLI also does.
+    lazy var profileService: ProfileService = ProfileService(store: store)
     @Published private(set) var isAccessibilityTrusted: Bool = AXPermission.isTrusted()
 
     private var pollTask: Task<Void, Never>?

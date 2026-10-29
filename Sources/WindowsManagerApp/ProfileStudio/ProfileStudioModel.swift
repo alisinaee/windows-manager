@@ -38,32 +38,25 @@ final class ProfileStudioModel: ObservableObject {
 
     // MARK: Sidebar
 
-    /// The user's choice, remembered ("studioSidebarVisible"; expanded by default).
-    @Published private(set) var sidebarVisible = UserDefaults.standard.object(forKey: "studioSidebarVisible") as? Bool ?? true
-    /// The window content is narrower than `narrowWidth`: the sidebar collapses unless the user expanded it on purpose.
-    @Published private(set) var isNarrow = false
-    private var userForcedOpen = false
-    static let narrowWidth: CGFloat = 760
+    /// Collapsed or expanded; the user's choice is remembered ("studioSidebarVisible"; expanded by default).
+    @Published private(set) var sidebar = StudioSidebarState(
+        isVisible: UserDefaults.standard.object(forKey: "studioSidebarVisible") as? Bool ?? true)
+    static let narrowWidth = CGFloat(StudioSidebarState.narrowWidth)
 
-    var isSidebarShown: Bool { sidebarVisible && (!isNarrow || userForcedOpen) }
+    var isSidebarShown: Bool { sidebar.isShown }
 
     func toggleSidebar() {
-        if isSidebarShown {
-            sidebarVisible = false
-            userForcedOpen = false
-        } else {
-            sidebarVisible = true
-            userForcedOpen = true   // explicit: do not fight it when the window is narrow
-        }
-        UserDefaults.standard.set(sidebarVisible, forKey: "studioSidebarVisible")
+        sidebar.toggle()
+        UserDefaults.standard.set(sidebar.isVisible, forKey: "studioSidebarVisible")
         DebugLog.log("studio", "sidebar \(isSidebarShown ? "expanded" : "collapsed")")
     }
 
+    func setSidebar(shown: Bool) {
+        if shown != isSidebarShown { toggleSidebar() }
+    }
+
     func contentWidthChanged(_ width: CGFloat) {
-        let narrow = width < Self.narrowWidth
-        guard narrow != isNarrow else { return }
-        isNarrow = narrow
-        if !narrow { userForcedOpen = false }
+        sidebar.contentWidthChanged(Double(width))
     }
 
     // MARK: Compare with now (UI3)
@@ -89,6 +82,8 @@ final class ProfileStudioModel: ObservableObject {
     @Published var isCopyPickerPresented = false
     /// "Review capture" popover: unticking windows removes them from the new draft.
     @Published var isReviewCapturePresented = false
+    /// The run-shortcut recorder popover next to Run is open.
+    @Published var isShortcutEditorPresented = false
     /// The background capture behind a new profile ("New profile" starts it at once).
     let capture = CaptureChoiceModel()
     @Published var isSaveSheetPresented = false

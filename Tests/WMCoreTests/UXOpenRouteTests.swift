@@ -16,6 +16,12 @@ final class UXOpenRouteTests: XCTestCase {
         XCTAssertThrowsError(try UXOpenRoute.parse(url: URL(string: "windowsmanager://open?section=onboarding&permission=x")!))
     }
 
+    func testShortcutSheetAndSidebar() throws {
+        let r = try UXOpenRoute.parse(url: URL(string: "windowsmanager://open?section=studio&profile=Work&sheet=shortcut&sidebar=collapsed")!)
+        XCTAssertEqual(r, UXOpenRoute(section: .studio, profile: "Work", sheet: .shortcut, sidebar: .collapsed))
+        XCTAssertThrowsError(try UXOpenRoute.parse(url: URL(string: "windowsmanager://open?section=studio&sidebar=half")!))
+    }
+
     func testSectionOnly() throws {
         let r = try UXOpenRoute.parse(url: URL(string: "windowsmanager://open?section=popover")!)
         XCTAssertEqual(r, UXOpenRoute(section: .popover))

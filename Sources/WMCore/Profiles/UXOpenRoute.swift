@@ -5,9 +5,10 @@ import Foundation
 public struct UXOpenRoute: Equatable, Sendable {
     public enum Section: String, Sendable, CaseIterable { case studio, settings, onboarding, debug, popover }
     public enum Mode: String, Sendable { case view, edit }
-    public enum Sheet: String, Sendable { case save, capture, restore }
+    public enum Sheet: String, Sendable { case save, capture, restore, shortcut }
     public enum InspectorTab: String, Sendable { case inspector, options, launch }
     public enum Appearance: String, Sendable { case light, dark }
+    public enum Sidebar: String, Sendable { case collapsed, expanded }
 
     public enum ParseError: Error, Equatable, Sendable, CustomStringConvertible {
         case notOpenRoute
@@ -33,15 +34,17 @@ public struct UXOpenRoute: Equatable, Sendable {
     public var selectTile: Int?
     /// Pre-fills the name in the Save sheet (an existing name shows the conflict case).
     public var saveName: String?
+    /// Studio sidebar: collapsed to the icon rail or expanded.
+    public var sidebar: Sidebar?
 
     public enum Permission: String, Sendable { case before, after }
 
     public init(section: Section, profile: String? = nil, mode: Mode? = nil, sheet: Sheet? = nil,
                 inspectorTab: InspectorTab? = nil, appearance: Appearance? = nil, size: CGSize? = nil,
-                permission: Permission? = nil, selectTile: Int? = nil, saveName: String? = nil) {
+                permission: Permission? = nil, selectTile: Int? = nil, saveName: String? = nil, sidebar: Sidebar? = nil) {
         self.section = section; self.profile = profile; self.mode = mode; self.sheet = sheet
         self.inspectorTab = inspectorTab; self.appearance = appearance; self.size = size
-        self.permission = permission; self.selectTile = selectTile; self.saveName = saveName
+        self.permission = permission; self.selectTile = selectTile; self.saveName = saveName; self.sidebar = sidebar
     }
 
     /// True only when `WM_UX_TEST=1`.
@@ -89,6 +92,7 @@ public struct UXOpenRoute: Equatable, Sendable {
         return UXOpenRoute(section: section, profile: raw("profile"), mode: try pick("mode", Mode.self),
                            sheet: try pick("sheet", Sheet.self), inspectorTab: try pick("inspectorTab", InspectorTab.self),
                            appearance: try pick("appearance", Appearance.self), size: size,
-                           permission: try pick("permission", Permission.self), selectTile: tile, saveName: raw("saveName"))
+                           permission: try pick("permission", Permission.self), selectTile: tile, saveName: raw("saveName"),
+                           sidebar: try pick("sidebar", Sidebar.self))
     }
 }

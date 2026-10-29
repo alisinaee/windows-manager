@@ -49,7 +49,7 @@ enum UXTestRoute {
             if let size = route.size, let target { await applySize(size, to: target) }
             if let model = ProfileStudioModel.uxCurrent() {
                 await model.uxApply(profile: route.profile, mode: route.mode, sheet: route.sheet,
-                                    selectTile: route.selectTile, saveName: route.saveName)
+                                    selectTile: route.selectTile, saveName: route.saveName, sidebar: route.sidebar)
             }
         case .settings:
             target = await openSettings()
@@ -74,7 +74,10 @@ enum UXTestRoute {
     }
 
     private static func writeReady(_ window: NSWindow) {
-        let json = "{\"window\": \(window.windowNumber), \"title\": \"\(window.title)\"}"
+        // "rect" is the window frame in top-left screen coordinates, for region captures that include popovers.
+        let screenH = NSScreen.screens.first?.frame.height ?? 0
+        let f = window.frame
+        let json = "{\"window\": \(window.windowNumber), \"title\": \"\(window.title)\", \"rect\": \"\(Int(f.minX)),\(Int(screenH - f.maxY)),\(Int(f.width)),\(Int(f.height))\"}"
         try? json.write(toFile: readyPath, atomically: true, encoding: .utf8)
     }
 

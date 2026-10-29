@@ -16,6 +16,8 @@ inspector-options|many|section=studio&profile=Work&mode=edit&inspectorTab=option
 inspector-launch|many|section=studio&profile=Work&mode=edit&inspectorTab=launch|needs view hook
 save-sheet-conflict|many|section=studio&profile=Work&mode=edit&sheet=save&saveName=Writing|name of an existing profile
 capture-sheet|many|section=studio&profile=Work&mode=edit&sheet=capture
+sidebar-collapsed|many|section=studio&profile=Work&mode=view&sidebar=collapsed|icon rail, toggle Cmd+Opt+S
+shortcut-recorder|many|section=studio&profile=Work&mode=view&sheet=shortcut|popover: capture with UX_REGION=1
 restore-preview|many|section=studio&profile=Work&mode=view&sheet=restore
 studio-narrow|many|section=studio&profile=Work&mode=view&size=600x450
 studio-wide|many|section=studio&profile=Work&mode=view&size=1500x900

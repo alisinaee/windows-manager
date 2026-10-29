@@ -28,10 +28,14 @@ extension ProfileStudioModel {
     /// Selects a profile by name (case-insensitive), switches mode and opens a sheet. Returns false when the profile is unknown.
     @MainActor @discardableResult
     func uxApply(profile name: String?, mode wanted: UXOpenRoute.Mode?, sheet: UXOpenRoute.Sheet?,
-                 selectTile: Int? = nil, saveName: String? = nil) async -> Bool {
+                 selectTile: Int? = nil, saveName: String? = nil,
+                 sidebar: UXOpenRoute.Sidebar? = nil) async -> Bool {
         await uxWaitLoaded()
         // A sheet left by the previous route must not show in this state.
         isPreviewPresented = false; isSaveSheetPresented = false; isReviewCapturePresented = false; isCopyPickerPresented = false
+        isShortcutEditorPresented = false
+        // Deterministic: expanded unless asked otherwise (a narrow window still collapses by itself).
+        if let sidebar { setSidebar(shown: sidebar == .expanded) } else if !self.sidebar.isVisible { setSidebar(shown: true) }
         try? await Task.sleep(for: .milliseconds(400))
         var found = true
         if let name {
@@ -72,7 +76,11 @@ extension ProfileStudioModel {
                 if let saveName { builder?.setName(saveName) }
                 isSaveSheetPresented = true
             }
-        case .capture: break
+        case .capture: break   // opened above, after the capture is ready
+        case .shortcut:
+            // Needs a saved profile selected (View or Edit); the recorder popover opens next to Run.
+            try? await Task.sleep(for: .milliseconds(300))
+            isShortcutEditorPresented = selectedID != nil
         case .restore: isPreviewPresented = true
         case nil: break
         }

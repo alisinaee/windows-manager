@@ -23,11 +23,10 @@ enum IPCSocket {
         unlink(path)
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw IPCError.io("socket: \(String(cString: strerror(errno)))") }
-        let oldMask = umask(0o177)
+        // No process-wide umask change here: it is global and races with file creation on other threads.
         let rc = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
-        umask(oldMask)
         guard rc == 0 else { let m = String(cString: strerror(errno)); close(fd); throw IPCError.io("bind: \(m)") }
         chmod(path, 0o600)
         guard listen(fd, 8) == 0 else { let m = String(cString: strerror(errno)); close(fd); throw IPCError.io("listen: \(m)") }

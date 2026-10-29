@@ -12,9 +12,13 @@ struct SidebarRailView: View {
                 tile(icon: "plus", tint: .accentColor, selected: false)
             }
             .buttonStyle(.plain)
-            .disabled(model.mode == .edit)
-            .help(model.mode == .edit ? "Finish editing (Save or Cancel) to create a profile" : "New profile")
+            .help(model.newProfileNotice ?? (model.mode == .edit ? "Save or Cancel the open edit first, then add a profile" : "New profile"))
             .accessibilityLabel("New profile")
+            if model.newProfileNotice != nil {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    .help(model.newProfileNotice ?? "")
+                    .accessibilityLabel(model.newProfileNotice ?? "")
+            }
             ScrollView {
                 VStack(spacing: 6) {
                     ForEach(model.rows) { row in railIcon(row) }

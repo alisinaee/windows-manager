@@ -5,7 +5,7 @@ import Foundation
 public struct UXOpenRoute: Equatable, Sendable {
     public enum Section: String, Sendable, CaseIterable { case studio, settings, onboarding, debug, popover }
     public enum Mode: String, Sendable { case view, edit }
-    public enum Sheet: String, Sendable { case save, capture, restore, shortcut }
+    public enum Sheet: String, Sendable { case save, capture, restore, shortcut, newprofile }
     public enum InspectorTab: String, Sendable { case inspector, options, launch }
     public enum Appearance: String, Sendable { case light, dark }
     public enum Sidebar: String, Sendable { case collapsed, expanded }

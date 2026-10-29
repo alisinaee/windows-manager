@@ -82,6 +82,7 @@ extension ProfileStudioModel {
             try? await Task.sleep(for: .milliseconds(300))
             isShortcutEditorPresented = selectedID != nil
         case .restore: isPreviewPresented = true
+        case .newprofile: beginNewProfile()   // in Edit mode: shows why nothing started
         case nil: break
         }
         return found

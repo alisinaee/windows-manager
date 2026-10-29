@@ -223,10 +223,18 @@ final class ProfileStudioModel: ObservableObject {
         return b
     }
 
+    /// Why the last "New profile" press did nothing; shown under the button until the next press or leaving Edit.
+    @Published var newProfileNotice: String?
+
     /// "New profile": captures the current workspace at once and opens the map with everything kept (no start sheet).
     /// The map pane shows progress until the capture is done. "Review capture" in the New profile menu unticks windows.
     func beginNewProfile() {
-        guard mode == .view else { return }
+        if let why = NewProfileGate.refusal(isEditing: mode == .edit, hasUnsavedChanges: hasUnsavedChanges) {
+            DebugLog.log("studio", "new profile refused: \(why)")
+            newProfileNotice = why
+            return
+        }
+        newProfileNotice = nil
         DebugLog.log("studio", "new profile: from current workspace")
         let b = enterNewDraft()
         Task { await capture.run(builder: b) }
@@ -234,7 +242,8 @@ final class ProfileStudioModel: ObservableObject {
 
     /// "Blank on these monitors" from the New profile menu.
     func beginBlankProfile() {
-        guard mode == .view else { return }
+        if let why = NewProfileGate.refusal(isEditing: mode == .edit, hasUnsavedChanges: hasUnsavedChanges) { newProfileNotice = why; return }
+        newProfileNotice = nil
         DebugLog.log("studio", "new profile: blank")
         let b = enterNewDraft()
         Task { await b.start(from: .blank) }
@@ -242,7 +251,8 @@ final class ProfileStudioModel: ObservableObject {
 
     /// "Copy of a profile…": the picked saved profile opens as a draft.
     func beginCopy(of id: UUID) {
-        guard mode == .view else { return }
+        if let why = NewProfileGate.refusal(isEditing: mode == .edit, hasUnsavedChanges: hasUnsavedChanges) { newProfileNotice = why; return }
+        newProfileNotice = nil
         DebugLog.log("studio", "new profile: copy")
         isCopyPickerPresented = false
         let b = enterNewDraft()
@@ -301,6 +311,7 @@ final class ProfileStudioModel: ObservableObject {
 
     /// Throws the draft away and returns to View mode.
     func leaveEdit() {
+        newProfileNotice = nil
         builder?.discard()
         builder = nil
         capture.reset()

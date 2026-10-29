@@ -157,11 +157,18 @@ struct ProfileStudioView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.accentColor)
-                .disabled(model.mode == .edit)
                 .help("Start a new profile from the current workspace. The chevron has blank, copy and Review capture.")
                 NewProfileMenu(model: model, capture: model.capture)
             }
             .padding(.horizontal, 6).padding(.top, 8)
+            if let notice = model.newProfileNotice {
+                Label(notice, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10).padding(.top, 4)
+                    .accessibilityIdentifier("newProfileNotice")
+            }
             List(model.rows, selection: selection) { row in
                 ProfileStudioRowView(row: row).tag(row.id)
                     .listRowInsets(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10))
@@ -198,7 +205,6 @@ struct ProfileStudioView: View {
                        subtitle: "Choose one on the left, or create a new one") {
                 Button { model.beginNewProfile() } label: { Label("New profile", systemImage: "plus") }
                     .buttonStyle(.borderedProminent).tint(.blue).controlSize(.large)
-                    .disabled(model.mode == .edit)
                     .help("Start a new profile from the current workspace")
                     .accessibilityLabel("New profile")
             }

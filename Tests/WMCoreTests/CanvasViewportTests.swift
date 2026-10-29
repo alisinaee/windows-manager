@@ -109,4 +109,37 @@ import Testing
         #expect(big.monitors.first?.contentRect.minY == (base.monitors.first?.contentRect.minY ?? 0) * 3)
         #expect(big.thumbnails.count == base.thumbnails.count)
     }
+
+    @Test func zoomToSelectionFitsRectWithPaddingAndCentres() {
+        let rect = CGRect(x: 200, y: 100, width: 400, height: 200)
+        let view = CanvasViewport.fitting(rect, in: CGSize(width: 1000, height: 600), padding: 48)
+        #expect(abs(view.zoom - 904.0 / 400.0) < 1e-9)
+        let centre = view.toScreen(CGPoint(x: rect.midX, y: rect.midY))
+        #expect(abs(centre.x - 500) < 1e-6 && abs(centre.y - 300) < 1e-6)
+        let corner = view.toScreen(CGPoint(x: rect.minX, y: rect.minY))
+        #expect(corner.x >= 48 - 1e-6 && corner.y >= 48 - 1e-6)
+    }
+
+    @Test func zoomToTinyRectIsCappedAtMaxZoom() {
+        let view = CanvasViewport.fitting(CGRect(x: 0, y: 0, width: 2, height: 2), in: CGSize(width: 800, height: 600), padding: 48)
+        #expect(view.zoom == CanvasViewport.zoomRange.upperBound)
+    }
+
+    @Test func resetZoomKeepsViewCentre() {
+        let view = CanvasViewport(zoom: 2.5, offset: CGPoint(x: -300, y: -120))
+        let centre = CGPoint(x: 400, y: 250)
+        let before = view.contentPoint(atScreen: centre)
+        let reset = view.zoomed(to: 1, around: centre)
+        #expect(reset.zoom == 1)
+        let after = reset.contentPoint(atScreen: centre)
+        #expect(abs(before.x - after.x) < 1e-6 && abs(before.y - after.y) < 1e-6)
+    }
+
+    @Test func keyboardZoomStepsStayInRange() {
+        var view = CanvasViewport()
+        for _ in 0..<40 { view = view.zoomed(to: view.zoom * 1.25, around: .zero) }
+        #expect(view.zoom == CanvasViewport.zoomRange.upperBound)
+        for _ in 0..<80 { view = view.zoomed(to: view.zoom / 1.25, around: .zero) }
+        #expect(view.zoom == CanvasViewport.zoomRange.lowerBound)
+    }
 }

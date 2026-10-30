@@ -495,7 +495,7 @@ final class ProfileStudioModel: ObservableObject {
     @Published var actionError: String?
     /// Set for a few seconds after a delete so the banner can offer Undo.
     @Published private(set) var deletedName: String?
-    private var deletedData: Data?
+    private var deletedProfile: Profile?
     private var deleteDismiss: Task<Void, Never>?
 
     func run(row: ProfileStudioRow) { AppState.current?.run(id: row.id) }
@@ -544,25 +544,22 @@ final class ProfileStudioModel: ObservableObject {
         guard let row = deleteTarget, let app = AppState.current else { return }
         deleteTarget = nil
         do {
-            let data = try? app.profileService.exportData(row.id.uuidString)
-            try app.profileService.delete(row.id.uuidString)
+            let deleted = try app.profileService.delete(row.id.uuidString)
             app.reloadProfiles()
-            if let data {
-                deletedData = data
-                deletedName = row.name
-                deleteDismiss?.cancel()
-                deleteDismiss = Task { @MainActor [weak self] in
-                    try? await Task.sleep(for: .seconds(8))
-                    if !Task.isCancelled { self?.clearDeleted() }
-                }
+            deletedProfile = deleted
+            deletedName = row.name
+            deleteDismiss?.cancel()
+            deleteDismiss = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(8))
+                if !Task.isCancelled { self?.clearDeleted() }
             }
         } catch { actionError = error.localizedDescription }
     }
 
     func undoDelete() {
-        guard let data = deletedData, let app = AppState.current else { return }
+        guard let profile = deletedProfile, let app = AppState.current else { return }
         do {
-            let saved = try app.profileService.importData(data, source: "undo")
+            let saved = try app.profileService.restore(profile)
             pendingSelectID = saved.id
             app.reloadProfiles()
         } catch { actionError = error.localizedDescription }
@@ -572,6 +569,6 @@ final class ProfileStudioModel: ObservableObject {
     func clearDeleted() {
         deleteDismiss?.cancel()
         deletedName = nil
-        deletedData = nil
+        deletedProfile = nil
     }
 }

@@ -12,7 +12,7 @@ final class ProfilesSettingsModel: ObservableObject {
     @Published var confirmingDelete = false
     /// Set for a few seconds after a delete so the user can undo it.
     @Published var deletedName: String?
-    var deletedData: Data?
+    var deletedProfile: Profile?
     var dismissTask: Task<Void, Never>?
 
     func select(_ id: UUID?, store: ProfileStore) {
@@ -125,22 +125,19 @@ struct ProfilesSettingsTab: View {
 
     private func delete(_ id: UUID) {
         do {
-            let data = try? appState.profileService.exportData(id.uuidString)
             let name = appState.savedProfiles.first(where: { $0.id == id })?.name ?? "profile"
-            try appState.profileService.delete(id.uuidString)
+            let deleted = try appState.profileService.delete(id.uuidString)
             appState.reloadProfiles()
             model.select(nil, store: appState.store)
             model.message = "Moved to Trash."
-            if let data {
-                model.deletedData = data
-                model.deletedName = name
-                undoManager?.registerUndo(withTarget: model) { _ in MainActor.assumeIsolated { undoDelete() } }
-                undoManager?.setActionName("Delete Profile")
-                model.dismissTask?.cancel()
-                model.dismissTask = Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(6))
-                    if !Task.isCancelled { clearDeleted() }
-                }
+            model.deletedProfile = deleted
+            model.deletedName = name
+            undoManager?.registerUndo(withTarget: model) { _ in MainActor.assumeIsolated { undoDelete() } }
+            undoManager?.setActionName("Delete Profile")
+            model.dismissTask?.cancel()
+            model.dismissTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(6))
+                if !Task.isCancelled { clearDeleted() }
             }
         } catch { fail(error) }
     }
@@ -148,13 +145,13 @@ struct ProfilesSettingsTab: View {
     private func clearDeleted() {
         model.dismissTask?.cancel()
         model.deletedName = nil
-        model.deletedData = nil
+        model.deletedProfile = nil
     }
 
     private func undoDelete() {
-        guard let data = model.deletedData else { return }
+        guard let profile = model.deletedProfile else { return }
         do {
-            let saved = try appState.profileService.importData(data, source: "undo")
+            let saved = try appState.profileService.restore(profile)
             appState.reloadProfiles()
             model.select(saved.id, store: appState.store)
             model.message = "Restored \(saved.name)."

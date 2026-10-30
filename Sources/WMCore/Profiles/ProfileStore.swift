@@ -212,6 +212,17 @@ public final class ProfileStore: @unchecked Sendable {
         return target
     }
 
+    /// Writes `profile` back exactly as given (same id, name, dates and hotkey). Used to undo a delete.
+    /// Throws when a file with the same id is already in the store (it is never overwritten).
+    @discardableResult
+    public func restore(_ profile: Profile) throws -> Profile {
+        lock.lock(); defer { lock.unlock() }
+        guard !fileManager.fileExists(atPath: fileURL(for: profile.id).path) else {
+            throw ProfileStoreError.invalidProfile(["A saved profile with id \(profile.id.uuidString) already exists."])
+        }
+        return try write(profile)
+    }
+
     @discardableResult
     public func rename(_ id: UUID, to name: String) throws -> Profile {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)

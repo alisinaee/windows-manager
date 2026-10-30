@@ -75,6 +75,17 @@ public struct ProfileService {
         return profile
     }
 
+    /// Puts back a profile captured before `delete`, with its original id, name and settings (undo).
+    /// Throws `conflict` when the id or the name is already taken by another profile.
+    @discardableResult
+    public func restore(_ profile: Profile) throws -> Profile {
+        try requireFreeName(profile.name, except: profile.id)
+        if (try? store.load(profile.id)) != nil {
+            throw ServiceError.conflict("A profile with id \(profile.id.uuidString) already exists.")
+        }
+        return try wrap { try store.restore(profile) }
+    }
+
     // MARK: Icon, shortcut, options, notes
 
     /// The curated icons the Studio offers (SF Symbol names), default first.

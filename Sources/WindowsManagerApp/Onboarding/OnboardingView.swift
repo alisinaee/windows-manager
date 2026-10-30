@@ -97,10 +97,9 @@ struct OnboardingView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            Image(systemName: model.step.symbol)
-                .font(.system(size: 30))
-                .foregroundStyle(.tint)
-                .frame(width: 44)
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 64, height: 64)
             VStack(alignment: .leading, spacing: 3) {
                 Text(model.step.title)
                     .font(.title2.bold())

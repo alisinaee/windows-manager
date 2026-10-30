@@ -8,7 +8,7 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
     static let shared = ProfileStudioWindowController()
 
     /// Smallest content size. Below the roomy layouts the sidebar and the Details inspector collapse.
-    static let minSize = NSSize(width: 560, height: 420)
+    static let minSize = NSSize(width: 720, height: 480)
 
     private var window: NSWindow?
     let model = ProfileStudioModel()

@@ -57,6 +57,7 @@ final class ProfileStudioModel: ObservableObject {
 
     func contentWidthChanged(_ width: CGFloat) {
         sidebar.contentWidthChanged(Double(width))
+        autoInspector(for: width)
     }
 
     // MARK: Compare with now (UI3)
@@ -251,6 +252,7 @@ final class ProfileStudioModel: ObservableObject {
         let b = ProfileBuilderModel()
         builder = b
         mode = .edit
+        titleChanged()
         setCompare(false)
         Task { await b.start(from: .editExisting(id)) }
     }
@@ -260,6 +262,7 @@ final class ProfileStudioModel: ObservableObject {
         let b = ProfileBuilderModel()
         builder = b
         mode = .edit
+        titleChanged()
         setCompare(false)
         return b
     }
@@ -481,7 +484,30 @@ final class ProfileStudioModel: ObservableObject {
 
     /// The right-hand Details inspector is open (remembered between launches).
     @Published var isInspectorShown: Bool = UserDefaults.standard.object(forKey: "studioInspectorShown") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(isInspectorShown, forKey: "studioInspectorShown") }
+        didSet {
+            if applyingAutoInspector { return }
+            autoHidInspector = false
+            UserDefaults.standard.set(isInspectorShown, forKey: "studioInspectorShown")
+        }
+    }
+    private var applyingAutoInspector = false
+    private var autoHidInspector = false
+    static let inspectorMinContentWidth: CGFloat = 820
+
+    /// Collapses the inspector when narrow without touching the remembered preference; restores it when wide.
+    private func autoInspector(for width: CGFloat) {
+        if width < Self.inspectorMinContentWidth {
+            guard isInspectorShown else { return }
+            applyingAutoInspector = true
+            isInspectorShown = false
+            applyingAutoInspector = false
+            autoHidInspector = true
+        } else if autoHidInspector {
+            autoHidInspector = false
+            applyingAutoInspector = true
+            isInspectorShown = UserDefaults.standard.object(forKey: "studioInspectorShown") as? Bool ?? true
+            applyingAutoInspector = false
+        }
     }
 
     // MARK: Sidebar row actions (same store / service calls as Settings > Profiles)

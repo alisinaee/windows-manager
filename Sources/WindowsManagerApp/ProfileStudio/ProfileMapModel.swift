@@ -74,6 +74,7 @@ final class ProfileMapModel: ObservableObject {
             fannedStackID = nil
             zoom = 1
             offset = .zero
+            pendingFit = true
             focusedDisplayUUID = profile?.displays.first?.uuid
         } else {
             // Space ids are positional, so re-resolve each stored selection by kind + Desktop number
@@ -97,6 +98,7 @@ final class ProfileMapModel: ObservableObject {
             }
         }
         relayout()
+        if pendingFit { fit() }
     }
 
     // MARK: Layout
@@ -121,7 +123,9 @@ final class ProfileMapModel: ObservableObject {
         guard size.width > 1, size.height > 1, size != viewport else { return }
         viewport = size
         relayout()
+        if pendingFit { pendingFit = false; fit() }
     }
+    private var pendingFit = false
 
     /// Zooms to `value` (clamped) keeping the point under `anchor` (viewport coordinates; default the centre) fixed.
     func setZoom(_ value: Double, around anchor: CGPoint? = nil) {

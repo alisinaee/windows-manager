@@ -4,7 +4,7 @@ import SwiftUI
 import WMCore
 
 /// Run shortcut of one saved profile, set from the Studio. It records into the same KeyboardShortcuts name
-/// (`.profile(id)`) as Settings > Hotkeys, so both places always show the same value.
+/// (`.profile(id)`) as Settings > Shortcuts, so both places always show the same value.
 struct ProfileShortcutView: View {
     let profileID: UUID
     let profileName: String
@@ -28,7 +28,7 @@ struct ProfileShortcutView: View {
                 }
                 .id(recorderRevision)
                 .font(.callout)
-                .help("Click here, then press the shortcut to use for this profile. The same shortcut appears in Settings > Hotkeys.")
+                .help("Click here, then press the shortcut to use for this profile. The same shortcut appears in Settings > Shortcuts.")
                 Button { showSuggestions = true } label: { Image(systemName: "lightbulb") }
                     .help("Suggested shortcuts")
                     .accessibilityLabel("Suggested shortcuts")
@@ -38,7 +38,7 @@ struct ProfileShortcutView: View {
                 Label("\(advice) It may clash with macOS.", systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             } else if current == nil {
-                Text("No shortcut yet. Click the field and press a combination, or pick a suggestion (lightbulb). Shortcuts also appear in Settings > Hotkeys.")
+                Text("No shortcut yet. Click the field and press a combination, or pick a suggestion (lightbulb). Shortcuts also appear in Settings > Shortcuts.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }

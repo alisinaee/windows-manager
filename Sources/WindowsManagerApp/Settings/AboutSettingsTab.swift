@@ -21,6 +21,9 @@ struct AboutSettingsTab: View {
             }
             .disabled(!updates.canCheckForUpdates)
             .padding(.top, 12)
+            Button("Report a Bug…") {
+                BugReportWindowController.shared.show()
+            }
             Text(updates.isConfigured ? "Updates are checked against the release appcast." : UpdateController.notConfiguredText)
                 .font(.footnote)
                 .foregroundStyle(.secondary)

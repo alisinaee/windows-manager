@@ -27,6 +27,8 @@ final class SnapSettingsModel: ObservableObject {
 @MainActor
 final class WorkspaceNameDraftModel: ObservableObject {
     @Published var text: String
+    /// Shows the delete confirmation for this row.
+    @Published var confirmingDelete = false
 
     init(name: String) { text = name }
 }
@@ -61,7 +63,10 @@ private struct WorkspaceNameRow: View {
                     if !focused { draft.text = name }
                 }
             if isActive { Text("active").foregroundStyle(.secondary) }
-            Button("Delete", action: delete)
+            Button("Delete", role: .destructive) { draft.confirmingDelete = true }
+        }
+        .confirmationDialog("Delete this workspace?", isPresented: $draft.confirmingDelete) {
+            Button("Delete", role: .destructive, action: delete)
         }
     }
 

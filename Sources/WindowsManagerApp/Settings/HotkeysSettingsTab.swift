@@ -47,7 +47,7 @@ struct HotkeysSettingsTab: View {
                 }
                 ForEach(ignoreList.bundleIDs, id: \.self) { bundleID in
                     HStack {
-                        Text(bundleID).textSelection(.enabled)
+                        IgnoredAppRow(bundleID: bundleID)
                         Spacer()
                         Button("Remove", role: .destructive) { remove(bundleID) }
                     }
@@ -104,5 +104,30 @@ struct HotkeysSettingsTab: View {
         case .bottom: return "Bottom"
         case .center: return "Center"
         }
+    }
+}
+
+/// One ignored app: its icon and name, or the bundle id when the app is not installed.
+private struct IgnoredAppRow: View {
+    let bundleID: String
+
+    var body: some View {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            HStack(spacing: 8) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                    .resizable()
+                    .frame(width: 20, height: 20)
+                    .accessibilityHidden(true)
+                Text(Self.name(for: url)).lineLimit(1)
+            }
+            .help(bundleID)
+        } else {
+            Text(bundleID).textSelection(.enabled)
+        }
+    }
+
+    private static func name(for url: URL) -> String {
+        let name = FileManager.default.displayName(atPath: url.path)
+        return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
     }
 }

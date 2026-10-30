@@ -109,7 +109,7 @@ struct WindowRulesSettingsTab: View {
         return HStack {
             Text(rule.bundleID).lineLimit(1).truncationMode(.middle)
             Spacer()
-            Picker("", selection: kindBinding) {
+            Picker("Rule kind", selection: kindBinding) {
                 Text("Ignore").tag("ignore")
                 Text("Always restore").tag("alwaysRestore")
                 Text("Pin to display").tag("pin")
@@ -120,7 +120,7 @@ struct WindowRulesSettingsTab: View {
                 let uuidBinding = Binding<String>(
                     get: { uuid },
                     set: { model.set(WindowRule(bundleID: rule.bundleID, action: .pinToDisplay(uuid: $0))) })
-                Picker("", selection: uuidBinding) {
+                Picker("Display", selection: uuidBinding) {
                     ForEach(model.displays, id: \.uuid) { Text($0.name).tag($0.uuid) }
                     if !model.displays.contains(where: { $0.uuid == uuid }) { Text("Disconnected display").tag(uuid) }
                 }
@@ -129,6 +129,8 @@ struct WindowRulesSettingsTab: View {
             }
             Button { model.remove(rule.bundleID) } label: { Image(systemName: "trash") }
                 .buttonStyle(.borderless)
+                .accessibilityLabel("Remove rule for \(rule.bundleID)")
+                .help("Remove this rule")
         }
     }
 }

@@ -34,6 +34,7 @@ struct ProfilesSettingsTab: View {
             }
             HStack {
                 Button("Import…") { importProfile() }
+                Button("New Profile…") { newProfile() }
                 Spacer()
                 Text(model.message).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
             }
@@ -72,7 +73,7 @@ struct ProfilesSettingsTab: View {
                 TextField("Name", text: $model.nameText)
                     .onSubmit { rename(id) }
                 Button("Rename") { rename(id) }
-                Text("Set hotkeys in the Hotkeys tab.")
+                Text("Set hotkeys in the Shortcuts tab.")
                     .foregroundStyle(.secondary)
                 Section {
                     Button("Open in Profile Studio") { ProfileStudioWindowController.shared.show(profileID: id) }
@@ -136,6 +137,12 @@ struct ProfilesSettingsTab: View {
             try appState.profileService.exportData(id.uuidString).write(to: url, options: .atomic)
             model.message = "Exported to \(url.lastPathComponent)."
         } catch { fail(error) }
+    }
+
+    /// Same action as the Studio menu's New Profile: opens the Studio and starts a capture of the current workspace.
+    private func newProfile() {
+        ProfileStudioWindowController.shared.show()
+        ProfileStudioWindowController.shared.model.beginNewProfile()
     }
 
     private func importProfile() {

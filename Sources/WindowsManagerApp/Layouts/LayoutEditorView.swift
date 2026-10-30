@@ -126,6 +126,8 @@ struct LayoutEditorView: View {
                 Spacer()
                 Button { model.refreshApps() } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel("Refresh running apps")
+                    .help("Refresh running apps")
             }
             Text("Drag an app onto a zone").font(.footnote).foregroundStyle(.secondary)
             ScrollView {
@@ -261,6 +263,8 @@ private struct MiniMap: View {
                         Text(model.name(for: bundleID)).lineLimit(1)
                         Button { model.unassign(bundleID) } label: { Image(systemName: "xmark.circle.fill") }
                             .buttonStyle(.borderless)
+                            .accessibilityLabel("Remove \(model.name(for: bundleID)) from zone")
+                            .help("Remove from zone")
                     }
                     .font(.caption2)
                     .padding(.horizontal, 5)

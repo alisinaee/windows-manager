@@ -13,7 +13,7 @@ struct SettingsView: View {
             WorkspacesSettingsTab()
                 .tabItem { Label("Workspaces", systemImage: "square.stack.3d.up") }
             HotkeysSettingsTab()
-                .tabItem { Label("Hotkeys", systemImage: "keyboard") }
+                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
             SpacesSettingsTab()
                 .tabItem { Label("Spaces", systemImage: "rectangle.3.group.bubble") }
             AutomationSettingsTab()
@@ -23,6 +23,6 @@ struct SettingsView: View {
             AboutSettingsTab()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 680, height: 480)
+        .frame(width: 780, height: 480)
     }
 }

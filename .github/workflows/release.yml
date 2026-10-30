@@ -11,6 +11,11 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+      - name: Use Xcode toolchain
+        run: |
+          XC="$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$XC"
+          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
       - name: Test
         run: swift test
       - name: Build DMG and CLI

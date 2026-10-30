@@ -9,7 +9,7 @@ struct DebugPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             ScrollView { scenarioList }
-                .frame(minHeight: 120, maxHeight: 240)
+                .frame(minHeight: 120, maxHeight: .infinity)
             Divider()
             liveSection
             footer
@@ -33,28 +33,36 @@ struct DebugPanel: View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(DebugRunnerRegistry.entries) { scenario in
                 HStack(alignment: .center, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(scenario.title).fontWeight(.medium)
-                        Text(scenario.summary)
-                            .font(.footnote).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        model.focus = scenario.id
+                    } label: {
+                        HStack(alignment: .center, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(scenario.title).fontWeight(.medium)
+                                Text(scenario.summary)
+                                    .font(.footnote).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 8)
+                            if let status = model.lastStatus[scenario.id] {
+                                badge(status)
+                            } else {
+                                Text("not run").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
-                    Spacer(minLength: 8)
-                    if let status = model.lastStatus[scenario.id] {
-                        badge(status)
-                    } else {
-                        Text("not run").font(.caption).foregroundStyle(.secondary)
-                    }
+                    .buttonStyle(.plain)
                     Button("Run") { model.run(scenario) }
                         .disabled(model.isBusy)
+                        .accessibilityLabel("Run \(scenario.title)")
                 }
                 .padding(6)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
                         .fill(model.focus == scenario.id ? Color.accentColor.opacity(0.12) : Color.clear)
                 )
-                .contentShape(Rectangle())
-                .onTapGesture { model.focus = scenario.id }
             }
         }
     }

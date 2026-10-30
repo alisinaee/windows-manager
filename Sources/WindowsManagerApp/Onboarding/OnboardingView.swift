@@ -162,9 +162,13 @@ struct OnboardingView: View {
                         .foregroundStyle(.secondary)
                 }
             } footer: {
+                #if DEBUG
                 Text("After you rebuild the app, macOS may stop trusting it, because an ad-hoc signature changes with every build. If the switch is on but the status stays \"Not allowed yet\", select Windows Manager in the Accessibility list, remove it with the minus button and add it again.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                #else
+                EmptyView()
+                #endif
             }
         }
     }

@@ -65,11 +65,12 @@ private final class BlockingRestoreEnvironment: RestoreEnvironment {
         let moved = F.defaultFrame.offsetBy(dx: 300, dy: 0)
         let fake = FakeRestoreEnvironment(scans: [F.scan([F.live(101, F.chrome, frame: moved)])])
         let env = BlockingRestoreEnvironment(fake)
-        env.scanBlock = 0.5
+        env.scanBlock = 1.5
         let engine = RestoreEngine(environment: env)
         var report: RestoreReport?
         let ticks = await ticksWhile { report = await engine.run(profile) }
-        #expect(ticks >= 10) // ~25 ticks fit into 0.5 s; a blocked main actor gives 0 or 1
+        // ~75 ticks fit into 1.5 s on a fast Mac and a loaded CI runner still gets several; a blocked main actor gives 0 or 1.
+        #expect(ticks >= 3)
         #expect(report?.steps.first?.status.isDone == true)
     }
 

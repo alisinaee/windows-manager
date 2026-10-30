@@ -126,7 +126,7 @@ struct WindowTileView: View {
                     .accessibilityHidden(true)
             }
             label(roomy: roomy, width: size.width, height: size.height)
-                .padding(.leading, 5).padding(.top, 5)
+                .padding(.leading, Spacing.xs + 1).padding(.top, Spacing.xs + 1)
                 .padding(.trailing, status == nil ? 5 : 26)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .clipped()
@@ -140,13 +140,11 @@ struct WindowTileView: View {
                     .padding(3)
             }
             if let message = SizeLimitLearning.effectiveLimits(for: window)?.fixedMessage, size.width >= 28, size.height >= 24 {
-                HStack(spacing: 3) {
+                HStack(spacing: Spacing.xs) {
                     Image(systemName: "lock.fill").font(.system(size: metrics.font(10), weight: .bold))
-                    if size.width >= 110 { Text("Fixed size").font(.system(size: metrics.font(10), weight: .semibold)) }
+                        .foregroundStyle(Tone.warning.color)
+                    if size.width >= 110 { StatusBadge(tone: .warning, text: "Fixed size") }
                 }
-                .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(.regularMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.orange, lineWidth: 1))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 .padding(4)
                 .help(message)

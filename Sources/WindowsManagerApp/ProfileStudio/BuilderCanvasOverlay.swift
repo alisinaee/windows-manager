@@ -1057,7 +1057,7 @@ private struct ToolBarButtonStyle: ButtonStyle {
     }
 }
 
-/// The edit tools for one monitor, docked above the map (it does not zoom or pan). Monitor name on the left.
+/// The edit tools for one monitor, floating in a glass cluster over the map (it does not zoom or pan). Monitor name on the left.
 struct BuilderToolsBar: View {
     @ObservedObject var controller: BuilderCanvasController
     @ObservedObject private var map: ProfileMapModel
@@ -1094,8 +1094,10 @@ struct BuilderToolsBar: View {
                 Spacer()
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 4)
+        .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.xs)
         .frame(minHeight: 36)
+        .glassEffect(.regular, in: Capsule())
+        .padding(Spacing.s)
         .onChange(of: map.focusedDisplayUUID) { _, _ in chosenMonitorID = nil }
     }
 
@@ -1259,12 +1261,13 @@ struct BuilderMapCanvas: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            BuilderToolsBar(controller: controller, onSync: { Task { await builder.syncNow() } })
-            Divider()
-            ProfileMapCanvas(model: map,
-                             canvasOverlay: AnyView(BuilderCanvasOverlay(controller: controller)),
-                             keyOverride: { controller.handleKey($0) })
-        }
+        ProfileMapCanvas(model: map,
+                         canvasOverlay: AnyView(BuilderCanvasOverlay(controller: controller)),
+                         keyOverride: { controller.handleKey($0) })
+            .overlay(alignment: .top) {
+                GlassEffectContainer {
+                    BuilderToolsBar(controller: controller, onSync: { Task { await builder.syncNow() } })
+                }
+            }
     }
 }

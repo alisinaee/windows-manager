@@ -1,4 +1,4 @@
-# Pushing a tag like v0.1.0-alpha.3 builds the app (ad-hoc signed, not notarized), the wm CLI zip and
+# Tests run in ci.yml on main before tagging. Pushing a tag like v0.1.0-alpha.3 builds the app (ad-hoc signed, not notarized), the wm CLI zip and
 # SHA256SUMS.txt, and publishes them as a GitHub release. Notes come from docs/release-notes/<tag>.md.
 name: Release
 on:
@@ -18,8 +18,6 @@ jobs:
           # The runner also has Command Line Tools; SwiftPM would load its mismatched Swift Testing plugin.
           [ -d /Library/Developer/CommandLineTools ] && sudo mv /Library/Developer/CommandLineTools /Library/Developer/CommandLineTools.off || true
           echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
-      - name: Test
-        run: swift test
       - name: Build DMG and CLI
         run: |
           set -e

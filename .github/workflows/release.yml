@@ -15,6 +15,8 @@ jobs:
         run: |
           XC="$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
           sudo xcode-select -s "$XC"
+          # The runner also has Command Line Tools; SwiftPM would load its mismatched Swift Testing plugin.
+          [ -d /Library/Developer/CommandLineTools ] && sudo mv /Library/Developer/CommandLineTools /Library/Developer/CommandLineTools.off || true
           echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
       - name: Test
         run: swift test

@@ -11,8 +11,6 @@ struct ProfileMapHost: View {
     var body: some View {
         VStack(spacing: 0) {
             ProfileMapCanvas(model: model)
-            Divider()
-            MapLegendView(showsStatus: model.status != nil, showsStageStrip: model.usesStageManager)
         }
         .task(id: row) { reloadProfile() }
         .onChange(of: status) { _, newValue in model.status = newValue }
@@ -59,6 +57,7 @@ struct ProfileMapCanvas: View {
     var keyOverride: ((KeyPress) -> Bool)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
+    @State private var showsLegend = false
 
     init(model: ProfileMapModel, onSync: (() -> Void)? = nil, canvasOverlay: AnyView? = nil, keyOverride: ((KeyPress) -> Bool)? = nil) {
         self.onSync = onSync
@@ -90,6 +89,7 @@ struct ProfileMapCanvas: View {
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
                 .clipped()
                 .background(CanvasNavigator(model: model))
+                .overlay(alignment: .bottomTrailing) { zoomCluster }
                 .onAppear { model.setViewport(geo.size) }
                 .onChange(of: geo.size) { _, size in model.setViewport(size) }
             }
@@ -123,7 +123,7 @@ struct ProfileMapCanvas: View {
     // MARK: Toolbar
 
     private var toolbar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Spacing.s) {
             if let onSync {
                 Button(action: onSync) { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
                     .buttonStyle(.bordered).controlSize(.small)
@@ -132,7 +132,7 @@ struct ProfileMapCanvas: View {
             }
             if keyOverride != nil {
                 Text("Drag a tile to move it, its handles to resize. Lock = fixed-size window.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                    .font(.wmCaption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
                     .help("Edit mode: drag tiles to move, drag handles to resize. A lock badge on a tile means the app does not allow resizing.")
             }
             if let summary = model.summaryText {
@@ -140,19 +140,17 @@ struct ProfileMapCanvas: View {
                 Text(summaryWithParked(summary)).font(.callout).lineLimit(1).truncationMode(.tail)
             }
             Spacer(minLength: 8)
-            if keyOverride == nil {
-                // View mode only: previous / next Space on the shown monitor.
-                Button { stepShownDesktop(forward: false) } label: { Image(systemName: "chevron.left") }
-                    .keyboardShortcut("[", modifiers: .command)
-                    .accessibilityLabel("Previous Desktop").help("Previous Desktop (Cmd+[)")
-                Button { stepShownDesktop(forward: true) } label: { Image(systemName: "chevron.right") }
-                    .keyboardShortcut("]", modifiers: .command)
-                    .accessibilityLabel("Next Desktop").help("Next Desktop (Cmd+])")
-            }
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.xs + 2)
+    }
+
+    /// Floating zoom / Fit / legend cluster over the canvas, bottom right.
+    private var zoomCluster: some View {
+        HStack(spacing: Spacing.s) {
             Button { model.zoomBy(1 / 1.25) } label: { Image(systemName: "minus.magnifyingglass") }
                 .accessibilityLabel("Zoom out").help("Zoom out (Cmd+-)")
-            Slider(value: Binding(get: { model.zoom }, set: { model.setZoom($0) }),
-                   in: CanvasViewport.zoomRange)
+            Slider(value: Binding(get: { model.zoom }, set: { model.setZoom($0) }), in: CanvasViewport.zoomRange)
                 .frame(width: 100)
                 .accessibilityLabel("Zoom")
                 .accessibilityValue("\(Int((model.zoom * 100).rounded())) percent")
@@ -161,34 +159,33 @@ struct ProfileMapCanvas: View {
                 .accessibilityLabel("Zoom in").help("Zoom in (Cmd+=)")
             Button { model.actualSize() } label: {
                 Text("\(Int((model.zoom * 100).rounded()))%")
-                    .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
+                    .font(.wmCaption).monospacedDigit().foregroundStyle(.secondary)
                     .frame(width: 40, alignment: .trailing)
             }
             .accessibilityLabel("Reset zoom to 100 percent").help("Reset zoom to 100% (Cmd+0)")
             Button("Fit") { model.fit() }
                 .help("Fit the map to the window (Cmd+1)")
             Button { model.zoomToSelection() } label: { Image(systemName: "scope") }
-                .keyboardShortcut("2", modifiers: .command)
                 .accessibilityLabel("Zoom to selection").help("Zoom to the selected window or Space (Cmd+2)")
+            Divider().frame(height: 16)
+            Button { showsLegend.toggle() } label: { Image(systemName: "info.circle") }
+                .accessibilityLabel("Legend").help("Show what the symbols on the map mean")
+                .popover(isPresented: $showsLegend, arrowEdge: .top) {
+                    MapLegendView(showsStatus: model.status != nil, showsStageStrip: model.usesStageManager)
+                }
         }
         .buttonStyle(.borderless)
-        .padding(.horizontal, 12).padding(.vertical, 6)
+        .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.s)
+        .modifier(FloatingGlass())
+        .padding(Spacing.m)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Map zoom and legend")
     }
 
     /// The model's summary does not count parked windows, so the canvas adds them when Compare data is present.
     private func summaryWithParked(_ summary: String) -> String {
         guard let parked = model.status?.summary.mayBeParked, parked > 0 else { return summary }
         return summary + ", \(parked) may be parked"
-    }
-
-    /// Cmd+[ / Cmd+]: the previous or next Space on the shown monitor (the focused one, else the first).
-    private func stepShownDesktop(forward: Bool) {
-        guard let uuid = model.focusedDisplayUUID ?? model.layout.monitors.first?.id else { return }
-        let spaces = model.index.spaces(onDisplay: uuid)
-        guard spaces.count > 1 else { return }
-        let current = model.shownSpace(onDisplay: uuid).flatMap { shown in spaces.firstIndex { $0.id == shown.id } } ?? 0
-        let next = (current + (forward ? 1 : -1) + spaces.count) % spaces.count
-        model.selectSpace(spaces[next].id)
     }
 
     // MARK: Canvas
@@ -211,7 +208,7 @@ struct ProfileMapCanvas: View {
                         .environment(\.canvasFitRequest, { model.fit() })
                 }
             }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: model.spaceSelection)
+            .animation(Animation.wm(reduceMotion), value: model.spaceSelection)
         }
     }
 
@@ -395,15 +392,15 @@ struct ProfileMapCanvas: View {
                                         windows: [UUID: WindowSnapshot]) -> some View {
         if !entries.isEmpty {
             HStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(.secondary).accessibilityHidden(true)
-                Text(title + ":").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                Image(systemName: symbol).font(.wmCaption).foregroundStyle(.secondary).accessibilityHidden(true)
+                Text(title + ":").font(.wmCaption.weight(.semibold)).foregroundStyle(.secondary)
                 ForEach(entries, id: \.windowID) { entry in
                     if let window = windows[entry.windowID] {
                         let selected = model.selectedWindowID == window.id
                         Button { model.selectWindow(window.id) } label: {
                             HStack(spacing: 4) {
                                 Image(nsImage: AppIconCache.icon(for: window.app)).resizable().frame(width: 14, height: 14)
-                                Text(trayText(window)).font(.system(size: 11)).lineLimit(1)
+                                Text(trayText(window)).font(.wmCaption).lineLimit(1)
                             }
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(AppTint.color(for: window.app).opacity(0.18), in: Capsule())
@@ -422,5 +419,24 @@ struct ProfileMapCanvas: View {
     private func trayText(_ window: WindowSnapshot) -> String {
         if let title = window.title, !title.isEmpty { return "\(window.app.name) \"\(title)\"" }
         return window.app.name
+    }
+}
+
+/// Glass background for the floating cluster (Liquid Glass on macOS 26).
+private struct FloatingGlass: ViewModifier {
+    func body(content: Content) -> some View {
+        content.glassEffect(.regular, in: Capsule())
+    }
+}
+
+extension ProfileMapModel {
+    /// Cmd+[ / Cmd+]: the previous or next Space on the shown monitor (the focused one, else the first).
+    func stepDesktop(forward: Bool) {
+        guard let uuid = focusedDisplayUUID ?? layout.monitors.first?.id else { return }
+        let spaces = index.spaces(onDisplay: uuid)
+        guard spaces.count > 1 else { return }
+        let current = shownSpace(onDisplay: uuid).flatMap { shown in spaces.firstIndex { $0.id == shown.id } } ?? 0
+        let next = (current + (forward ? 1 : -1) + spaces.count) % spaces.count
+        selectSpace(spaces[next].id)
     }
 }

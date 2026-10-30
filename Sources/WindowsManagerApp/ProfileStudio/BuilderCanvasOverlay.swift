@@ -1264,10 +1264,11 @@ struct BuilderMapCanvas: View {
         ProfileMapCanvas(model: map,
                          canvasOverlay: AnyView(BuilderCanvasOverlay(controller: controller)),
                          keyOverride: { controller.handleKey($0) })
-            .overlay(alignment: .top) {
+            .safeAreaInset(edge: .top, spacing: 0) {
                 GlassEffectContainer {
                     BuilderToolsBar(controller: controller, onSync: { Task { await builder.syncNow() } })
                 }
+                .padding(.vertical, Spacing.xs)
             }
     }
 }

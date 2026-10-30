@@ -90,6 +90,18 @@ struct ProfileMapCanvas: View {
                 .clipped()
                 .background(CanvasNavigator(model: model))
                 .overlay(alignment: .bottomTrailing) { zoomCluster }
+                .overlay(alignment: .bottomLeading) {
+                    if keyOverride != nil {
+                        Text("Drag a tile to move it, its handles to resize. Lock = fixed-size window.")
+                            .font(.wmCaption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                            .padding(.horizontal, Spacing.s).padding(.vertical, Spacing.xs)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(Spacing.m)
+                            .frame(maxWidth: max(0, geo.size.width - 460), alignment: .leading)
+                            .allowsHitTesting(false)
+                            .help("Edit mode: drag tiles to move, drag handles to resize. A lock badge on a tile means the app does not allow resizing.")
+                    }
+                }
                 .onAppear { model.setViewport(geo.size) }
                 .onChange(of: geo.size) { _, size in model.setViewport(size) }
             }
@@ -130,11 +142,6 @@ struct ProfileMapCanvas: View {
                     .help("Read your real windows now and update the map")
                     .accessibilityLabel("Sync with real windows")
             }
-            if keyOverride != nil {
-                Text("Drag a tile to move it, its handles to resize. Lock = fixed-size window.")
-                    .font(.wmCaption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
-                    .help("Edit mode: drag tiles to move, drag handles to resize. A lock badge on a tile means the app does not allow resizing.")
-            }
             if let summary = model.summaryText {
                 Image(systemName: "checklist").foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(summaryWithParked(summary)).font(.callout).lineLimit(1).truncationMode(.tail)
@@ -163,7 +170,7 @@ struct ProfileMapCanvas: View {
                     .frame(width: 40, alignment: .trailing)
             }
             .accessibilityLabel("Reset zoom to 100 percent").help("Reset zoom to 100% (Cmd+0)")
-            Button("Fit") { model.fit() }
+            Button { model.fit() } label: { Text("Fit").lineLimit(1).fixedSize() }
                 .help("Fit the map to the window (Cmd+1)")
             Button { model.zoomToSelection() } label: { Image(systemName: "scope") }
                 .accessibilityLabel("Zoom to selection").help("Zoom to the selected window or Space (Cmd+2)")

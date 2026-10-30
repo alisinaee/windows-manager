@@ -1,4 +1,5 @@
 import SwiftUI
+import KeyboardShortcuts
 import WMCore
 
 /// Menu shown from the menu bar item: profiles with Run, Capture, status.
@@ -7,14 +8,15 @@ struct MenuBarContent: View {
     @Environment(\.openSettings) private var openSettings
     @ObservedObject private var workspaces = WorkspaceController.shared
     @ObservedObject private var updates = UpdateController.shared
+    @StateObject private var nav = MenuNav()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Spacing.xs / 2) {
             Text("Windows Manager")
                 .font(.headline)
-                .padding(.horizontal, 10)
-                .padding(.top, 6)
-                .padding(.bottom, 4)
+                .padding(.horizontal, Spacing.s + 2)
+                .padding(.top, Spacing.xs + 2)
+                .padding(.bottom, Spacing.xs)
 
             Divider().padding(.vertical, 2)
 
@@ -62,9 +64,19 @@ struct MenuBarContent: View {
                 NSApp.terminate(nil)
             }
         }
-        .padding(6)
+        .padding(Spacing.xs + 2)
         .frame(width: 280)
-        .onAppear { appState.refreshPermissions() }
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(.downArrow) { nav.move(1, count: appState.savedProfiles.count); return .handled }
+        .onKeyPress(.upArrow) { nav.move(-1, count: appState.savedProfiles.count); return .handled }
+        .onKeyPress(.return) {
+            let profiles = appState.savedProfiles
+            guard let i = nav.index, profiles.indices.contains(i) else { return .ignored }
+            runProfile(profiles[i]); return .handled
+        }
+        .onKeyPress(.escape) { Self.closePopup(); return .handled }
+        .onAppear { appState.refreshPermissions(); nav.index = nil }
     }
 
     /// Hides the menu bar popup (a MenuBarExtra window-style panel) before another window opens.
@@ -72,6 +84,16 @@ struct MenuBarContent: View {
         for window in NSApp.windows where window is NSPanel && window.className.contains("MenuBarExtra") {
             window.orderOut(nil)
         }
+    }
+
+    private func runProfile(_ profile: ProfileSummary, scope: RestoreScope = .whole) {
+        guard appState.canAct else { return }
+        nav.lastRunID = profile.id
+        appState.run(profile, scope: scope)
+    }
+
+    private func shortcutText(_ profile: ProfileSummary) -> String? {
+        KeyboardShortcuts.getShortcut(for: .profile(profile.id))?.description
     }
 
     @ViewBuilder private var profilesSection: some View {
@@ -87,14 +109,16 @@ struct MenuBarContent: View {
 
     @ViewBuilder private var profileRows: some View {
         let rows = VStack(alignment: .leading, spacing: 2) {
-            ForEach(appState.savedProfiles) { profile in
+            ForEach(Array(appState.savedProfiles.enumerated()), id: \.element.id) { offset, profile in
+                let hl = nav.index == offset
+                let isLast = nav.lastRunID == profile.id
                 let choices = appState.scopeChoices[profile.id] ?? []
                 if choices.count > 1 {
                     HStack(spacing: 0) {
-                        MenuRow(title: "Run \(profile.name)") { appState.run(profile) }
+                        MenuRow(title: "Run \(profile.name)", checked: isLast, trailing: shortcutText(profile), highlighted: hl) { runProfile(profile) }
                         Menu {
                             ForEach(choices) { choice in
-                                Button(choice.title) { appState.run(profile, scope: choice.scope) }
+                                Button(choice.title) { runProfile(profile, scope: choice.scope) }
                             }
                         } label: { Text("Scope") }
                         .menuStyle(.borderlessButton)
@@ -104,7 +128,7 @@ struct MenuBarContent: View {
                     }
                     .disabled(!appState.canAct)
                 } else {
-                    MenuRow(title: "Run \(profile.name)") { appState.run(profile) }
+                    MenuRow(title: "Run \(profile.name)", checked: isLast, trailing: shortcutText(profile), highlighted: hl) { runProfile(profile) }
                         .disabled(!appState.canAct)
                 }
             }
@@ -219,7 +243,22 @@ struct MenuBarContent: View {
     }
 
     @ViewBuilder private var statusRow: some View {
-        if case .idle = appState.status { EmptyView() } else { statusContent }
+        switch appState.status {
+        case .idle: EmptyView()
+        case .failure(let text):
+            Banner(tone: .danger, title: "Something went wrong", message: text,
+                   actionLabel: failureActionLabel(text), action: failureAction(text))
+                .padding(.vertical, Spacing.xs)
+        default: statusContent
+        }
+    }
+
+    private func failureActionLabel(_ text: String) -> String? {
+        text.localizedCaseInsensitiveContains("accessibility") ? "Grant access" : nil
+    }
+
+    private func failureAction(_ text: String) -> (() -> Void)? {
+        text.localizedCaseInsensitiveContains("accessibility") ? { appState.requestAccessibility() } : nil
     }
 
     private var statusContent: some View {
@@ -232,8 +271,8 @@ struct MenuBarContent: View {
                 Text(text).foregroundStyle(.secondary)
             case .success(let text):
                 Text(text).foregroundStyle(.secondary)
-            case .failure(let text):
-                Text(text).foregroundStyle(Color.red)
+            case .failure:
+                EmptyView()
             }
             Spacer(minLength: 0)
         }
@@ -265,10 +304,14 @@ private struct MenuRow: View {
     let title: String
     var checked: Bool? = nil
     var symbol: String? = nil
+    var trailing: String? = nil
+    var highlighted = false
     let action: () -> Void
 
-    init(title: String, checked: Bool? = nil, symbol: String? = nil, action: @escaping () -> Void) {
-        self.title = title; self.checked = checked; self.symbol = symbol; self.action = action
+    init(title: String, checked: Bool? = nil, symbol: String? = nil, trailing: String? = nil,
+         highlighted: Bool = false, action: @escaping () -> Void) {
+        self.title = title; self.checked = checked; self.symbol = symbol
+        self.trailing = trailing; self.highlighted = highlighted; self.action = action
     }
 
     var body: some View {
@@ -281,14 +324,18 @@ private struct MenuRow: View {
                         .opacity(symbol != nil || checked == true ? 1 : 0)
                         .accessibilityHidden(true)
                 }
-                Text(title)
+                Text(title).font(.wmBody)
+                if let trailing {
+                    Spacer(minLength: Spacing.s)
+                    Text(trailing).font(.wmMonoCaption).foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .padding(.horizontal, Spacing.s + 2)
+            .padding(.vertical, Spacing.xs)
             .contentShape(Rectangle())
         }
-        .buttonStyle(MenuRowButtonStyle())
+        .buttonStyle(MenuRowButtonStyle(highlighted: highlighted))
         .accessibilityAddTraits(checked == true ? .isSelected : [])
     }
 }
@@ -297,8 +344,19 @@ private final class HoverState: ObservableObject {
     @Published var hovering = false
 }
 
+private final class MenuNav: ObservableObject {
+    @Published var index: Int?
+    @Published var lastRunID: UUID?
+    func move(_ delta: Int, count: Int) {
+        guard count > 0 else { return }
+        guard let i = index else { index = delta > 0 ? 0 : count - 1; return }
+        index = min(max(i + delta, 0), count - 1)
+    }
+}
+
 private struct MenuRowBackground<Content: View>: View {
     @StateObject private var hover = HoverState()
+    let highlighted: Bool
     let isPressed: Bool
     let isEnabled: Bool
     let content: Content
@@ -307,9 +365,9 @@ private struct MenuRowBackground<Content: View>: View {
         content
             .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
             .background(
-                RoundedRectangle(cornerRadius: 5)
+                RoundedRectangle(cornerRadius: Radius.small + 1)
                     .fill(isEnabled && isPressed ? Color.accentColor.opacity(0.3)
-                          : isEnabled && hover.hovering ? Color.accentColor.opacity(0.15) : Color.clear)
+                          : isEnabled && (hover.hovering || highlighted) ? Color.accentColor.opacity(0.15) : Color.clear)
             )
             .onHover { hover.hovering = $0 }
     }
@@ -317,8 +375,9 @@ private struct MenuRowBackground<Content: View>: View {
 
 private struct MenuRowButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    var highlighted = false
 
     func makeBody(configuration: Configuration) -> some View {
-        MenuRowBackground(isPressed: configuration.isPressed, isEnabled: isEnabled, content: configuration.label)
+        MenuRowBackground(highlighted: highlighted, isPressed: configuration.isPressed, isEnabled: isEnabled, content: configuration.label)
     }
 }

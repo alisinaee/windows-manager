@@ -6,6 +6,9 @@ import WMCore
 /// Global hotkeys: workspace switching, snap to zone, window size, move to display, ignored apps and one per saved profile.
 struct HotkeysSettingsTab: View {
     @EnvironmentObject private var state: AppState
+    @Environment(\.undoManager) private var undoManager
+    @State private var removedApp: String?
+    @State private var dismissTask: Task<Void, Never>?
     @ObservedObject private var workspaces = WorkspaceController.shared
     @State private var ignoreList = HotkeyIgnoreList.load()
     /// The last app other than this one that became frontmost. Settings is frontmost while the user clicks Add.
@@ -13,6 +16,12 @@ struct HotkeysSettingsTab: View {
 
     var body: some View {
         Form {
+            if let removedApp {
+                Section {
+                    Banner(tone: .info, title: "Deleted \(removedApp)", actionLabel: "Undo",
+                           action: { undoRemove() }, onDismiss: { clearRemoved() })
+                }
+            }
             Section("Workspaces") {
                 KeyboardShortcuts.Recorder("Next workspace", name: .nextWorkspace)
                 KeyboardShortcuts.Recorder("Previous workspace", name: .previousWorkspace)
@@ -43,7 +52,8 @@ struct HotkeysSettingsTab: View {
             }
             Section("Ignored apps") {
                 if ignoreList.bundleIDs.isEmpty {
-                    Text("No apps. Shortcuts work everywhere.").foregroundStyle(.secondary)
+                    ContentUnavailableView("No ignored apps", systemImage: "app.dashed",
+                                           description: Text("Shortcuts work everywhere."))
                 }
                 ForEach(ignoreList.bundleIDs, id: \.self) { bundleID in
                     HStack {
@@ -59,7 +69,7 @@ struct HotkeysSettingsTab: View {
             }
             Section("Profiles") {
                 if state.savedProfiles.isEmpty {
-                    Text("No saved profiles yet.").foregroundStyle(.secondary)
+                    ContentUnavailableView("No saved profiles yet", systemImage: "rectangle.3.group")
                 }
                 ForEach(state.savedProfiles) { profile in
                     KeyboardShortcuts.Recorder(profile.name, name: .profile(profile.id))
@@ -94,6 +104,27 @@ struct HotkeysSettingsTab: View {
     private func remove(_ bundleID: String) {
         ignoreList.remove(bundleID)
         ignoreList.save()
+        removedApp = bundleID
+        undoManager?.registerUndo(withTarget: HotkeyUndoTarget.shared) { _ in MainActor.assumeIsolated { undoRemove() } }
+        undoManager?.setActionName("Remove Ignored App")
+        dismissTask?.cancel()
+        dismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(6))
+            if !Task.isCancelled { clearRemoved() }
+        }
+    }
+
+    private func clearRemoved() {
+        dismissTask?.cancel()
+        removedApp = nil
+    }
+
+    private func undoRemove() {
+        if let id = removedApp {
+            ignoreList.add(id)
+            ignoreList.save()
+        }
+        clearRemoved()
     }
 
     private static func title(for direction: WindowSizeDirection) -> String {
@@ -131,3 +162,6 @@ private struct IgnoredAppRow: View {
         return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
     }
 }
+
+/// Target object for undo registrations (the actual undo is the banner action).
+private final class HotkeyUndoTarget: NSObject { static let shared = HotkeyUndoTarget() }

@@ -6,24 +6,26 @@ struct MonitorsSettingsTab: View {
     @StateObject private var model = MonitorsModel()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if model.displays.isEmpty {
-                Text("No displays found.").foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                GeometryReader { geo in
-                    map(in: geo.size)
+        Form {
+            Section {
+                if model.displays.isEmpty {
+                    ContentUnavailableView("No displays found", systemImage: "display")
+                } else {
+                    GeometryReader { geo in
+                        map(in: geo.size)
+                    }
+                    .frame(height: 240)
                 }
-                .frame(maxHeight: .infinity)
-            }
-            HStack {
+            } header: {
+                Text("Layout")
+            } footer: {
                 Text("\(model.displays.count) display(s). The main display is marked with a star.")
-                    .font(.footnote).foregroundStyle(.secondary)
-                Spacer()
+            }
+            Section {
                 Button("Refresh") { model.refresh() }
             }
         }
-        .padding()
+        .formStyle(.grouped)
         .onAppear { model.refresh() }
     }
 

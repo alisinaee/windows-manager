@@ -55,31 +55,40 @@ struct WindowRulesSettingsTab: View {
     @StateObject private var model = WindowRulesModel()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Rules are saved per app. They are not applied to restores yet.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            if model.rules.rules.isEmpty {
-                Text("No rules yet.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List(model.rules.rules) { rule in
-                    row(rule)
+        Form {
+            if !model.message.isEmpty {
+                Section {
+                    Banner(tone: .danger, title: "Could not save rules", message: model.message,
+                           actionLabel: "Retry", action: { model.persist() },
+                           onDismiss: { model.message = "" })
                 }
             }
-            HStack {
+            Section {
+                if model.rules.rules.isEmpty {
+                    ContentUnavailableView("No rules yet", systemImage: "list.bullet.rectangle",
+                                           description: Text("Add an app below to ignore it, always restore it, or pin it to a display."))
+                } else {
+                    ForEach(model.rules.rules) { rule in
+                        row(rule)
+                    }
+                }
+            } header: {
+                Text("Rules")
+            } footer: {
+                Text("Rules are saved per app. They are not applied to restores yet.")
+            }
+            Section("Add a rule") {
                 TextField("Bundle ID", text: $model.newBundleID, prompt: Text("com.apple.Safari"))
                     .onSubmit { model.add() }
-                Button("Choose App…") { model.chooseApp() }
-                Button("Add") { model.add() }
-                    .disabled(model.newBundleID.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            if !model.message.isEmpty {
-                Text(model.message).font(.footnote).foregroundStyle(.red)
+                HStack {
+                    Button("Choose App…") { model.chooseApp() }
+                    Spacer()
+                    Button("Add") { model.add() }
+                        .disabled(model.newBundleID.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
             }
         }
-        .padding()
+        .formStyle(.grouped)
         .onAppear { model.refreshDisplays() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             model.refreshDisplays()

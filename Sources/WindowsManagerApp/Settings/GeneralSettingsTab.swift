@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct GeneralSettingsTab: View {
@@ -29,9 +30,12 @@ struct GeneralSettingsTab: View {
                         .foregroundStyle(.secondary)
                 }
                 if let error = launchAtLogin.errorText {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(Color.red)
+                    Banner(tone: .danger, title: "Launch at login failed", message: error,
+                           actionLabel: "Open Login Items", action: {
+                               if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
+                                   NSWorkspace.shared.open(url)
+                               }
+                           })
                 }
                 Text("Windows Manager lives in the menu bar and has no Dock icon.")
                     .font(.footnote)

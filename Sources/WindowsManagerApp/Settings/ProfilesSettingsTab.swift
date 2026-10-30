@@ -10,6 +10,10 @@ final class ProfilesSettingsModel: ObservableObject {
     @Published var nameText = ""
     @Published var message = ""
     @Published var confirmingDelete = false
+    /// Set for a few seconds after a delete so the user can undo it.
+    @Published var deletedName: String?
+    var deletedData: Data?
+    var dismissTask: Task<Void, Never>?
 
     func select(_ id: UUID?, store: ProfileStore) {
         selection = id
@@ -24,10 +28,15 @@ final class ProfilesSettingsModel: ObservableObject {
 
 struct ProfilesSettingsTab: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.undoManager) private var undoManager
     @StateObject private var model = ProfilesSettingsModel()
 
     var body: some View {
         VStack(spacing: 10) {
+            if let name = model.deletedName {
+                Banner(tone: .info, title: "Deleted \(name)", actionLabel: "Undo",
+                       action: { undoDelete() }, onDismiss: { clearDeleted() })
+            }
             HStack(alignment: .top, spacing: 12) {
                 list
                 detail
@@ -36,7 +45,7 @@ struct ProfilesSettingsTab: View {
                 Button("Import…") { importProfile() }
                 Button("New Profile…") { newProfile() }
                 Spacer()
-                Text(model.message).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                Text(model.message).font(.wmCaption).foregroundStyle(.secondary).lineLimit(2)
             }
         }
         .padding()
@@ -47,10 +56,8 @@ struct ProfilesSettingsTab: View {
         let selection = Binding<UUID?>(get: { model.selection }, set: { model.select($0, store: appState.store) })
         return Group {
             if appState.savedProfiles.isEmpty {
-                Text("No saved profiles yet. Capture one from the menu bar.")
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ContentUnavailableView("No profiles yet", systemImage: "rectangle.3.group",
+                                       description: Text("Capture one from the menu bar, or use New Profile."))
             } else {
                 List(appState.savedProfiles, selection: selection) { item in
                     HStack {
@@ -89,9 +96,7 @@ struct ProfilesSettingsTab: View {
                 Button("Delete", role: .destructive) { delete(id) }
             }
         } else {
-            Text("Select a profile")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ContentUnavailableView("Select a profile", systemImage: "sidebar.left")
         }
     }
 
@@ -120,11 +125,41 @@ struct ProfilesSettingsTab: View {
 
     private func delete(_ id: UUID) {
         do {
+            let data = try? appState.profileService.exportData(id.uuidString)
+            let name = appState.savedProfiles.first(where: { $0.id == id })?.name ?? "profile"
             try appState.profileService.delete(id.uuidString)
             appState.reloadProfiles()
             model.select(nil, store: appState.store)
             model.message = "Moved to Trash."
+            if let data {
+                model.deletedData = data
+                model.deletedName = name
+                undoManager?.registerUndo(withTarget: model) { _ in MainActor.assumeIsolated { undoDelete() } }
+                undoManager?.setActionName("Delete Profile")
+                model.dismissTask?.cancel()
+                model.dismissTask = Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(6))
+                    if !Task.isCancelled { clearDeleted() }
+                }
+            }
         } catch { fail(error) }
+    }
+
+    private func clearDeleted() {
+        model.dismissTask?.cancel()
+        model.deletedName = nil
+        model.deletedData = nil
+    }
+
+    private func undoDelete() {
+        guard let data = model.deletedData else { return }
+        do {
+            let saved = try appState.profileService.importData(data, source: "undo")
+            appState.reloadProfiles()
+            model.select(saved.id, store: appState.store)
+            model.message = "Restored \(saved.name)."
+        } catch { fail(error) }
+        clearDeleted()
     }
 
     private func export(_ id: UUID) {

@@ -19,7 +19,7 @@ struct StudioCopyPickerSheet: View {
     @StateObject private var local = CopyPickState()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Spacing.l) {
             Text("Copy of a profile").font(.title2.bold())
             Text("The copy opens as a draft. Nothing is saved until you press Save.")
                 .font(.callout).foregroundStyle(.secondary)
@@ -46,7 +46,7 @@ struct StudioCopyPickerSheet: View {
                 .help("Open a draft copy of the chosen profile (Return)")
             }
         }
-        .padding(20)
+        .padding(Spacing.xl)
         .frame(width: 420)
     }
 }
@@ -84,7 +84,7 @@ struct StudioSaveSheet: View {
     private var needsChoice: Bool { conflict != nil && draft.choice == nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Spacing.m) {
             Text("Save profile").font(.title2.bold())
             TextField("Name", text: Binding(get: { shownName }, set: { draft.text = $0 }))
                 .textFieldStyle(.roundedBorder)
@@ -93,8 +93,10 @@ struct StudioSaveSheet: View {
                 .onChange(of: shownName) { _, _ in draft.choice = nil }
 
             if let clash = conflict {
-                VStack(alignment: .leading, spacing: 8) {
-                    issueRow("exclamationmark.triangle.fill", .orange, "A profile named \u{201C}\(clash.name)\u{201D} already exists. Replace it, keep both, or type another name above.")
+                VStack(alignment: .leading, spacing: Spacing.s) {
+                    Banner(tone: .warning,
+                           title: "A profile named \u{201C}\(clash.name)\u{201D} already exists.",
+                           message: "Replace it, keep both, or type another name above.")
                     Picker("When the name exists", selection: Binding(get: { draft.choice }, set: { draft.choice = $0 })) {
                         Text("Replace the old one").tag(Optional(ConflictChoice.replace))
                         Text("Keep both (adds a number)").tag(Optional(ConflictChoice.keepBoth))
@@ -102,15 +104,13 @@ struct StudioSaveSheet: View {
                     .pickerStyle(.radioGroup)
                     .help("Replace moves the old profile to the Trash. Keep both saves this one with a number added to its name.")
                 }
-                .padding(8)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.12)))
             }
 
             if shownName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 issueRow("exclamationmark.octagon.fill", .red, "Give the profile a name.")
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Spacing.s) {
                     ForEach(Array(errors.enumerated()), id: \.offset) { issueRow("exclamationmark.octagon.fill", .red, $0.element.message) }
                     ForEach(Array(builder.launchIssues.enumerated()), id: \.offset) { issueRow("exclamationmark.triangle.fill", .orange, $0.element.message) }
                     ForEach(Array(warnings.enumerated()), id: \.offset) { issueRow("exclamationmark.triangle.fill", .orange, $0.element.message) }
@@ -143,7 +143,7 @@ struct StudioSaveSheet: View {
                           : needsChoice ? "Choose Replace or Keep both, or change the name" : "Save the profile (Return)")
             }
         }
-        .padding(20)
+        .padding(Spacing.xl)
         .frame(width: 480)
     }
 
@@ -156,7 +156,7 @@ struct StudioSaveSheet: View {
     }
 
     private func issueRow(_ symbol: String, _ color: Color, _ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
             Image(systemName: symbol).foregroundStyle(color)
             Text(text).font(.callout).fixedSize(horizontal: false, vertical: true)
         }

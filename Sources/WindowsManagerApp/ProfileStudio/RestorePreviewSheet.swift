@@ -119,7 +119,7 @@ struct RunStatusLine: View {
     var body: some View {
         switch app.status {
         case .running(let text):
-            HStack(spacing: 6) {
+            HStack(spacing: Spacing.s) {
                 ProgressView().controlSize(.small)
                 Text(text).lineLimit(1)
             }
@@ -248,7 +248,7 @@ struct RestorePreviewSheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.m) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Preview restore of \"\(profileName)\"").font(.title3.bold())
                 Text("Nothing is changed until you press Run now.").font(.callout).foregroundStyle(.secondary)
@@ -261,14 +261,14 @@ struct RestorePreviewSheet: View {
                 .disabled(model.phase == .loading)
                 .help("Scan your Mac again (Cmd+R)")
         }
-        .padding(16)
+        .padding(Spacing.l)
     }
 
     /// "Whole profile" or "Desktop 2 on DELL only".
     private var scopeChip: some View {
         let text = scope.isWhole ? "Whole profile" : (model.profile.map { scope.describe(profile: $0) } ?? "Part of the profile")
         return Text(text).font(.callout).lineLimit(1)
-            .padding(.horizontal, 8).padding(.vertical, 2)
+            .padding(.horizontal, Spacing.s).padding(.vertical, Spacing.xs)
             .background(Capsule().fill((scope.isWhole ? Color.secondary : Color.blue).opacity(0.15)))
             .accessibilityLabel("Scope: \(text)")
     }
@@ -276,19 +276,19 @@ struct RestorePreviewSheet: View {
     @ViewBuilder private var content: some View {
         switch model.phase {
         case .loading:
-            VStack(spacing: 10) {
+            VStack(spacing: Spacing.s) {
                 ProgressView()
                 Text("Comparing with your Mac…").foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityElement(children: .combine)
         case .failed(let message):
-            VStack(spacing: 10) {
+            VStack(spacing: Spacing.s) {
                 Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(.secondary)
                     .accessibilityHidden(true)
                 Text(message).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
-            .padding(24)
+            .padding(Spacing.xl)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .ready:
             if let plan = model.plan, let profile = model.profile {
@@ -299,7 +299,7 @@ struct RestorePreviewSheet: View {
 
     private func planView(_ plan: RestorePlan, _ profile: Profile) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: Spacing.l) {
                 Label(RestoreStepText.summaryLine(model.summary), systemImage: "checklist")
                     .font(.headline)
                     .accessibilityLabel("Summary: \(RestoreStepText.summaryLine(model.summary))")
@@ -318,23 +318,15 @@ struct RestorePreviewSheet: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
             }
-            .padding(16)
+            .padding(Spacing.l)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private func warnings(_ items: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label("\(items.count) warning\(items.count == 1 ? "" : "s")", systemImage: "exclamationmark.triangle")
-                .font(.callout.bold()).foregroundStyle(.orange)
-            ForEach(Array(items.enumerated()), id: \.offset) { _, text in
-                Text(text).font(.callout).fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
-        .accessibilityElement(children: .combine)
+        Banner(tone: .warning,
+               title: "\(items.count) warning\(items.count == 1 ? "" : "s")",
+               message: items.joined(separator: "\n"))
     }
 
     private func phaseGroup(_ phase: RestorePhase, number: Int, plan: RestorePlan, profile: Profile) -> some View {
@@ -342,7 +334,7 @@ struct RestorePreviewSheet: View {
         let binding = Binding<Bool>(get: { model.isExpanded(phase, count: steps.count) },
                                     set: { model.expansion[phase] = $0 })
         return DisclosureGroup(isExpanded: binding) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 if phase == .launch, let note = launchNote(profile) {
                     Text(note).font(.callout).foregroundStyle(.secondary)
                 }
@@ -351,7 +343,7 @@ struct RestorePreviewSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.top, 4).padding(.leading, 4)
+            .padding(.top, Spacing.xs).padding(.leading, Spacing.xs)
             .frame(maxWidth: .infinity, alignment: .leading)
         } label: {
             Text("\(number). \(RestoreStepText.heading(phase)) (\(steps.count))").font(.body.bold())
@@ -383,9 +375,9 @@ struct RestorePreviewSheet: View {
     private func notFound(_ plan: RestorePlan) -> some View {
         let launching = plan.unmatched.filter { isLaunching($0, plan) }
         let missing = plan.unmatched.filter { !isLaunching($0, plan) }
-        return VStack(alignment: .leading, spacing: 14) {
+        return VStack(alignment: .leading, spacing: Spacing.l) {
             if !launching.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
                     Label("Will launch (\(launching.count))", systemImage: "arrow.up.forward.app")
                         .font(.body.bold())
                     ForEach(launching, id: \.snapshotID) { item in
@@ -396,7 +388,7 @@ struct RestorePreviewSheet: View {
                 .accessibilityElement(children: .combine)
             }
             if !missing.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
                     Label("Not found right now (\(missing.count))", systemImage: "questionmark.circle")
                         .font(.body.bold())
                     ForEach(missing, id: \.snapshotID) { item in
@@ -410,7 +402,7 @@ struct RestorePreviewSheet: View {
     }
 
     @ViewBuilder private var footer: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.m) {
             if let app = AppState.current {
                 RunStatusLine(app: app)
             }
@@ -436,6 +428,6 @@ struct RestorePreviewSheet: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.l)
     }
 }

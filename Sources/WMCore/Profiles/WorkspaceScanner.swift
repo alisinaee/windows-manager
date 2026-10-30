@@ -227,9 +227,11 @@ public enum WorkspaceScanner {
             for element in AXWindows.windows(ofPID: pid) {
                 guard let windowID = element.windowID else { continue }
                 let title = element.title.flatMap { $0.isEmpty ? nil : $0 }
+                var limits = WindowResizeDetector.read(element)
+                limits = probeIfUnknown(element, pid: pid, title: title, read: limits)
                 result[windowID] = AXWindowDetails(title: title, documentPath: AXWindows.documentPath(of: element),
                                                    isMinimized: element.isMinimized, frame: element.frame,
-                                                   resizeLimits: WindowResizeDetector.read(element))
+                                                   resizeLimits: limits)
             }
             // Windows on another Space are not in AXWindows; the app still hands them out directly.
             for (windowID, element) in AXRemoteWindows.directWindows(pid: pid) where result[windowID] == nil {
@@ -240,6 +242,21 @@ public enum WorkspaceScanner {
             }
         }
         return result
+    }
+
+    /// Nudges the window once per app and title kind when its size is settable but nothing is known about it
+    /// (apps like System Settings accept the AXSize write and then clamp it). The result, including "no limits",
+    /// is kept in `SizeLimitStore`, so the same app and title kind is never nudged again. Skipped when probing is
+    /// off, or the window is minimized, full screen or has no readable frame.
+    private static func probeIfUnknown(_ element: AXElement, pid: Int32, title: String?,
+                                       read: WindowResizeLimits) -> WindowResizeLimits {
+        guard WindowResizeDetector.probeOnCapture, !read.fixedWidth, !read.fixedHeight,
+              element.isMinimized != true, element.isFullScreen != true, element.frame != nil,
+              let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier,
+              SizeLimitStore.shared.needsProbe(bundleID: bundleID, title: title) else { return read }
+        let probed = WindowResizeDetector.probe(element)
+        SizeLimitStore.shared.record(probed, bundleID: bundleID, title: title)
+        return SizeLimitLearning.merge(read, with: probed) ?? read
     }
 
     /// Time shared by all apps for `AXRemoteWindows` lookups of windows on other Spaces during one scan.

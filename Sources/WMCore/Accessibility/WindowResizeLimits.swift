@@ -9,9 +9,13 @@ public struct WindowResizeLimits: Codable, Hashable, Sendable {
     public var canMove: Bool
     public var minSize: CGSize?
     public var maxSize: CGSize?
+    /// Set on limits recorded by an active probe, even when the probe found no restriction, so the same
+    /// app and title kind is never nudged again. Not a restriction (`hasRestrictions` ignores it).
+    public var probed: Bool
 
     public init(fixedWidth: Bool = false, fixedHeight: Bool = false, canMove: Bool = true,
-                minSize: CGSize? = nil, maxSize: CGSize? = nil) {
+                minSize: CGSize? = nil, maxSize: CGSize? = nil, probed: Bool = false) {
+        self.probed = probed
         self.fixedWidth = fixedWidth
         self.fixedHeight = fixedHeight
         self.canMove = canMove
@@ -19,7 +23,7 @@ public struct WindowResizeLimits: Codable, Hashable, Sendable {
         self.maxSize = maxSize
     }
 
-    private enum CodingKeys: String, CodingKey { case fixedWidth, fixedHeight, canMove, minSize, maxSize }
+    private enum CodingKeys: String, CodingKey { case fixedWidth, fixedHeight, canMove, minSize, maxSize, probed }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -28,6 +32,7 @@ public struct WindowResizeLimits: Codable, Hashable, Sendable {
         canMove = try c.decodeIfPresent(Bool.self, forKey: .canMove) ?? true
         minSize = try c.decodeIfPresent(CGSize.self, forKey: .minSize)
         maxSize = try c.decodeIfPresent(CGSize.self, forKey: .maxSize)
+        probed = try c.decodeIfPresent(Bool.self, forKey: .probed) ?? false
     }
 
     /// True when any restriction is known.
@@ -146,8 +151,15 @@ public enum WindowResizeDetector {
         return out
     }
 
+    /// Whether capture probes windows it has no learned limits for (once per app and title kind, result kept in
+    /// `SizeLimitStore`). Off under tests; the CLI can switch it off.
+    nonisolated(unsafe) public static var probeOnCapture: Bool = {
+        let env = ProcessInfo.processInfo.environment
+        return NSClassFromString("XCTestCase") == nil && env["XCTestConfigurationFilePath"] == nil
+    }()
+
     /// Active probe: nudges the width and then the height by +/-`delta` and restores the original frame.
-    /// Moves a real window, so callers must opt in (capture-time flag or `--probe --yes`).
+    /// Moves a real window, so callers must opt in (`probeOnCapture` during a scan, or `--probe --yes`).
     public static func probe(_ window: AXElement, delta: CGFloat = 8) -> WindowResizeLimits {
         let base = read(window)
         guard let original = frame(of: window) else { return base }
@@ -168,7 +180,9 @@ public enum WindowResizeDetector {
         // Restore the exact original frame.
         window.set("AXSize", original.size)
         window.set("AXPosition", original.origin)
-        return WindowResizeLimits.fromProbe(width: w, height: h, base: base)
+        var result = WindowResizeLimits.fromProbe(width: w, height: h, base: base)
+        result.probed = true
+        return result
     }
 
     private static func size(of window: AXElement) -> CGSize? { window.sizeValue("AXSize") }

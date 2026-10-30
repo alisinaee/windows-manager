@@ -285,6 +285,26 @@ final class BuilderCanvasController: ObservableObject {
         drag = preview
     }
 
+    /// `rect` (screen points of the map) held to the window's min / max size, scaled from the real frame to the tile.
+    private func clampDrag(_ rect: CGRect, limits: WindowResizeLimits, window: WindowSnapshot,
+                           tile: ProfileMapLayout.WindowTile, handle: ResizeHandle) -> CGRect {
+        guard window.frame.width > 0, window.frame.height > 0, tile.rect.width > 0, tile.rect.height > 0 else { return rect }
+        let sx = tile.rect.width / window.frame.width, sy = tile.rect.height / window.frame.height
+        var out = rect
+        func axis(_ size: CGFloat, lo: CGFloat?, hi: CGFloat?, scale: CGFloat) -> CGFloat {
+            var s = size
+            if let lo, lo > 0 { s = Swift.max(s, lo * scale) }
+            if let hi, hi < .greatestFiniteMagnitude / 2 { s = Swift.min(s, hi * scale) }
+            return s
+        }
+        let w = axis(rect.width, lo: limits.minSize?.width, hi: limits.maxSize?.width, scale: sx)
+        let h = axis(rect.height, lo: limits.minSize?.height, hi: limits.maxSize?.height, scale: sy)
+        if handle.movesLeft { out.origin.x = rect.maxX - w }
+        if handle.movesTop { out.origin.y = rect.maxY - h }
+        out.size = CGSize(width: w, height: h)
+        return out
+    }
+
     func resizeChanged(tile: ProfileMapLayout.WindowTile, handle: ResizeHandle, translation: CGSize) {
         guard !dragCancelled, !tile.isFullScreen, let monitor = monitor(tile.displayUUID) else { return }
         if drag == nil || drag?.windowID != tile.windowID {
@@ -295,14 +315,18 @@ final class BuilderCanvasController: ObservableObject {
         }
         guard var preview = drag else { return }
         let minSize = CGSize(width: MapSnapping.minimumWidth, height: MapSnapping.minimumHeight)
-        // A fixed width / height cannot be dragged; min / max are applied when the frame is saved.
+        // A fixed width / height cannot be dragged; min / max (known or learned) are held during the drag too.
         var translation = translation
-        if let limits = window(tile.windowID)?.resizeLimits {
+        let limits = window(tile.windowID).flatMap { SizeLimitLearning.effectiveLimits(for: $0) }
+        if let limits {
             if limits.fixedWidth { translation.width = 0 }
             if limits.fixedHeight { translation.height = 0 }
         }
         var rect = ResizeHandles.resize(preview.startRect, handle: handle, by: translation, minSize: minSize,
                                         within: monitor.contentRect)
+        if let limits, limits.hasRestrictions, let w = window(tile.windowID) {
+            rect = clampDrag(rect, limits: limits, window: w, tile: tile, handle: handle)
+        }
         if !snapOptionDisabled {
             let zoneRects = zones(on: monitor).map(\.rect)
             let others = otherEdges(on: monitor.id, excluding: tile.windowID)
@@ -769,7 +793,7 @@ struct BuilderCanvasOverlay: View {
 
     private func handles(for tile: ProfileMapLayout.WindowTile) -> some View {
         let rect = local.toScreen(controller.drag?.windowID == tile.windowID ? (controller.drag?.rect ?? tile.rect) : tile.rect)
-        let limits = controller.window(tile.windowID)?.resizeLimits
+        let limits = controller.window(tile.windowID).flatMap { SizeLimitLearning.effectiveLimits(for: $0) }
         return ForEach(ResizeHandle.allCases.filter { handle in
             // Hide a handle when every axis it moves is fixed.
             let widthFixed = limits?.fixedWidth == true, heightFixed = limits?.fixedHeight == true

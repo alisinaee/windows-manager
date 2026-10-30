@@ -362,8 +362,7 @@ public struct ProfileDraftEditor {
 
     /// `proposed` held to what the window accepts (fixed width / height, min / max); unchanged without known limits.
     public static func clamped(_ proposed: CGRect, for window: WindowSnapshot) -> CGRect {
-        let cached = SizeLimitStore.shared.limits(bundleID: window.app.bundleID, title: window.title)
-        guard let limits = SizeLimitLearning.merge(window.resizeLimits, with: cached), limits.hasRestrictions
+        guard let limits = SizeLimitLearning.effectiveLimits(for: window), limits.hasRestrictions
         else { return proposed }
         return limits.clamp(proposed, current: window.frame)
     }

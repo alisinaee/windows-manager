@@ -57,6 +57,7 @@ public enum SizeLimitLearning {
         out.fixedWidth = out.fixedWidth || learned.fixedWidth
         out.fixedHeight = out.fixedHeight || learned.fixedHeight
         out.canMove = out.canMove && learned.canMove
+        out.probed = out.probed || learned.probed
         out.minSize = combine(out.minSize, learned.minSize, empty: 0) { Swift.max($0, $1) }
         out.maxSize = combine(out.maxSize, learned.maxSize, empty: .greatestFiniteMagnitude) { Swift.min($0, $1) }
         return out
@@ -72,6 +73,20 @@ public enum SizeLimitLearning {
     /// True when `merged` knows something `existing` did not.
     public static func adds(_ merged: WindowResizeLimits?, to existing: WindowResizeLimits?) -> Bool {
         merged != nil && merged != existing
+    }
+
+    /// The window's own limits merged with what the store learned or probed for its app and title kind.
+    public static func effectiveLimits(for window: LiveWindow, store: SizeLimitStore = .shared) -> WindowResizeLimits? {
+        effectiveLimits(own: window.resizeLimits, bundleID: window.app.bundleID, title: window.title, store: store)
+    }
+
+    public static func effectiveLimits(for window: WindowSnapshot, store: SizeLimitStore = .shared) -> WindowResizeLimits? {
+        effectiveLimits(own: window.resizeLimits, bundleID: window.app.bundleID, title: window.title, store: store)
+    }
+
+    public static func effectiveLimits(own: WindowResizeLimits?, bundleID: String?, title: String?,
+                                       store: SizeLimitStore = .shared) -> WindowResizeLimits? {
+        merge(own, with: store.limits(bundleID: bundleID, title: title))
     }
 
     /// A stable kind for a window title: lowercase, digits and extra spaces removed. Empty for no title.
@@ -115,6 +130,13 @@ public final class SizeLimitStore: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         let map = read()
         return map[key(bundleID, title)] ?? map[key(bundleID, nil)]
+    }
+
+    /// True when nothing is known for this exact app and title kind (no learned limits, no earlier probe).
+    public func needsProbe(bundleID: String?, title: String?) -> Bool {
+        guard let bundleID else { return false }
+        lock.lock(); defer { lock.unlock() }
+        return read()[key(bundleID, title)] == nil
     }
 
     /// Merges `learned` into the entry. Returns the stored limits, or nil when nothing was written.

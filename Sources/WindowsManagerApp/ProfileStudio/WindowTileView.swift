@@ -139,7 +139,7 @@ struct WindowTileView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(3)
             }
-            if let message = window.resizeLimits?.fixedMessage, size.width >= 28, size.height >= 24 {
+            if let message = SizeLimitLearning.effectiveLimits(for: window)?.fixedMessage, size.width >= 28, size.height >= 24 {
                 HStack(spacing: 3) {
                     Image(systemName: "lock.fill").font(.system(size: metrics.font(10), weight: .bold))
                     if size.width >= 110 { Text("Fixed size").font(.system(size: metrics.font(10), weight: .semibold)) }
@@ -214,7 +214,7 @@ struct WindowTileView: View {
         let f = window.frame
         parts.append("\(Int(f.width))x\(Int(f.height)) at \(Int(f.minX)), \(Int(f.minY))")
         if let status { parts.append(ProfileMapModel.statusText(status)) }
-        if let message = window.resizeLimits?.fixedMessage { parts.append(message) }
+        if let message = SizeLimitLearning.effectiveLimits(for: window)?.fixedMessage { parts.append(message) }
         return parts.joined(separator: " · ")
     }
 
@@ -228,7 +228,7 @@ struct WindowTileView: View {
             text += ", \(phrase)"
         }
         if tile.isOnAllDesktops { text += ", on all Desktops" }
-        if let message = window.resizeLimits?.fixedMessage { text += ", " + message.lowercased() }
+        if let message = SizeLimitLearning.effectiveLimits(for: window)?.fixedMessage { text += ", " + message.lowercased() }
         if !tile.isRestored { text += ", not restored" }
         else if let status { text += ", " + ProfileMapModel.statusText(status) }
         return text

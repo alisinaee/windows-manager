@@ -116,7 +116,7 @@ struct WindowTileView: View {
             if isSelected {
                 shape.strokeBorder(Color.accentColor, lineWidth: 3)
             }
-            if min(size.width, size.height) >= 56 {
+            if size.height >= 110, min(size.width, size.height) >= 56 {
                 let side = min(size.width, size.height) * 0.5
                 Image(nsImage: AppIconCache.icon(for: window.app))
                     .resizable().interpolation(.high)

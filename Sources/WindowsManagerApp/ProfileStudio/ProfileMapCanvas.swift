@@ -200,8 +200,8 @@ struct ProfileMapCanvas: View {
         } else {
             ZStack(alignment: .topLeading) {
                 Color.clear.contentShape(Rectangle())
-                    .onTapGesture { model.selectWindow(nil) }
                     .onTapGesture(count: 2) { model.fit() }
+                    .onTapGesture { model.selectWindow(nil) }
                 ForEach(layout.monitors) { monitor in
                     monitorView(monitor)
                 }

@@ -65,6 +65,8 @@ struct SpaceThumbnailView: View {
                             .font(.system(size: max(metrics.font(11), 11), weight: isSelected ? .bold : .regular))
                             .foregroundStyle(.primary)
                             .minimumScaleFactor(0.7).lineLimit(1)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(.regularMaterial, in: Capsule())
                     }
                     if missing != nil {
                         Image(systemName: "circle.dashed").font(.system(size: max(metrics.font(10), 11))).foregroundStyle(.orange)

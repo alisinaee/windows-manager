@@ -136,7 +136,7 @@ struct StudioInspectorSplit<Main: View, Inspector: View>: View {
                     collapseStrip(vertical: true)
                 }
             } else {
-                let maxH = max(90, min(geo.size.height * 0.6, geo.size.height - 200))
+                let maxH = max(90, min(geo.size.height * 0.6, geo.size.height - 260))
                 let h = min(max(layout.height, 90), maxH)
                 VStack(spacing: 0) {
                     main().frame(maxWidth: .infinity, maxHeight: .infinity).layoutPriority(1)

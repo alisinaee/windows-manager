@@ -29,16 +29,40 @@ struct MapLegendView: View {
         return entries
     }
 
+    @State private var showsInfo = false
+
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text("Legend").font(.system(size: 12, weight: .semibold)).foregroundStyle(.primary.opacity(0.8))
-            LegendFlow(spacing: 14, lineSpacing: 4) {
-                ForEach(shapeEntries + (showsStatus ? statusEntries : [])) { item($0) }
-            }
+        ViewThatFits(in: .horizontal) {
+            fullLegend
+            compactLegend
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Legend: " + (shapeEntries + (showsStatus ? statusEntries : [])).map(\.text).joined(separator: ", "))
+    }
+
+    private var compactLegend: some View {
+        HStack(spacing: 8) {
+            Text("Legend").font(.system(size: 12, weight: .semibold)).foregroundStyle(.primary.opacity(0.8))
+            Button { showsInfo.toggle() } label: { Image(systemName: "info.circle") }
+                .buttonStyle(.borderless)
+                .help("Show legend")
+                .popover(isPresented: $showsInfo) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(shapeEntries + (showsStatus ? statusEntries : [])) { item($0) }
+                    }.padding(12)
+                }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var fullLegend: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("Legend").font(.system(size: 12, weight: .semibold)).foregroundStyle(.primary.opacity(0.8))
+            HStack(spacing: 14) {
+                ForEach(shapeEntries + (showsStatus ? statusEntries : [])) { item($0) }
+            }.fixedSize(horizontal: true, vertical: false)
+        }
     }
 
     private func item(_ entry: Entry) -> some View {

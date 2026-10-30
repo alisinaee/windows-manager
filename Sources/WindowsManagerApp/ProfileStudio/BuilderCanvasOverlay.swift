@@ -657,11 +657,11 @@ struct BuilderCanvasOverlay: View {
     private var background: some View {
         Color.clear
             .contentShape(Rectangle())
+            .onTapGesture(count: 2) { requestFit() }
             .onTapGesture {
                 controller.select(nil)
                 requestFocus()
             }
-            .onTapGesture(count: 2) { requestFit() }
             .dropDestination(for: LibraryDragPayload.self) { items, location in
                 controller.handleDrop(items, at: local.toCanvas(location))
             } isTargeted: { controller.isDropTargeted = $0 }

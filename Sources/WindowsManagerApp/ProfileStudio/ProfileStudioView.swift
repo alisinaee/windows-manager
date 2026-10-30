@@ -2,15 +2,10 @@ import KeyboardShortcuts
 import SwiftUI
 import WMCore
 
-/// Profile Studio shell: profile list on the left, map placeholder and toolbar on the right.
+/// Profile Studio shell: unified window toolbar, a NavigationSplitView (profile sidebar | map) and a Details inspector.
 struct ProfileStudioView: View {
     @ObservedObject var model: ProfileStudioModel
     @Environment(\.openSettings) private var openSettings
-    /// Width of the full profile sidebar: dragged between 200 and 340 points and remembered between launches.
-    @AppStorage("studioSidebarWidth") private var storedSidebarWidth: Double = 240
-    @State private var sidebarDragStart: Double?
-
-    private static let sidebarWidthRange: ClosedRange<Double> = 200...340
 
     var body: some View {
         Group {
@@ -18,141 +13,113 @@ struct ProfileStudioView: View {
             case .loading:
                 ProgressView("Loading profiles…").frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let message):
-                messageView(icon: "exclamationmark.triangle", text: message, action: ("Try Again", { model.reload() }))
+                Banner(tone: .danger, title: "Could not load profiles", message: message,
+                       actionLabel: "Try Again", action: { model.reload() })
+                    .frame(maxWidth: 480)
+                    .padding(Spacing.l)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .empty where model.mode == .view:
-                emptyState(icon: "rectangle.3.group", title: "No profiles yet",
-                           subtitle: "Capture the windows you have open now, or start a new profile and arrange it yourself.") {
-                    HStack(spacing: 10) {
-                        Button { model.beginCapture() } label: { Label("Capture current desktop", systemImage: "camera.viewfinder") }
-                            .buttonStyle(.borderedProminent).tint(.blue).controlSize(.large)
-                            .help("Capture the windows you have open now as a new profile")
-                            .accessibilityLabel("Capture current desktop as a profile")
-                        Button { model.beginNewProfile() } label: { Label("New profile", systemImage: "plus") }
-                            .buttonStyle(.bordered).controlSize(.large)
-                            .help("Start a new profile from the current workspace, as an editable draft")
-                            .accessibilityLabel("New profile")
-                    }
-                    if AppState.current?.isAccessibilityTrusted == false {
-                        Label("Capture needs Accessibility permission: allow it in System Settings > Privacy & Security > Accessibility.",
-                              systemImage: "lock")
-                            .font(.callout).foregroundStyle(.orange)
-                            .multilineTextAlignment(.center).frame(maxWidth: 360)
-                    }
-                }
+                noProfiles
             case .loaded, .empty:
-                GeometryReader { geo in
-                    HStack(spacing: 0) {
-                        if model.isSidebarShown {
-                            sidebar.frame(width: CGFloat(storedSidebarWidth.clamped(to: Self.sidebarWidthRange)))
-                            sidebarHandle
-                        } else {
-                            SidebarRailView(model: model)
-                            Divider()
-                        }
-                        detail.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                    .onAppear { model.contentWidthChanged(geo.size.width) }
-                    .onChange(of: geo.size.width) { _, width in model.contentWidthChanged(width) }
-                }
-                .sheet(isPresented: $model.isCopyPickerPresented) {
-                    StudioCopyPickerSheet(profiles: model.rows, onCopy: { model.beginCopy(of: $0) },
-                                          onCancel: { model.isCopyPickerPresented = false })
-                }
-                .sheet(isPresented: $model.isReviewCapturePresented) {
-                    if let builder = model.builder {
-                        CaptureReviewPanel(capture: model.capture, builder: builder, onDone: { model.isReviewCapturePresented = false })
-                    }
-                }
-                .sheet(isPresented: $model.isSaveSheetPresented) {
-                    if let builder = model.builder {
-                        StudioSaveSheet(builder: builder, onSaved: { model.didSave($0) }, onCancel: { model.cancelSave() })
-                    }
-                }
-                .confirmationDialog("You have unsaved changes", isPresented: $model.isSwitchConfirmPresented, titleVisibility: .visible) {
-                    Button("Save…") { model.confirmSwitch(save: true) }
-                    Button("Discard Changes", role: .destructive) { model.confirmSwitch(save: false) }
-                    Button("Cancel", role: .cancel) { model.cancelSwitch() }
-                } message: {
-                    Text("Switching profiles throws away what you changed since the last save.")
-                }
-                .confirmationDialog("You have unsaved changes", isPresented: $model.isLeaveConfirmPresented, titleVisibility: .visible) {
-                    Button("Save…") { model.saveThen { model.leaveEdit() } }
-                    Button("Discard Changes", role: .destructive) { model.leaveEdit() }
-                    Button("Keep Editing", role: .cancel) {}
-                } message: {
-                    Text("Leaving Edit mode throws away what you changed since the last save.")
-                }
+                splitView
             }
         }
         .frame(minWidth: ProfileStudioWindowController.minSize.width, minHeight: ProfileStudioWindowController.minSize.height)
-        .clipped()
+        .navigationTitle(model.windowTitle)
+        .navigationSubtitle(model.windowSubtitle)
         .onAppear { model.reload() }
     }
 
-    private func messageView(icon: String, text: String, action: (String, () -> Void)) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: icon).font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
-            Text(text).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            Button(action.0, action: action.1)
-                .help(action.0)
-                .accessibilityLabel(action.0)
+    private var noProfiles: some View {
+        ContentUnavailableView {
+            Label("No Profiles", systemImage: "rectangle.3.group")
+        } description: {
+            Text("Capture the windows you have open now, or start a new profile and arrange it yourself.")
+            if AppState.current?.isAccessibilityTrusted == false {
+                Text("Capture needs Accessibility permission: allow it in System Settings > Privacy & Security > Accessibility.")
+                    .foregroundStyle(Tone.warning.color)
+            }
+        } actions: {
+            Button { model.beginCapture() } label: { Label("Capture Current Desktop", systemImage: "camera.viewfinder") }
+                .buttonStyle(.borderedProminent).controlSize(.large)
+                .help("Capture the windows you have open now as a new profile")
+                .accessibilityLabel("Capture current desktop as a profile")
+            Button { model.beginNewProfile() } label: { Label("New Profile", systemImage: "plus") }
+                .controlSize(.large)
+                .help("Start a new profile from the current workspace, as an editable draft")
+                .accessibilityLabel("New profile")
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .contain)
     }
 
-    /// Centred icon, title and one line of help, with the state's action below them.
-    private func emptyState<Actions: View>(icon: String, title: String, subtitle: String,
-                                           @ViewBuilder actions: () -> Actions) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 40, weight: .light)).foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text(title).font(.title3.weight(.semibold))
-            Text(subtitle).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                .frame(maxWidth: 300)
-            actions().padding(.top, 6)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .contain)
+    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(get: { model.isSidebarShown ? .all : .detailOnly },
+                set: { model.setSidebar(shown: $0 != .detailOnly) })
     }
 
-    /// 1pt divider centred in a 9pt drag area, like the Details split: drag to resize the sidebar.
-    private var sidebarHandle: some View {
-        Color.clear
-            .frame(width: 9)
-            .overlay(Divider())
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+    private var splitView: some View {
+        NavigationSplitView(columnVisibility: columnVisibility) {
+            sidebar
+                .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 340)
+        } detail: {
+            detail
+        }
+        .toolbar { StudioToolbar(model: model) }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { model.contentWidthChanged($0) }
+        .sheet(isPresented: $model.isCopyPickerPresented) {
+            StudioCopyPickerSheet(profiles: model.rows, onCopy: { model.beginCopy(of: $0) },
+                                  onCancel: { model.isCopyPickerPresented = false })
+        }
+        .sheet(isPresented: $model.isReviewCapturePresented) {
+            if let builder = model.builder {
+                CaptureReviewPanel(capture: model.capture, builder: builder, onDone: { model.isReviewCapturePresented = false })
             }
-            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                .onChanged { value in
-                    let start = sidebarDragStart ?? storedSidebarWidth
-                    sidebarDragStart = start
-                    storedSidebarWidth = (start + value.translation.width).clamped(to: Self.sidebarWidthRange)
-                }
-                .onEnded { _ in sidebarDragStart = nil })
-            .help("Drag to resize the sidebar")
-            .accessibilityElement()
-            .accessibilityLabel("Resize sidebar")
-            .accessibilityValue("\(Int(storedSidebarWidth.clamped(to: Self.sidebarWidthRange))) points")
-            .accessibilityAdjustableAction { direction in
-                let step: Double = direction == .increment ? 10 : -10
-                storedSidebarWidth = (storedSidebarWidth + step).clamped(to: Self.sidebarWidthRange)
+        }
+        .sheet(isPresented: $model.isSaveSheetPresented) {
+            if let builder = model.builder {
+                StudioSaveSheet(builder: builder, onSaved: { model.didSave($0) }, onCancel: { model.cancelSave() })
             }
+        }
+        .confirmationDialog("You have unsaved changes", isPresented: $model.isSwitchConfirmPresented, titleVisibility: .visible) {
+            Button("Save…") { model.confirmSwitch(save: true) }
+            Button("Discard Changes", role: .destructive) { model.confirmSwitch(save: false) }
+            Button("Cancel", role: .cancel) { model.cancelSwitch() }
+        } message: {
+            Text("Switching profiles throws away what you changed since the last save.")
+        }
+        .confirmationDialog("You have unsaved changes", isPresented: $model.isLeaveConfirmPresented, titleVisibility: .visible) {
+            Button("Save…") { model.saveThen { model.leaveEdit() } }
+            Button("Discard Changes", role: .destructive) { model.leaveEdit() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("Leaving Edit mode throws away what you changed since the last save.")
+        }
+        .confirmationDialog("Delete this profile?", isPresented: Binding(get: { model.deleteTarget != nil },
+                                                                           set: { if !$0 { model.deleteTarget = nil } }),
+                            titleVisibility: .visible, presenting: model.deleteTarget) { row in
+            Button("Delete \u{201C}\(row.name)\u{201D}", role: .destructive) { model.deleteTarget = row; model.confirmDelete() }
+            Button("Cancel", role: .cancel) { model.deleteTarget = nil }
+        } message: { _ in
+            Text("It moves to the Trash folder. You can undo right after.")
+        }
+        .alert("Rename Profile", isPresented: Binding(get: { model.renameTarget != nil },
+                                                      set: { if !$0 { model.renameTarget = nil } }),
+               presenting: model.renameTarget) { row in
+            TextField("Name", text: $model.renameText)
+            Button("Rename") { model.renameTarget = row; model.commitRename() }
+            Button("Cancel", role: .cancel) { model.renameTarget = nil }
+        }
     }
+
+    // MARK: Sidebar
 
     private var sidebar: some View {
         let selection = Binding<UUID?>(get: { model.selectedID }, set: { model.requestSelect($0) })
         return VStack(spacing: 0) {
             HStack(spacing: 2) {
-                SidebarToggleButton(model: model)
                 Button { model.beginNewProfile() } label: {
                     Label("New profile", systemImage: "plus")
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 6).padding(.vertical, 6)
+                        .padding(.horizontal, Spacing.s).padding(.vertical, Spacing.s)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -160,113 +127,194 @@ struct ProfileStudioView: View {
                 .help("Start a new profile from the current workspace. The chevron has blank, copy and Review capture.")
                 NewProfileMenu(model: model, capture: model.capture)
             }
-            .padding(.horizontal, 6).padding(.top, 8)
+            .padding(.horizontal, Spacing.s).padding(.top, Spacing.xs)
             if let notice = model.newProfileNotice {
-                Label(notice, systemImage: "exclamationmark.triangle.fill")
-                    .font(.footnote).foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10).padding(.top, 4)
+                Banner(tone: .warning, title: notice, onDismiss: { model.newProfileNotice = nil })
+                    .padding(.horizontal, Spacing.s).padding(.top, Spacing.xs)
                     .accessibilityIdentifier("newProfileNotice")
             }
             List(model.rows, selection: selection) { row in
                 ProfileStudioRowView(row: row).tag(row.id)
                     .listRowInsets(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10))
+                    .contextMenu { rowMenu(row) }
             }
             .listStyle(.sidebar)
             .accessibilityLabel("Profiles")
+            .onDeleteCommand { if let row = model.selectedRow { model.requestDelete(row) } }
+            .overlay {
+                if model.rows.isEmpty {
+                    ContentUnavailableView {
+                        Label("No Profiles", systemImage: "rectangle.3.group")
+                    } actions: {
+                        Button("New Profile") { model.beginNewProfile() }
+                    }
+                }
+            }
             if !model.skipped.isEmpty {
                 Text("Could not read: \(model.skipped.joined(separator: ", "))")
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                    .font(.wmCaption).foregroundStyle(.secondary)
+                    .padding(Spacing.s).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
 
+    @ViewBuilder private func rowMenu(_ row: ProfileStudioRow) -> some View {
+        Button("Run") { model.run(row: row) }
+            .disabled(AppState.current?.canAct != true || model.mode == .edit)
+        Divider()
+        Button("Rename…") { model.beginRename(row) }.disabled(!model.canChangeRows)
+        Button("Duplicate") { model.duplicate(row) }.disabled(!model.canChangeRows)
+        Button("Export…") { model.export(row) }
+        Divider()
+        Button("Delete…", role: .destructive) { model.requestDelete(row) }.disabled(!model.canChangeRows)
+    }
+
+    // MARK: Detail
+
     @ViewBuilder private var detail: some View {
+        VStack(spacing: 0) {
+            if let message = model.actionError {
+                Banner(tone: .danger, title: "That did not work", message: message, onDismiss: { model.actionError = nil })
+                    .padding(Spacing.s)
+            }
+            if let name = model.deletedName {
+                Banner(tone: .info, title: "Deleted \u{201C}\(name)\u{201D}", actionLabel: "Undo",
+                       action: { model.undoDelete() }, onDismiss: { model.clearDeleted() })
+                    .padding(Spacing.s)
+            }
+            detailContent
+        }
+    }
+
+    @ViewBuilder private var detailContent: some View {
         if model.mode == .edit, let builder = model.builder {
             StudioEditDetail(model: model, builder: builder)
                 .id(ObjectIdentifier(builder))
         } else if let row = model.selectedRow {
-            VStack(spacing: 0) {
-                toolbar(row)
-                Divider()
-                StudioMapHost(row: row, model: model)
-            }
-            .sheet(isPresented: $model.isPreviewPresented) {
-                RestorePreviewSheet(profileID: row.id, profileName: row.name, scope: model.previewScope) { model.isPreviewPresented = false }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-                // The Studio window coming back to the front: refresh the comparison (never polls).
-                if (note.object as? NSWindow)?.isKeyWindow == true, !model.isPreviewPresented { model.refreshCompare() }
-            }
+            StudioMapHost(row: row, model: model)
+                .sheet(isPresented: $model.isPreviewPresented) {
+                    RestorePreviewSheet(profileID: row.id, profileName: row.name, scope: model.previewScope) { model.isPreviewPresented = false }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+                    // The Studio window coming back to the front: refresh the comparison (never polls).
+                    if (note.object as? NSWindow)?.isKeyWindow == true, !model.isPreviewPresented { model.refreshCompare() }
+                }
         } else {
-            emptyState(icon: "rectangle.3.group", title: "Select a profile",
-                       subtitle: "Choose one on the left, or create a new one") {
-                Button { model.beginNewProfile() } label: { Label("New profile", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent).tint(.blue).controlSize(.large)
+            ContentUnavailableView {
+                Label("Select a Profile", systemImage: "rectangle.3.group")
+            } description: {
+                Text("Choose one on the left, or create a new one.")
+            } actions: {
+                Button { model.beginNewProfile() } label: { Label("New Profile", systemImage: "plus") }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
                     .help("Start a new profile from the current workspace")
                     .accessibilityLabel("New profile")
             }
         }
     }
+}
 
-    /// One compact row: name, mode, compare, preview and Run with its shortcut chip. Falls back to icon-only
-    /// buttons, then a shorter name, so it never grows past the pane. Compare / run problems sit in a banner below.
-    private func toolbar(_ row: ProfileStudioRow) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ViewThatFits(in: .horizontal) {
-                toolbarRow(row, iconOnly: false, truncating: false)
-                toolbarRow(row, iconOnly: true, truncating: false)
-                toolbarRow(row, iconOnly: true, truncating: true)
-            }
-            if let error = model.compareError {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.callout).foregroundStyle(.orange).lineLimit(1).truncationMode(.tail)
-                    .accessibilityLabel("Compare problem: \(error)")
-            }
-            if let app = AppState.current { RunStatusLine(app: app).lineLimit(1) }
+/// The unified window toolbar. Centre: View / Edit. Trailing: Compare, Preview, Run in View mode;
+/// Undo, Redo, Live, Add App, Cancel and Save in Edit mode; the Details toggle in both.
+struct StudioToolbar: ToolbarContent {
+    @ObservedObject var model: ProfileStudioModel
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            StudioModePicker(model: model)
         }
-        .padding(.horizontal, 12).padding(.vertical, 6)
+        if model.mode == .edit, let builder = model.builder {
+            StudioEditToolbar(model: model, builder: builder)
+        } else if let row = model.selectedRow {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Toggle(isOn: Binding(get: { model.isCompareOn }, set: { model.setCompare($0) })) {
+                    Label("Compare", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .help("Compare: check this profile against the windows on your Mac now and mark what is missing or moved (Cmd+L). Only scans: nothing is moved.")
+                .accessibilityLabel("Compare with your Mac")
+                if model.isComparing {
+                    ProgressView().controlSize(.small)
+                } else if model.isCompareOn, model.compareError == nil {
+                    Button { model.refreshCompare() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                        .help("Compare again (Cmd+R)")
+                        .accessibilityLabel("Refresh comparison")
+                }
+                Button { DebugLog.log("studio", "preview restore opened: \(row.name)"); model.previewScope = .whole; model.isPreviewPresented = true } label: { Label("Preview", systemImage: "list.bullet.rectangle") }
+                    .help("Preview restore: see what a restore would do, step by step (Shift+Cmd+P)")
+                    .accessibilityLabel("Preview restore")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                if let app = AppState.current {
+                    StudioRunControl(app: app, profileID: row.id, profileName: row.name, iconOnly: false,
+                                     showEditor: $model.isShortcutEditorPresented)
+                }
+            }
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button { model.isInspectorShown.toggle() } label: { Label("Details", systemImage: "sidebar.right") }
+                .help(model.isInspectorShown ? "Hide the Details inspector" : "Show the Details inspector")
+                .accessibilityLabel(model.isInspectorShown ? "Hide details" : "Show details")
+        }
+    }
+}
+
+/// Edit-mode toolbar items. Undo / Redo / Save shortcuts live in the app menu.
+struct StudioEditToolbar: ToolbarContent {
+    @ObservedObject var model: ProfileStudioModel
+    @ObservedObject var builder: ProfileBuilderModel
+
+    private var statusText: String {
+        let e = builder.errorCount, w = builder.warningCount
+        if e == 0 && w == 0 { return "No problems" }
+        var parts: [String] = []
+        if e > 0 { parts.append("\(e) problem\(e == 1 ? "" : "s")") }
+        if w > 0 { parts.append("\(w) warning\(w == 1 ? "" : "s")") }
+        return parts.joined(separator: " · ")
     }
 
-    private func toolbarRow(_ row: ProfileStudioRow, iconOnly: Bool, truncating: Bool) -> some View {
-        HStack(spacing: 10) {
-            Text(row.name).font(.title3.bold()).lineLimit(1).truncationMode(.tail)
-                .frame(maxWidth: truncating ? .infinity : nil, alignment: .leading)
-                .help(ProfileStudioRowView.subtitle(row))
-                .accessibilityLabel("\(row.name), \(ProfileStudioRowView.subtitle(row))")
-            Spacer(minLength: 8)
-            StudioModePicker(model: model)
-            Divider().frame(height: 18)
-            Toggle(isOn: Binding(get: { model.isCompareOn }, set: { model.setCompare($0) })) {
-                Label("Compare", systemImage: "arrow.triangle.2.circlepath")
+    var body: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button { builder.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
+                .disabled(!model.canUndo)
+                .help("Undo the last change (Cmd+Z)")
+                .accessibilityLabel("Undo")
+            Button { builder.redo() } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
+                .disabled(!model.canRedo)
+                .help("Redo (Shift+Cmd+Z)")
+                .accessibilityLabel("Redo")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Toggle(isOn: Binding(get: { builder.isLive }, set: { builder.setLive($0) })) {
+                Label(builder.isLive ? "Live: on" : "Live: off", systemImage: builder.isLive ? "circle.fill" : "circle")
             }
-            .toggleStyle(.button)
-            .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
-            .keyboardShortcut("l", modifiers: .command)
-            .help("Compare: check this profile against the windows on your Mac now and mark what is missing or moved (Cmd+L). Only scans: nothing is moved.")
-            .accessibilityLabel("Compare with your Mac")
-            if model.isComparing {
-                ProgressView().controlSize(.small)
-            } else if model.isCompareOn, model.compareError == nil {
-                Button { model.refreshCompare() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                    .labelStyle(StudioActionLabelStyle(iconOnly: true))
-                    .keyboardShortcut("r", modifiers: .command)
-                    .help("Compare again (Cmd+R)")
-                    .accessibilityLabel("Refresh comparison")
-            }
-            Divider().frame(height: 18)
-            Button { DebugLog.log("studio", "preview restore opened: \(row.name)"); model.previewScope = .whole; model.isPreviewPresented = true } label: { Label("Preview restore", systemImage: "list.bullet.rectangle") }
-                .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
-                .keyboardShortcut("p", modifiers: [.command, .shift])
-                .help("Preview restore: see what a restore would do, step by step (Cmd+Shift+P)")
-                .accessibilityLabel("Preview restore")
-            Divider().frame(height: 18)
-            if let app = AppState.current {
-                StudioRunControl(app: app, profileID: row.id, profileName: row.name, iconOnly: iconOnly,
-                                 showEditor: $model.isShortcutEditorPresented)
-            }
+            .help("Live: the draft follows your real windows and updates every 2 s. Off: the draft changes only when you edit it.")
+            .accessibilityLabel("Live sync")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Text(statusText)
+                .font(.wmCaption).lineLimit(1)
+                .foregroundStyle(builder.errorCount > 0 ? Tone.danger.color : (builder.warningCount > 0 ? Tone.warning.color : Color.secondary))
+                .accessibilityLabel("Draft check: \(statusText)")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button { model.isAddAppPresented = true } label: { Label("Add App", systemImage: "plus") }
+                .help("Add an app to the profile (Shift+Cmd+A)")
+                .accessibilityLabel("Add App")
+                .popover(isPresented: $model.isAddAppPresented, arrowEdge: .bottom) {
+                    AppLibraryView(builder: builder, onClose: { model.isAddAppPresented = false })
+                }
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button("Cancel") { model.requestLeaveEdit() }
+                .help("Leave Edit mode. With unsaved changes you are asked to save, discard them, or keep editing.")
+                .accessibilityLabel("Cancel editing")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button("Save") { model.saveThen(nil) }
+                .buttonStyle(.borderedProminent)
+                .disabled(builder.blocksSaving)
+                .help(builder.blocksSaving ? "Fix the problems marked in red first" : "Save the profile (Cmd+S)")
+                .accessibilityLabel("Save profile")
         }
     }
 }
@@ -353,16 +401,21 @@ struct StudioMapHost: View {
     @ObservedObject var model: ProfileStudioModel
     @StateObject private var map = ProfileMapModel()
 
-    /// Map 360 + inspector 220 + dividers and padding: below this the inspector moves under the map.
-    private static let sideBySideWidth: CGFloat = 1000
-
     private var mapPane: some View {
         VStack(spacing: 0) {
             scopeBar
             Divider()
+            if let error = model.compareError {
+                Banner(tone: .danger, title: "Compare problem", message: error).padding(Spacing.s)
+            }
             ProfileMapCanvas(model: map, onSync: { model.setCompare(true); model.refreshCompare() })
             Divider()
-            studioBottomBar { MapLegendView(showsStatus: map.status != nil, showsStageStrip: map.usesStageManager) }
+            studioBottomBar {
+                HStack(spacing: Spacing.m) {
+                    MapLegendView(showsStatus: map.status != nil, showsStageStrip: map.usesStageManager)
+                    if let app = AppState.current { RunStatusLine(app: app).lineLimit(1) }
+                }
+            }
         }
     }
 
@@ -396,24 +449,15 @@ struct StudioMapHost: View {
         .padding(.horizontal, 12).padding(.vertical, 6)
     }
 
-    /// Same chrome as the Edit inspector: the tab bar (View has only the Inspector tab), a divider, then the content.
-    private var inspectorPane: some View {
-        VStack(spacing: 0) {
-            StudioInspectorTabBar(tabs: [.inspector], selection: .constant(.inspector))
-            Divider()
-            MapInspectorView(map: map, plan: model.comparePlan, isCompareOn: model.isCompareOn)
-        }
-    }
-
     var body: some View {
-        StudioInspectorSplit(sideBySideWidth: Self.sideBySideWidth, minMainWidth: 360) {
-            mapPane
-        } inspector: {
-            inspectorPane
-        }
-        .task(id: row) { map.load(try? AppState.current?.store.load(row.id)) }
-        .onChange(of: model.liveStatus) { _, newValue in map.status = newValue }
-        .onAppear { map.status = model.liveStatus; model.activeMap = map }
+        mapPane
+            .inspector(isPresented: $model.isInspectorShown) {
+                MapInspectorView(map: map, plan: model.comparePlan, isCompareOn: model.isCompareOn)
+                    .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
+            }
+            .task(id: row) { map.load(try? AppState.current?.store.load(row.id)) }
+            .onChange(of: model.liveStatus) { _, newValue in map.status = newValue }
+            .onAppear { map.status = model.liveStatus; model.activeMap = map }
     }
 }
 
@@ -518,30 +562,24 @@ struct StudioEditDetail: View {
         case .starting:
             ProgressView("Preparing the draft…").frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed(let message):
-            VStack(spacing: 12) {
-                Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
-                Button("Back to View") { model.leaveEdit() }
-                    .help("Leave Edit mode and go back to viewing the profile")
-            }
-            .padding().frame(maxWidth: .infinity, maxHeight: .infinity)
+            Banner(tone: .danger, title: "Could not open the draft", message: message,
+                   actionLabel: "Back to View", action: { model.leaveEdit() })
+                .frame(maxWidth: 480)
+                .padding(Spacing.l).frame(maxWidth: .infinity, maxHeight: .infinity)
         case .ready:
             VStack(spacing: 0) {
-                editToolbar
+                headerRow
                 Divider()
-                if hasBanner { banner; Divider() }
-                StudioInspectorSplit(sideBySideWidth: Self.sideBySideWidth, minMainWidth: 480) {
-                    libraryAndMap
-                } inspector: {
-                    inspector
-                }
+                if hasBanner { banner }
+                libraryAndMap
+            }
+            .inspector(isPresented: $model.isInspectorShown) {
+                inspector.inspectorColumnWidth(min: 260, ideal: 300, max: 420)
             }
             .onChange(of: builder.isDirty) { _, _ in model.titleChanged() }
             .onChange(of: builder.nameText) { _, _ in model.titleChanged() }
         }
     }
-
-    /// Map 320 + inspector 260 + dividers: below this the inspector moves under the map.
-    private static let sideBySideWidth: CGFloat = 1100
 
     private var libraryAndMap: some View {
         VStack(spacing: 0) {
@@ -553,85 +591,20 @@ struct StudioEditDetail: View {
         .frame(minWidth: 320)
     }
 
-    /// One compact row: name, mode, Undo / Redo, draft status, Add App, Cancel and Save.
-    private var editToolbar: some View {
-        ViewThatFits(in: .horizontal) {
-            editRow(iconOnly: false, truncating: false)
-            editRow(iconOnly: true, truncating: false)
-            editRow(iconOnly: true, truncating: true)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 6)
-    }
-
-    private func editRow(iconOnly: Bool, truncating: Bool) -> some View {
+    /// Icon and name stay here: a text field has no toolbar home. Everything else is in the window toolbar.
+    private var headerRow: some View {
         let title = builder.nameText.isEmpty ? "Untitled profile" : builder.nameText
-        return HStack(spacing: 10) {
+        return HStack(spacing: Spacing.s) {
             ProfileIconPicker(current: (builder.profile?.icon ?? "").isEmpty ? Profile.defaultIcon : builder.profile!.icon) { builder.setIcon($0) }
             TextField("Profile name", text: Binding(get: { builder.nameText }, set: { builder.setName($0) }))
-                .textFieldStyle(.plain).font(.title3.bold()).lineLimit(1)
-                .frame(minWidth: 120, maxWidth: truncating ? .infinity : 260, alignment: .leading)
+                .textFieldStyle(.plain).font(.wmTitle).lineLimit(1)
+                .frame(maxWidth: 320, alignment: .leading)
                 .help(builder.isNewProfile ? "New profile (not saved yet). Edit the name here." : "Editing a saved profile. Edit the name here.")
                 .accessibilityLabel("Profile name, \(title)")
-            if builder.isDirty {
-                Label("Unsaved", systemImage: "circle.fill")
-                    .font(.caption.weight(.semibold)).foregroundStyle(.orange).labelStyle(.titleAndIcon)
-                    .help("You have changes that are not saved yet. Save keeps them; Cancel asks what to do first.")
-                    .accessibilityLabel("Unsaved changes")
-            }
-            Spacer(minLength: 8)
-            StudioModePicker(model: model)
-            Divider().frame(height: 18)
-            Button { builder.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
-                .labelStyle(StudioActionLabelStyle(iconOnly: true))
-                .keyboardShortcut("z", modifiers: .command)
-                .disabled(!builder.canUndo)
-                .help("Undo the last change (Cmd+Z)")
-                .accessibilityLabel("Undo")
-            Button { builder.redo() } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
-                .labelStyle(StudioActionLabelStyle(iconOnly: true))
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-                .disabled(!builder.canRedo)
-                .help("Redo (Shift+Cmd+Z)")
-                .accessibilityLabel("Redo")
-            Toggle(isOn: Binding(get: { builder.isLive }, set: { builder.setLive($0) })) {
-                Label(builder.isLive ? "Live: on" : "Live: off", systemImage: builder.isLive ? "circle.fill" : "circle")
-            }
-            .toggleStyle(.button)
-            .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
-            .help("Live: the draft follows your real windows and updates every 2 s. Off: the draft changes only when you edit it.")
-            .accessibilityLabel("Live sync")
-            if !iconOnly {
-                Text(statusText)
-                    .font(.callout).lineLimit(1).truncationMode(.tail)
-                    .foregroundStyle(builder.errorCount > 0 ? Color.red : (builder.warningCount > 0 ? Color.orange : Color.secondary))
-                    .accessibilityLabel("Draft check: \(statusText)")
-            } else if builder.errorCount > 0 || builder.warningCount > 0 {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(builder.errorCount > 0 ? Color.red : Color.orange)
-                    .help(statusText).accessibilityLabel("Draft check: \(statusText)")
-            }
-            Divider().frame(height: 18)
-            Button { model.isAddAppPresented = true } label: { Label("Add App", systemImage: "plus") }
-                .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
-                .keyboardShortcut("a", modifiers: [.command, .shift])
-                .help("Add an app to the profile (Shift+Cmd+A)")
-                .accessibilityLabel("Add App")
-                .popover(isPresented: $model.isAddAppPresented, arrowEdge: .bottom) {
-                    AppLibraryView(builder: builder, onClose: { model.isAddAppPresented = false })
-                }
-            Button { model.requestLeaveEdit() } label: { Label("Cancel", systemImage: "xmark") }
-                .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
-                .help("Leave Edit mode. With unsaved changes you are asked to save, discard them, or keep editing.")
-                .accessibilityLabel("Cancel editing")
-            Button { model.saveThen(nil) } label: { Label("Save", systemImage: "square.and.arrow.down") }
-                .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
-                .buttonStyle(.borderedProminent)
-                .tint(.blue)
-                .keyboardShortcut("s", modifiers: .command)
-                .disabled(builder.blocksSaving)
-                .help(builder.blocksSaving ? "Fix the problems marked in red first" : "Save the profile (Cmd+S)")
-                .accessibilityLabel("Save profile")
+            if builder.isDirty { StatusBadge(tone: .warning, text: "Unsaved") }
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.s)
     }
 
     private var hasBanner: Bool {
@@ -639,39 +612,14 @@ struct StudioEditDetail: View {
         return builder.lastError != nil || !builder.startNotes.isEmpty
     }
 
-    /// Start notes and the last error on one dismissible line, so the toolbar never grows.
+    /// Start notes and the last error, dismissible.
     private var banner: some View {
         let isError = builder.lastError != nil
         let text = builder.lastError ?? builder.startNotes.map { "\u{2022} " + $0 }.joined(separator: "\n")
-        return HStack(spacing: 8) {
-            Image(systemName: isError ? "exclamationmark.triangle" : "info.circle")
-                .foregroundStyle(isError ? Color.orange : Color.secondary)
-            Text(text).font(.callout).lineLimit(3).truncationMode(.tail)
-                .foregroundStyle(isError ? Color.orange : Color.secondary)
-                .help(text)
-            Spacer(minLength: 8)
-            Button { bannerDismissed = true } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain)
-                .help("Dismiss")
-                .accessibilityLabel("Dismiss message")
-        }
-        .padding(.horizontal, 12).padding(.vertical, 4)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(isError ? "Problem: \(text)" : "Note: \(text)")
-        .onChange(of: text) { _, _ in bannerDismissed = false }
-    }
-
-    private var statusText: String {
-        let e = builder.errorCount, w = builder.warningCount
-        var parts: [String] = []
-        if builder.isDirty { parts.append("Unsaved changes") }
-        if e == 0 && w == 0 {
-            parts.append("No problems")
-        } else {
-            if e > 0 { parts.append("\(e) problem\(e == 1 ? "" : "s")") }
-            if w > 0 { parts.append("\(w) warning\(w == 1 ? "" : "s")") }
-        }
-        return parts.joined(separator: " · ")
+        return Banner(tone: isError ? .danger : .info, title: isError ? "Problem" : "Note", message: text,
+                      onDismiss: { bannerDismissed = true })
+            .padding(Spacing.s)
+            .onChange(of: text) { _, _ in bannerDismissed = false }
     }
 
     private var inspector: some View {
@@ -685,11 +633,6 @@ struct StudioEditDetail: View {
             }
         }
     }
-}
-
-private extension Double {
-    /// Keeps a remembered sidebar width inside its allowed range.
-    func clamped(to range: ClosedRange<Double>) -> Double { Swift.min(Swift.max(self, range.lowerBound), range.upperBound) }
 }
 
 struct ProfileStudioRowView: View {

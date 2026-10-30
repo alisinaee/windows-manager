@@ -77,7 +77,22 @@ final class ProfileStudioModel: ObservableObject {
     // MARK: Edit mode (UI7)
 
     /// The Builder session of Edit mode; nil in View mode.
-    @Published private(set) var builder: ProfileBuilderModel? { didSet { titleChanged() } }
+    @Published private(set) var builder: ProfileBuilderModel? { didSet { titleChanged(); bindBuilder() } }
+    /// Mirrors of the draft's history state so the app menu (and the toolbar) can observe them.
+    @Published private(set) var canUndo = false
+    @Published private(set) var canRedo = false
+    private var builderCancellable: AnyCancellable?
+
+    private func bindBuilder() {
+        builderCancellable = builder?.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.syncHistory() }
+        syncHistory()
+    }
+
+    private func syncHistory() {
+        let undo = builder?.canUndo ?? false, redo = builder?.canRedo ?? false
+        if canUndo != undo { canUndo = undo }
+        if canRedo != redo { canRedo = redo }
+    }
     /// "Copy of a profile…" from the New profile menu.
     @Published var isCopyPickerPresented = false
     /// "Review capture" popover: unticking windows removes them from the new draft.
@@ -95,7 +110,7 @@ final class ProfileStudioModel: ObservableObject {
     /// Runs once after the next successful save (leave Edit mode, close the window).
     private var afterSave: (() -> Void)?
 
-    var onTitleChange: ((String) -> Void)?
+    var onTitleChange: ((String, String) -> Void)?
     private var compareTask: Task<Void, Never>?
     private var loadTask: Task<Void, Never>?
     private var pendingSelectID: UUID?
@@ -138,13 +153,20 @@ final class ProfileStudioModel: ObservableObject {
 
     var selectedRow: ProfileStudioRow? { rows.first { $0.id == selectedID } }
 
+    /// The profile name (the window title); "Profiles" when there is none.
     var windowTitle: String {
+        if mode == .edit, let b = builder { return b.nameText.isEmpty ? "Untitled profile" : b.nameText }
+        return selectedRow?.name ?? "Profiles"
+    }
+
+    /// "Edited" while the draft has unsaved changes, otherwise the capture date.
+    var windowSubtitle: String {
         if mode == .edit, let b = builder {
-            let name = b.nameText.isEmpty ? "Untitled profile" : b.nameText
-            return b.isDirty ? "Profiles - \(name) - Edited" : "Profiles - \(name)"
+            if b.isDirty { return "Edited" }
+            if b.isNewProfile { return "New profile" }
         }
-        if let name = selectedRow?.name { return "Profiles - \(name)" }
-        return "Profiles"
+        guard let row = selectedRow else { return "" }
+        return "Captured " + row.capturedAt.formatted(date: .abbreviated, time: .shortened)
     }
 
     /// Loads the saved profiles and keeps following `AppState.savedProfiles`.
@@ -453,5 +475,103 @@ final class ProfileStudioModel: ObservableObject {
         AppState.current?.beginCapture()
     }
 
-    func titleChanged() { onTitleChange?(windowTitle) }
+    func titleChanged() { onTitleChange?(windowTitle, windowSubtitle) }
+
+    // MARK: Inspector
+
+    /// The right-hand Details inspector is open (remembered between launches).
+    @Published var isInspectorShown: Bool = UserDefaults.standard.object(forKey: "studioInspectorShown") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(isInspectorShown, forKey: "studioInspectorShown") }
+    }
+
+    // MARK: Sidebar row actions (same store / service calls as Settings > Profiles)
+
+    /// Rows can change only in View mode: a profile open in Edit mode is not renamed or deleted underneath the draft.
+    var canChangeRows: Bool { mode == .view }
+    @Published var renameTarget: ProfileStudioRow?
+    @Published var renameText = ""
+    @Published var deleteTarget: ProfileStudioRow?
+    /// A failed row action, shown as a banner above the map.
+    @Published var actionError: String?
+    /// Set for a few seconds after a delete so the banner can offer Undo.
+    @Published private(set) var deletedName: String?
+    private var deletedData: Data?
+    private var deleteDismiss: Task<Void, Never>?
+
+    func run(row: ProfileStudioRow) { AppState.current?.run(id: row.id) }
+
+    func beginRename(_ row: ProfileStudioRow) {
+        guard canChangeRows else { return }
+        renameText = row.name
+        renameTarget = row
+    }
+
+    func commitRename() {
+        guard let target = renameTarget, let app = AppState.current else { return }
+        renameTarget = nil
+        do {
+            _ = try app.store.rename(target.id, to: renameText)
+            app.reloadProfiles()
+        } catch { actionError = error.localizedDescription }
+    }
+
+    func duplicate(_ row: ProfileStudioRow) {
+        guard canChangeRows, let app = AppState.current else { return }
+        do {
+            let copy = try app.store.duplicate(row.id)
+            pendingSelectID = copy.id
+            app.reloadProfiles()
+        } catch { actionError = error.localizedDescription }
+    }
+
+    func export(_ row: ProfileStudioRow) {
+        guard let app = AppState.current else { return }
+        do {
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.json]
+            panel.nameFieldStringValue = "\(row.name).json"
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            try app.profileService.exportData(row.id.uuidString).write(to: url, options: .atomic)
+        } catch { actionError = error.localizedDescription }
+    }
+
+    func requestDelete(_ row: ProfileStudioRow) {
+        guard canChangeRows else { return }
+        deleteTarget = row
+    }
+
+    func confirmDelete() {
+        guard let row = deleteTarget, let app = AppState.current else { return }
+        deleteTarget = nil
+        do {
+            let data = try? app.profileService.exportData(row.id.uuidString)
+            try app.profileService.delete(row.id.uuidString)
+            app.reloadProfiles()
+            if let data {
+                deletedData = data
+                deletedName = row.name
+                deleteDismiss?.cancel()
+                deleteDismiss = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(8))
+                    if !Task.isCancelled { self?.clearDeleted() }
+                }
+            }
+        } catch { actionError = error.localizedDescription }
+    }
+
+    func undoDelete() {
+        guard let data = deletedData, let app = AppState.current else { return }
+        do {
+            let saved = try app.profileService.importData(data, source: "undo")
+            pendingSelectID = saved.id
+            app.reloadProfiles()
+        } catch { actionError = error.localizedDescription }
+        clearDeleted()
+    }
+
+    func clearDeleted() {
+        deleteDismiss?.cancel()
+        deletedName = nil
+        deletedData = nil
+    }
 }

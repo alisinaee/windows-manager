@@ -7,7 +7,7 @@ import SwiftUI
 final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
     static let shared = ProfileStudioWindowController()
 
-    /// Smallest content size. Below the roomy layouts the view adapts: Details moves under the map, toolbars fall back to icons.
+    /// Smallest content size. Below the roomy layouts the sidebar and the Details inspector collapse.
     static let minSize = NSSize(width: 560, height: 420)
 
     private var window: NSWindow?
@@ -25,6 +25,9 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
         hosting.sizingOptions = []   // the window decides the size; the SwiftUI content never pushes it
         let window = NSWindow(contentViewController: hosting)
         window.title = model.windowTitle
+        window.subtitle = model.windowSubtitle
+        window.titleVisibility = .visible
+        window.toolbarStyle = .unified
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
         window.contentMinSize = Self.minSize
@@ -34,7 +37,7 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
         window.setFrameAutosaveName("ProfileStudio")
         clampToScreen(window)
         self.window = window
-        model.onTitleChange = { [weak window] title in window?.title = title }
+        model.onTitleChange = { [weak window] title, subtitle in window?.title = title; window?.subtitle = subtitle }
         present(window)
     }
 

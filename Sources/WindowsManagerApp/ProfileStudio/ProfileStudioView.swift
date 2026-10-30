@@ -250,6 +250,11 @@ struct StudioToolbar: ToolbarContent {
                 }
             }
         }
+        ToolbarItem(placement: .secondaryAction) {
+            Menu { DebugLogToggle() } label: { Label("Debug", systemImage: "ant") }
+                .help("Debug options")
+                .accessibilityLabel("Debug options")
+        }
         ToolbarItem(placement: .primaryAction) {
             Button { model.isInspectorShown.toggle() } label: { Label("Details", systemImage: "sidebar.right") }
                 .help(model.isInspectorShown ? "Hide the Details inspector" : "Show the Details inspector")
@@ -284,17 +289,16 @@ struct StudioEditToolbar: ToolbarContent {
                 .accessibilityLabel("Redo")
         }
         ToolbarItem(placement: .primaryAction) {
-            Toggle(isOn: Binding(get: { builder.isLive }, set: { builder.setLive($0) })) {
-                Label(builder.isLive ? "Live: on" : "Live: off", systemImage: builder.isLive ? "circle.fill" : "circle")
-            }
+            Toggle("Live", isOn: Binding(get: { builder.isLive }, set: { builder.setLive($0) }))
+                .toggleStyle(.switch).controlSize(.small)
             .help("Live: the draft follows your real windows and updates every 2 s. Off: the draft changes only when you edit it.")
             .accessibilityLabel("Live sync")
         }
         ToolbarItem(placement: .primaryAction) {
-            Text(statusText)
-                .font(.wmCaption).lineLimit(1)
-                .foregroundStyle(builder.errorCount > 0 ? Tone.danger.color : (builder.warningCount > 0 ? Tone.warning.color : Color.secondary))
-                .accessibilityLabel("Draft check: \(statusText)")
+            if builder.errorCount + builder.warningCount > 0 {
+                StatusBadge(tone: .warning, text: "\(builder.errorCount + builder.warningCount) problem\(builder.errorCount + builder.warningCount == 1 ? "" : "s")")
+                    .accessibilityLabel("Draft check: \(statusText)")
+            }
         }
         ToolbarItem(placement: .primaryAction) {
             Button { model.isAddAppPresented = true } label: { Label("Add App", systemImage: "plus") }
@@ -333,45 +337,26 @@ struct StudioRunControl: View {
     private var isSaved: Bool { app.savedProfiles.contains { $0.id == profileID } }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button {
-                DebugLog.log("studio", "run clicked: \(profileName)")
-                app.run(id: profileID)
-            } label: { Label("Run", systemImage: "play.fill") }
-                .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
-                .buttonStyle(.borderedProminent)
-                .tint(.blue)
-                .disabled(!app.canAct)
-                .help((studioRunBlockReason(app) ?? "Restore \(profileName) now") + " (Cmd+Return)")
-                .accessibilityLabel("Run profile \(profileName)")
-            Button {
-                DebugLog.log("studio", "shortcut chip opened: \(profileName)")
+        Menu {
+            Button(shortcut.map { "Change Shortcut \($0.description)" } ?? "Set Shortcut…") {
+                DebugLog.log("studio", "shortcut opened: \(profileName)")
                 showEditor = true
-            } label: {
-                if let shortcut {
-                    Text(shortcut.description).font(.callout.monospaced()).lineLimit(1)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.15)))
-                } else if isSaved {
-                    // Enabled and obviously clickable: accent colour, keyboard icon, outline.
-                    Label("Set shortcut", systemImage: "keyboard").font(.callout).lineLimit(1)
-                        .foregroundStyle(Color.blue)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.blue.opacity(0.7), lineWidth: 1))
-                } else {
-                    // Not saved yet: say why in the label itself instead of only dimming it.
-                    Label("Save to set shortcut", systemImage: "keyboard").font(.callout).lineLimit(1)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                }
             }
-            .buttonStyle(.plain)
             .disabled(!isSaved)
-            .help(isSaved ? "Run shortcut: click to set or change it" : "A run shortcut belongs to a saved profile. Save this profile first, then set a shortcut here.")
-            .accessibilityLabel(shortcut.map { "Run shortcut \($0.description), change" } ?? (isSaved ? "Set run shortcut" : "Run shortcut: save the profile first"))
-            .popover(isPresented: $showEditor, arrowEdge: .bottom) {
-                ProfileShortcutView(profileID: profileID, profileName: profileName).padding(12).frame(width: 280)
-            }
+        } label: { Label("Run", systemImage: "play.fill") }
+        primaryAction: {
+            DebugLog.log("studio", "run clicked: \(profileName)")
+            app.run(id: profileID)
+        }
+        .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
+        .menuStyle(.button)
+        .buttonStyle(.borderedProminent)
+        .tint(.blue)
+        .disabled(!app.canAct)
+        .help((studioRunBlockReason(app) ?? "Restore \(profileName) now") + " (Cmd+Return). Menu: run shortcut.")
+        .accessibilityLabel("Run profile \(profileName)")
+        .popover(isPresented: $showEditor, arrowEdge: .bottom) {
+            ProfileShortcutView(profileID: profileID, profileName: profileName).padding(12).frame(width: 280)
         }
         .onAppear(perform: reload)
         .onChange(of: profileID) { _, _ in reload() }
@@ -409,12 +394,10 @@ struct StudioMapHost: View {
                 Banner(tone: .danger, title: "Compare problem", message: error).padding(Spacing.s)
             }
             ProfileMapCanvas(model: map, onSync: { model.setCompare(true); model.refreshCompare() })
-            Divider()
-            studioBottomBar {
-                HStack(spacing: Spacing.m) {
-                    MapLegendView(showsStatus: map.status != nil, showsStageStrip: map.usesStageManager)
-                    if let app = AppState.current { RunStatusLine(app: app).lineLimit(1) }
-                }
+            if let app = AppState.current {
+                Divider()
+                RunStatusLine(app: app).lineLimit(1).font(.wmCaption)
+                    .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.xs)
             }
         }
     }
@@ -444,6 +427,8 @@ struct StudioMapHost: View {
                 .disabled(focus == nil)
                 .help("Preview and apply only \(focus?.monitorName ?? "the focused monitor")")
             Spacer()
+            Button { model.setCompare(true); model.refreshCompare() } label: { Label("Sync", systemImage: "arrow.triangle.2.circlepath.circle") }
+                .help("Sync: check this profile against your Mac now")
         }
         .buttonStyle(.bordered).controlSize(.small)
         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -458,21 +443,6 @@ struct StudioMapHost: View {
             .task(id: row) { map.load(try? AppState.current?.store.load(row.id)) }
             .onChange(of: model.liveStatus) { _, newValue in map.status = newValue }
             .onAppear { map.status = model.liveStatus; model.activeMap = map }
-    }
-}
-
-/// Legend on the left, the Debug log switch at the right end.
-@MainActor @ViewBuilder
-func studioBottomBar<Legend: View>(@ViewBuilder _ legend: () -> Legend) -> some View {
-    HStack(spacing: 12) {
-        legend()
-        Spacer(minLength: 8)
-        // The debug switch lives in a small debug menu, out of the everyday footer.
-        Menu { DebugLogToggle() } label: { Label("Debug", systemImage: "ant").labelStyle(.titleAndIcon).font(.caption) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            .help("Debug options")
-            .accessibilityLabel("Debug options")
-            .padding(.trailing, 12)
     }
 }
 
@@ -585,8 +555,6 @@ struct StudioEditDetail: View {
         VStack(spacing: 0) {
             BuilderMapCanvas(map: map, builder: builder)
                 .onAppear { builder.mapModel = map; model.activeMap = map }
-            Divider()
-            studioBottomBar { MapLegendView(showsStatus: false) }
         }
         .frame(minWidth: 320)
     }
@@ -641,7 +609,7 @@ struct ProfileStudioRowView: View {
     static func subtitle(_ row: ProfileStudioRow) -> String {
         let windows = "\(row.windowCount) window\(row.windowCount == 1 ? "" : "s")"
         let monitors = "\(row.monitorCount) monitor\(row.monitorCount == 1 ? "" : "s")"
-        return "\(windows) · \(monitors) · Captured \(row.capturedAt.formatted(date: .abbreviated, time: .shortened))"
+        return "\(windows) · \(monitors) · \(row.capturedAt.formatted(.relative(presentation: .named)))"
     }
 
     var body: some View {

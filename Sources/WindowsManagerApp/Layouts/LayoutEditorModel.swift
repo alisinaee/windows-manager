@@ -9,6 +9,12 @@ struct RunningAppChip: Identifiable, Hashable {
     var id: String { bundleID }
 }
 
+/// A layout that was just deleted, kept so Undo can put it back at the same position.
+struct DeletedLayout {
+    let layout: WMCore.Layout
+    let index: Int
+}
+
 /// State of the layout editor. No `@State` in this target (see MenuBarContent), so everything is here.
 @MainActor
 final class LayoutEditorModel: ObservableObject {
@@ -31,6 +37,10 @@ final class LayoutEditorModel: ObservableObject {
     @Published var displays: [DisplayIdentity] = []
     @Published var runningApps: [RunningAppChip] = []
     @Published var errorText: String?
+    /// Set by a delete until the undo banner times out (about 6 seconds) or Undo is pressed.
+    @Published private(set) var deletedLayout: DeletedLayout?
+    /// Drives the delete confirmation dialog.
+    @Published var confirmingDelete = false
     /// The name as typed; saved only by `commitName()` (on submit or focus loss), not per keystroke.
     @Published var nameDraft = ""
     /// Grid, merge and remove controls. Their closures call back into this model through `actionTarget`.
@@ -39,6 +49,7 @@ final class LayoutEditorModel: ObservableObject {
     private let store: LayoutStore
     private let actionTarget: GridActionTarget
     private var edgeDragStart: Double?
+    private var undoTimeout: Task<Void, Never>?
 
     init(store: LayoutStore = LayoutStore()) {
         self.store = store
@@ -116,12 +127,42 @@ final class LayoutEditorModel: ObservableObject {
         selectedZoneID = ZoneSelection.primary(in: next, tapped: zoneID)
     }
 
+    /// Deletes the selected layout and keeps it in `deletedLayout` so `undoDelete()` can restore it.
     func deleteSelected() {
-        guard let id = selectedID else { return }
-        layouts.removeAll { $0.id == id }
+        guard let index = selectedIndex else { return }
+        let removed = layouts.remove(at: index)
         selectedID = layouts.first?.id
-        do { try store.delete(id: id) } catch { errorText = error.localizedDescription }
+        do {
+            try store.delete(id: removed.id)
+            errorText = nil
+        } catch {
+            errorText = error.localizedDescription
+        }
+        deletedLayout = DeletedLayout(layout: removed, index: index)
+        undoTimeout?.cancel()
+        undoTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            self?.deletedLayout = nil
+        }
     }
+
+    /// Puts back the layout removed by the last delete and selects it.
+    func undoDelete() {
+        guard let deleted = deletedLayout else { return }
+        undoTimeout?.cancel()
+        deletedLayout = nil
+        layouts.insert(deleted.layout, at: min(deleted.index, layouts.count))
+        selectedID = deleted.layout.id
+        persist(deleted.layout)
+    }
+
+    func dismissDeletedLayout() {
+        undoTimeout?.cancel()
+        deletedLayout = nil
+    }
+
+    func dismissError() { errorText = nil }
 
     func rename(_ name: String) { mutate { $0.name = name } }
 

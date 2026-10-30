@@ -10,17 +10,38 @@ struct LayoutEditorView: View {
     @FocusState private var nameFocused: Bool
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-                .frame(width: 180)
-            Divider()
-            editor
-                .frame(minWidth: 420, maxWidth: .infinity)
-            Divider()
-            appsList
-                .frame(width: 190)
+        VStack(spacing: 0) {
+            if let deleted = model.deletedLayout {
+                Banner(
+                    tone: .neutral,
+                    title: "Deleted \(deleted.layout.name)",
+                    actionLabel: "Undo",
+                    action: { model.undoDelete() },
+                    onDismiss: { model.dismissDeletedLayout() })
+                    .padding(.horizontal, Spacing.m)
+                    .padding(.top, Spacing.m)
+            }
+            HStack(spacing: 0) {
+                sidebar
+                    .frame(width: 180)
+                Divider()
+                editor
+                    .frame(minWidth: 420, maxWidth: .infinity)
+                Divider()
+                appsList
+                    .frame(width: 190)
+            }
         }
         .frame(minWidth: 840, minHeight: 480)
+        .confirmationDialog(
+            "Delete \(model.selected?.name ?? "this layout")?",
+            isPresented: $model.confirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Layout", role: .destructive) { model.deleteSelected() }
+        } message: {
+            Text("You can undo this for a few seconds after deleting.")
+        }
     }
 
     // MARK: Layout list
@@ -28,9 +49,18 @@ struct LayoutEditorView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Layouts").font(.headline)
-            List(selection: Binding(get: { model.selectedID }, set: { model.selectedID = $0 })) {
-                ForEach(model.layouts) { layout in
-                    Text(layout.name).tag(layout.id as UUID?)
+            if model.layouts.isEmpty {
+                ContentUnavailableView {
+                    Label("No layouts", systemImage: "rectangle.split.2x2")
+                } description: {
+                    Text("Create one from a preset.")
+                }
+                .frame(maxHeight: .infinity)
+            } else {
+                List(selection: Binding(get: { model.selectedID }, set: { model.selectedID = $0 })) {
+                    ForEach(model.layouts) { layout in
+                        Text(layout.name).tag(layout.id as UUID?)
+                    }
                 }
             }
             Menu("New from preset") {
@@ -38,7 +68,7 @@ struct LayoutEditorView: View {
                     Button(preset.title) { model.addLayout(preset) }
                 }
             }
-            Button("Delete layout", role: .destructive) { model.deleteSelected() }
+            Button("Delete layout", role: .destructive) { model.confirmingDelete = true }
                 .disabled(model.selected == nil)
         }
         .padding(12)
@@ -88,22 +118,35 @@ struct LayoutEditorView: View {
                 }
                 .disabled(model.selectedZoneID == nil)
                 if let error = model.errorText {
-                    Text(error).font(.footnote).foregroundStyle(Color.red)
+                    Banner(tone: .danger, title: "Something went wrong", message: error, onDismiss: { model.dismissError() })
                 }
             }
             .padding(12)
-        } else {
-            VStack(spacing: 10) {
-                Text(model.layouts.isEmpty ? "No layouts yet" : "Select a layout")
-                    .foregroundStyle(.secondary)
-                if model.displays.isEmpty { Text("No displays found").font(.footnote).foregroundStyle(.secondary) }
-                if let error = model.errorText { Text(error).font(.footnote).foregroundStyle(Color.red) }
+        } else if model.layouts.isEmpty {
+            ContentUnavailableView {
+                Label("No layouts yet", systemImage: "rectangle.split.2x2")
+            } description: {
+                if model.displays.isEmpty {
+                    Text("No displays found. Create a layout from a preset to start.")
+                } else {
+                    Text("Create a layout from a preset to start.")
+                }
+            } actions: {
                 Menu("New from preset") {
                     ForEach(LayoutPreset.allCases) { preset in
                         Button(preset.title) { model.addLayout(preset) }
                     }
                 }
                 .fixedSize()
+            }
+            .padding(12)
+        } else {
+            VStack(spacing: 10) {
+                Text("Select a layout").foregroundStyle(.secondary)
+                if let error = model.errorText {
+                    Banner(tone: .danger, title: "Something went wrong", message: error, onDismiss: { model.dismissError() })
+                        .padding(12)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

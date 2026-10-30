@@ -274,7 +274,7 @@ private struct LibraryRow: View {
                 .resizable().frame(width: 20, height: 20).accessibilityHidden(true)
             Text(entry.name).lineLimit(1)
             if entry.isRunning {
-                Image(systemName: "circle.fill").font(.system(size: 7)).foregroundStyle(.green)
+                Image(systemName: "circle.fill").font(.wmCaption).foregroundStyle(.green)
                     .accessibilityHidden(true)
             }
             Spacer(minLength: 4)
@@ -300,7 +300,7 @@ private struct AddedAppRow: View {
             Text(app.name).lineLimit(1)
             Spacer(minLength: 4)
             Text(windowCount == 0 ? "no window" : "\(windowCount) window\(windowCount == 1 ? "" : "s")")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.wmCaption).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
     }

@@ -130,14 +130,33 @@ struct OnboardingView: View {
             Spacer()
             if model.step == .done {
                 Button("Finish") { onFinish() }
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
             } else {
                 Button("Continue") { model.move(by: 1) }
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
+    }
+
+    /// Next steps on the last page: start the first profile, or just open Profile Studio. Both close this guide first.
+    private var nextStepButtons: some View {
+        HStack(spacing: Spacing.s) {
+            Button("Capture First Profile") {
+                onFinish()
+                ProfileStudioWindowController.shared.show()
+                ProfileStudioWindowController.shared.model.beginNewProfile()
+            }
+            .buttonStyle(.bordered)
+            Button("Open Profile Studio") {
+                onFinish()
+                ProfileStudioWindowController.shared.show()
+            }
+            .buttonStyle(.bordered)
+        }
     }
 
     // MARK: Step 1: Accessibility
@@ -251,6 +270,7 @@ struct OnboardingView: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 400)
             }
+            nextStepButtons
             Spacer(minLength: 0)
         }
         .padding(24)

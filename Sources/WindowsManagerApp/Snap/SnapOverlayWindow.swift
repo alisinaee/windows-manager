@@ -33,7 +33,8 @@ private struct SnapOverlayView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .animation(.easeOut(duration: 0.1), value: model.highlighted)
+        // Read at each render, so turning Reduce Motion on or off takes effect on the next highlight.
+        .animation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .easeOut(duration: 0.1), value: model.highlighted)
     }
 }
 

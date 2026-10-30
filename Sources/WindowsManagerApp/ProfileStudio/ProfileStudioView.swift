@@ -393,7 +393,7 @@ struct StudioMapHost: View {
             if let error = model.compareError {
                 Banner(tone: .danger, title: "Compare problem", message: error).padding(Spacing.s)
             }
-            ProfileMapCanvas(model: map, onSync: { model.setCompare(true); model.refreshCompare() })
+            ProfileMapCanvas(model: map)
             if let app = AppState.current {
                 Divider()
                 RunStatusLine(app: app).lineLimit(1).font(.wmCaption)

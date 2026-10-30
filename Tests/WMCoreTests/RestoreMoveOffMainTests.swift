@@ -44,15 +44,27 @@ final class SlowSpaceMover: SpaceMoving {
     typealias F = RestoreFixtures
 
     @Test func blockingWorkDoesNotHoldTheMainActor() async {
-        let started = ProcessInfo.processInfo.systemUptime
+        // The work blocks until the test releases it, so no wall-clock margin is involved: the only ordering
+        // that matters is "main actor resumes while the work is still blocked".
+        let gate = DispatchSemaphore(value: 0)
+        let log = EventLog()
         let blocking = Task { await SpaceMover.runOffCaller { () -> Int in
-            Thread.sleep(forTimeInterval: 0.5)
+            log.add("work start")
+            // Bounded so a regression that blocks the main actor fails the test instead of hanging the run.
+            _ = gate.wait(timeout: .now() + 10)
+            log.add("work end")
             return 7
         } }
-        // If the work ran on the main thread, this sleep could not return before the work ends.
+        // Wait (bounded poll, no fixed sleep) until the work has actually started.
+        for _ in 0..<1000 where log.events.isEmpty {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        // If the work ran on the main thread, this sleep could not return while the work is still blocked.
         try? await Task.sleep(nanoseconds: 50_000_000)
-        #expect(ProcessInfo.processInfo.systemUptime - started < 0.4)
+        #expect(log.events == ["work start"])
+        gate.signal()
         #expect(await blocking.value == 7)
+        #expect(log.events == ["work start", "work end"])
     }
 
     @Test func blockingWorkRunsOneItemAtATime() async {
@@ -86,19 +98,22 @@ final class SlowSpaceMover: SpaceMoving {
             F.live(101, F.chrome, frame: moved, spaces: [11]),
             F.live(102, F.slack, frame: moved),
         ])])
-        let mover = SlowSpaceMover(seconds: 0.5)
+        // The mover needs 3 s; the move gives up after 0.2 s. Other steps get a generous budget so a loaded runner
+        // cannot make them time out and mask the behaviour under test.
+        let mover = SlowSpaceMover(seconds: 3.0)
         env.mover = mover
         var configuration = RestoreEngine.Configuration()
-        configuration.stepTimeout = 0.05
-        configuration.moveTimeout = 0.05
+        configuration.stepTimeout = 1.0
+        configuration.moveTimeout = 0.2
         let engine = RestoreEngine(environment: env, configuration: configuration)
 
         let started = ProcessInfo.processInfo.systemUptime
         let report = await engine.run(profile)
         let took = ProcessInfo.processInfo.systemUptime - started
 
-        // The move gave up after 0.05 s although the mover needs 0.5 s; the run did not wait for it.
-        #expect(took < 0.4)
+        // The run returned well before the mover's own 3 s, and the abandoned move had not finished yet.
+        #expect(took < mover.seconds)
+        #expect(mover.finished.isEmpty)
         #expect(report.steps[0].kind == "moveToDesktop")
         #expect(report.steps[0].status.isFailed)
         #expect(report.steps[0].status.reason?.contains("timed out") == true)
@@ -108,7 +123,7 @@ final class SlowSpaceMover: SpaceMoving {
 
         // The abandoned move finishes on its own later. It can queue behind other tests' blocking work on the
         // shared queue, so poll with a generous bound instead of sleeping a fixed time.
-        for _ in 0..<300 where mover.finished.isEmpty {
+        for _ in 0..<1000 where mover.finished.isEmpty {
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
         #expect(mover.finished == [101])

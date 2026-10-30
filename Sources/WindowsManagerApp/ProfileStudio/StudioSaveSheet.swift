@@ -114,7 +114,7 @@ struct StudioSaveSheet: View {
                     ForEach(Array(errors.enumerated()), id: \.offset) { issueRow("exclamationmark.octagon.fill", .red, $0.element.message) }
                     ForEach(Array(builder.launchIssues.enumerated()), id: \.offset) { issueRow("exclamationmark.triangle.fill", .orange, $0.element.message) }
                     ForEach(Array(warnings.enumerated()), id: \.offset) { issueRow("exclamationmark.triangle.fill", .orange, $0.element.message) }
-                    if errors.isEmpty, warnings.isEmpty, builder.launchIssues.isEmpty {
+                    if errors.isEmpty, warnings.isEmpty, builder.launchIssues.isEmpty, conflict == nil, !trimmedName.isEmpty {
                         issueRow("checkmark.circle.fill", .green, "No problems found.")
                     }
                 }

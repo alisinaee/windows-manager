@@ -12,7 +12,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .profiles: return "Profiles"
         case .shortcuts: return "Shortcuts"
         case .spacesMonitors: return "Spaces & Monitors"
-        case .rules: return "Window Rules & Workspaces"
+        case .rules: return "Rules & Workspaces"
         case .about: return "About"
         }
     }
@@ -41,9 +41,14 @@ struct SettingsView: View {
     var body: some View {
         NavigationSplitView {
             List(SettingsPane.allCases, selection: selection) { pane in
-                Label(pane.title, systemImage: pane.symbol).tag(pane)
+                Label {
+                    Text(pane.title)
+                } icon: {
+                    Image(systemName: pane.symbol).frame(width: 20)
+                }
+                .tag(pane)
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
         } detail: {
             detail(SettingsPane(rawValue: selectedRaw) ?? .general)
                 .navigationTitle((SettingsPane(rawValue: selectedRaw) ?? .general).title)

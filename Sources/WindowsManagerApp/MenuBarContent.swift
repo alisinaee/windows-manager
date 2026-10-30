@@ -36,31 +36,34 @@ struct MenuBarContent: View {
 
             Divider().padding(.vertical, 2)
 
-            MenuRow(title: "Setup…") {
+            MenuRow(title: "Setup…", symbol: "sparkles") {
                 Self.closePopup(); OnboardingWindowController.shared.show()
             }
-            MenuRow(title: "Profiles…") {
+            MenuRow(title: "Profiles…", symbol: "rectangle.3.group") {
                 Self.closePopup(); ProfileStudioWindowController.shared.show()
             }
             if updates.isConfigured {
-                MenuRow(title: "Check for Updates…") {
+                MenuRow(title: "Check for Updates…", symbol: "arrow.triangle.2.circlepath") {
                     UpdateController.shared.checkForUpdates()
                 }
                 .disabled(!updates.canCheckForUpdates)
             }
-            MenuRow(title: "Settings…") {
+            MenuRow(title: "Settings…", symbol: "gearshape") {
                 Self.closePopup()
                 NSApp.activate()
                 openSettings()
             }
-            MenuRow(title: "Report a Bug…") {
+            MenuRow(title: "Report a Bug…", symbol: "ladybug") {
                 Self.closePopup(); BugReportWindowController.shared.show()
             }
-            MenuRow(title: "Debug", checked: appState.debugMode) {
+
+            Divider().padding(.vertical, 2)
+
+            MenuRow(title: "Debug", symbol: "hammer", checked: appState.debugMode) {
                 Self.closePopup(); appState.debugMode.toggle()
             }
             .help("Shows the live test panel for the window-restore scenarios")
-            MenuRow(title: "Quit") {
+            MenuRow(title: "Quit", symbol: "power") {
                 NSApp.terminate(nil)
             }
         }
@@ -115,20 +118,24 @@ struct MenuBarContent: View {
                 let choices = appState.scopeChoices[profile.id] ?? []
                 if choices.count > 1 {
                     HStack(spacing: 0) {
-                        MenuRow(title: "Run \(profile.name)", checked: isLast, trailing: shortcutText(profile), highlighted: hl) { runProfile(profile) }
+                        MenuRow(title: "Run \(profile.name)", symbol: "play.fill", checked: isLast, trailing: shortcutText(profile), highlighted: hl) { runProfile(profile) }
                         Menu {
                             ForEach(choices) { choice in
                                 Button(choice.title) { runProfile(profile, scope: choice.scope) }
                             }
-                        } label: { Text("Scope") }
+                        } label: {
+                            Image(systemName: "chevron.down").font(.caption.weight(.semibold))
+                        }
                         .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
                         .fixedSize()
+                        .padding(.trailing, Spacing.s + 2)
                         .help("Run the whole profile, one Desktop or one monitor")
-                        .accessibilityLabel("Run \(profile.name) scope")
+                        .accessibilityLabel("Scope")
                     }
                     .disabled(!appState.canAct)
                 } else {
-                    MenuRow(title: "Run \(profile.name)", checked: isLast, trailing: shortcutText(profile), highlighted: hl) { runProfile(profile) }
+                    MenuRow(title: "Run \(profile.name)", symbol: "play.fill", checked: isLast, trailing: shortcutText(profile), highlighted: hl) { runProfile(profile) }
                         .disabled(!appState.canAct)
                 }
             }
@@ -147,7 +154,7 @@ struct MenuBarContent: View {
                 .font(.footnote).foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
             ForEach(workspaces.workspaces) { ws in
-                MenuRow(title: ws.name, checked: ws.id == workspaces.activeID) {
+                MenuRow(title: ws.name, symbol: "square.grid.2x2", checked: ws.id == workspaces.activeID) {
                     workspaces.switchTo(ws.id)
                 }
             }
@@ -161,7 +168,7 @@ struct MenuBarContent: View {
                 .padding(.vertical, 2)
             }
             MenuRow(title: "New workspace", symbol: "plus") { workspaces.createWorkspace() }
-            MenuRow(title: "Add front app to current") { workspaces.addFrontmostAppToActive() }
+            MenuRow(title: "Add front app to current", symbol: "plus.app") { workspaces.addFrontmostAppToActive() }
                 .disabled(workspaces.activeID == nil)
             if let text = workspaces.statusText {
                 Text(text).font(.footnote).foregroundStyle(.secondary)
@@ -185,14 +192,14 @@ struct MenuBarContent: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
         } else {
-            MenuRow(title: "Capture current workspace…") { appState.beginCapture() }
+            MenuRow(title: "Capture current workspace…", symbol: "camera.viewfinder") { appState.beginCapture() }
                 .disabled(!appState.canAct)
                 .help("Name a new profile and save the current workspace to it")
                 .accessibilityLabel("Capture current workspace")
-            MenuRow(title: "Choose what to save…") { appState.beginSelectiveCapture() }
+            MenuRow(title: "Choose what to save…", symbol: "checklist") { appState.beginSelectiveCapture() }
                 .disabled(!appState.canAct)
                 .help("Capture now, then tick the monitors, Desktops and windows to keep")
-            MenuRow(title: "Capture now (3 s)") {
+            MenuRow(title: "Capture now (3 s)", symbol: "timer") {
                 // Close the popup first so it is not in the capture; the countdown gives the stage time to settle.
                 Self.closePopup(); appState.captureNow()
             }
@@ -302,32 +309,35 @@ struct MenuBarContent: View {
 /// so this target avoids it to build with the Command Line Tools; hover lives in an ObservableObject.
 private struct MenuRow: View {
     let title: String
+    /// Leading SF Symbol; every row has one so the icon column lines up.
+    let symbol: String
     var checked: Bool? = nil
-    var symbol: String? = nil
     var trailing: String? = nil
     var highlighted = false
     let action: () -> Void
 
-    init(title: String, checked: Bool? = nil, symbol: String? = nil, trailing: String? = nil,
+    init(title: String, symbol: String, checked: Bool? = nil, trailing: String? = nil,
          highlighted: Bool = false, action: @escaping () -> Void) {
-        self.title = title; self.checked = checked; self.symbol = symbol
+        self.title = title; self.symbol = symbol; self.checked = checked
         self.trailing = trailing; self.highlighted = highlighted; self.action = action
     }
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                if checked != nil || symbol != nil {
-                    Image(systemName: symbol ?? "checkmark")
-                        .font(.caption.weight(.semibold))
-                        .frame(width: 14)
-                        .opacity(symbol != nil || checked == true ? 1 : 0)
-                        .accessibilityHidden(true)
-                }
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: symbol)
+                    .font(.caption)
+                    .frame(width: 16)
+                    .accessibilityHidden(true)
                 Text(title).font(.wmBody)
+                Spacer(minLength: Spacing.s)
                 if let trailing {
-                    Spacer(minLength: Spacing.s)
                     Text(trailing).font(.wmMonoCaption).foregroundStyle(.secondary)
+                }
+                if checked == true {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.semibold))
+                        .accessibilityHidden(true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -373,20 +373,9 @@ struct RestorePreviewSheet: View {
     }
 
     private func notFound(_ plan: RestorePlan) -> some View {
-        let launching = plan.unmatched.filter { isLaunching($0, plan) }
+        // Apps the plan opens already appear under "Launch apps", so only the windows still missing are listed here.
         let missing = plan.unmatched.filter { !isLaunching($0, plan) }
         return VStack(alignment: .leading, spacing: Spacing.l) {
-            if !launching.isEmpty {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Label("Will launch (\(launching.count))", systemImage: "arrow.up.forward.app")
-                        .font(.body.bold())
-                    ForEach(launching, id: \.snapshotID) { item in
-                        Text(item.label).font(.callout).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .accessibilityElement(children: .combine)
-            }
             if !missing.isEmpty {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Label("Not found right now (\(missing.count))", systemImage: "questionmark.circle")

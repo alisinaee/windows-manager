@@ -56,24 +56,36 @@ final class BugReportModel: ObservableObject {
 struct BugReportView: View {
     @StateObject private var model = BugReportModel()
 
+    private var canSubmit: Bool { !model.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextField("Short title", text: $model.title).onChange(of: model.title) { model.refresh() }
-            Text("Description").font(.caption).foregroundStyle(.secondary)
-            TextEditor(text: $model.details).frame(height: 70).border(Color.secondary.opacity(0.3))
-                .onChange(of: model.details) { model.refresh() }
-            Toggle("Include logs", isOn: $model.includeLogs)
-            Toggle("Include the profile I just ran", isOn: $model.includeProfile)
+            Form {
+                TextField("Title", text: $model.title).onChange(of: model.title) { model.refresh() }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Description").font(.caption).foregroundStyle(.secondary)
+                    TextEditor(text: $model.details).frame(height: 70).border(Color.secondary.opacity(0.3))
+                        .accessibilityLabel("Description")
+                        .onChange(of: model.details) { model.refresh() }
+                }
+                Toggle("Include logs", isOn: $model.includeLogs)
+                Toggle("Include the profile I just ran", isOn: $model.includeProfile)
+            }
             Text("Exactly what will be sent (redacted)").font(.caption).foregroundStyle(.secondary)
             ScrollView { Text(model.preview).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading) }
                 .padding(6).background(Color.secondary.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 6))
-            HStack {
-                Button("Open GitHub issue") { model.openIssue() }.keyboardShortcut(.defaultAction)
-                Button("Reveal logs zip in Finder") { model.revealZip() }
-                Button("Copy report") { model.copyReport() }
-                Spacer()
+            if !model.status.isEmpty {
                 Text(model.status).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Button("Copy report") { model.copyReport() }
+                Button("Save Logs to Desktop…") { model.revealZip() }
+                Spacer()
+                Button("Open GitHub issue") { model.openIssue() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canSubmit)
             }
         }
         .padding(14)

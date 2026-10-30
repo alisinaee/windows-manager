@@ -40,14 +40,11 @@ struct MenuBarContent: View {
             MenuRow(title: "Profiles…") {
                 Self.closePopup(); ProfileStudioWindowController.shared.show()
             }
-            MenuRow(title: "Check for Updates…") {
-                UpdateController.shared.checkForUpdates()
-            }
-            .disabled(!updates.canCheckForUpdates)
-            if !updates.isConfigured {
-                Text(UpdateController.notConfiguredText)
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
+            if updates.isConfigured {
+                MenuRow(title: "Check for Updates…") {
+                    UpdateController.shared.checkForUpdates()
+                }
+                .disabled(!updates.canCheckForUpdates)
             }
             MenuRow(title: "Settings…") {
                 Self.closePopup()
@@ -57,7 +54,7 @@ struct MenuBarContent: View {
             MenuRow(title: "Report a Bug…") {
                 Self.closePopup(); BugReportWindowController.shared.show()
             }
-            MenuRow(title: (appState.debugMode ? "\u{2713} " : "    ") + "Debug") {
+            MenuRow(title: "Debug", checked: appState.debugMode) {
                 Self.closePopup(); appState.debugMode.toggle()
             }
             .help("Shows the live test panel for the window-restore scenarios")
@@ -84,6 +81,12 @@ struct MenuBarContent: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
         } else {
+            profileRows
+        }
+    }
+
+    @ViewBuilder private var profileRows: some View {
+        let rows = VStack(alignment: .leading, spacing: 2) {
             ForEach(appState.savedProfiles) { profile in
                 let choices = appState.scopeChoices[profile.id] ?? []
                 if choices.count > 1 {
@@ -106,6 +109,11 @@ struct MenuBarContent: View {
                 }
             }
         }
+        ViewThatFits(in: .vertical) {
+            rows
+            ScrollView { rows }
+        }
+        .frame(maxHeight: 300)
     }
 
     @ViewBuilder private var workspacesSection: some View {
@@ -115,7 +123,7 @@ struct MenuBarContent: View {
                 .font(.footnote).foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
             ForEach(workspaces.workspaces) { ws in
-                MenuRow(title: (ws.id == workspaces.activeID ? "\u{2713} " : "    ") + ws.name) {
+                MenuRow(title: ws.name, checked: ws.id == workspaces.activeID) {
                     workspaces.switchTo(ws.id)
                 }
             }
@@ -128,7 +136,7 @@ struct MenuBarContent: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 2)
             }
-            MenuRow(title: "+ New workspace") { workspaces.createWorkspace() }
+            MenuRow(title: "New workspace", symbol: "plus") { workspaces.createWorkspace() }
             MenuRow(title: "Add front app to current") { workspaces.addFrontmostAppToActive() }
                 .disabled(workspaces.activeID == nil)
             if let text = workspaces.statusText {
@@ -210,11 +218,15 @@ struct MenuBarContent: View {
         }
     }
 
-    private var statusRow: some View {
+    @ViewBuilder private var statusRow: some View {
+        if case .idle = appState.status { EmptyView() } else { statusContent }
+    }
+
+    private var statusContent: some View {
         HStack(alignment: .top, spacing: 6) {
             switch appState.status {
             case .idle:
-                Text("Idle").foregroundStyle(.secondary)
+                EmptyView()
             case .running(let text):
                 ProgressView().controlSize(.small)
                 Text(text).foregroundStyle(.secondary)
@@ -237,8 +249,9 @@ struct MenuBarContent: View {
                 .foregroundStyle(appState.isAccessibilityTrusted ? Color.green : Color.orange)
             Text(appState.isAccessibilityTrusted ? "Accessibility: allowed" : "Accessibility: not allowed")
             Spacer(minLength: 8)
-            Button("Grant…") { appState.requestAccessibility() }
-                .disabled(appState.isAccessibilityTrusted)
+            if !appState.isAccessibilityTrusted {
+                Button("Grant…") { appState.requestAccessibility() }
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
@@ -246,21 +259,59 @@ struct MenuBarContent: View {
 }
 
 /// A full-width menu style row (the .window style does not draw native menu items).
-/// The highlight follows the press, not the hover: `@State` is a macro in the macOS 27 SDK and its
-/// plugin (SwiftUIMacros) ships only with Xcode, so this target avoids it to build with the Command Line Tools.
+/// `@State` is a macro in the macOS 27 SDK and its plugin (SwiftUIMacros) ships only with Xcode,
+/// so this target avoids it to build with the Command Line Tools; hover lives in an ObservableObject.
 private struct MenuRow: View {
     let title: String
+    var checked: Bool? = nil
+    var symbol: String? = nil
     let action: () -> Void
+
+    init(title: String, checked: Bool? = nil, symbol: String? = nil, action: @escaping () -> Void) {
+        self.title = title; self.checked = checked; self.symbol = symbol; self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
+            HStack(spacing: 4) {
+                if checked != nil || symbol != nil {
+                    Image(systemName: symbol ?? "checkmark")
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 14)
+                        .opacity(symbol != nil || checked == true ? 1 : 0)
+                        .accessibilityHidden(true)
+                }
+                Text(title)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
         }
         .buttonStyle(MenuRowButtonStyle())
+        .accessibilityAddTraits(checked == true ? .isSelected : [])
+    }
+}
+
+private final class HoverState: ObservableObject {
+    @Published var hovering = false
+}
+
+private struct MenuRowBackground<Content: View>: View {
+    @StateObject private var hover = HoverState()
+    let isPressed: Bool
+    let isEnabled: Bool
+    let content: Content
+
+    var body: some View {
+        content
+            .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(isEnabled && isPressed ? Color.accentColor.opacity(0.3)
+                          : isEnabled && hover.hovering ? Color.accentColor.opacity(0.15) : Color.clear)
+            )
+            .onHover { hover.hovering = $0 }
     }
 }
 
@@ -268,11 +319,6 @@ private struct MenuRowButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
-            .background(
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(configuration.isPressed && isEnabled ? Color.accentColor.opacity(0.3) : Color.clear)
-            )
+        MenuRowBackground(isPressed: configuration.isPressed, isEnabled: isEnabled, content: configuration.label)
     }
 }

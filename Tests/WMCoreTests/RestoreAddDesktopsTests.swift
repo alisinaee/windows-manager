@@ -37,9 +37,10 @@ final class FakeDesktopAdder: DesktopAdding {
 
     /// Monitor A with `n` Desktops (the first two are ids 11 and 12, the others 30 and up) and its full-screen Spaces.
     static func spacesA(desktops n: Int) -> ScannedSpaces {
-        let ids = (0..<n).map { $0 < 2 ? UInt64(11 + $0) : UInt64(30 + $0) }
-        var list = ids.enumerated().map { index, id in
-            SpaceInfo(id: id, uuid: "d\(id)", kind: .desktop, index: index, isCurrent: index == 0)
+        var list: [SpaceInfo] = []
+        for index in 0..<n {
+            let id: UInt64 = index < 2 ? UInt64(11 + index) : UInt64(30 + index)
+            list.append(SpaceInfo(id: id, uuid: "d\(id)", kind: .desktop, index: index, isCurrent: index == 0))
         }
         list.append(SpaceInfo(id: 13, uuid: "s13", kind: .fullscreen, index: n, isCurrent: false))
         list.append(SpaceInfo(id: 14, uuid: "s14", kind: .fullscreen, index: n + 1, isCurrent: false))

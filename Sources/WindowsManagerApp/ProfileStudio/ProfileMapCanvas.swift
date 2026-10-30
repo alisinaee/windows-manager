@@ -73,8 +73,10 @@ struct ProfileMapCanvas: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            toolbar
-            Divider()
+            if onSync != nil || model.summaryText != nil {
+                toolbar
+                Divider()
+            }
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     CanvasGridBackground(zoom: model.zoom, offset: model.offset)
@@ -323,7 +325,7 @@ struct ProfileMapCanvas: View {
             TileStackView(size: tile.rect.size, tint: AppTint.color(for: window.app), showsEdges: collapsed) { content }
                 .overlay(alignment: .bottomTrailing) {
                     StackBadge(stack: stack, appName: window.app.name, metrics: metrics, isInteractive: collapsed,
-                               onCycle: { model.cycleFront(stack); focused = true })
+                               onCycle: { model.cycleFront(stack); focused = true }, tileSize: tile.rect.size)
                 }
                 .accessibilityAction(named: "Next window in stack") { if collapsed { model.cycleFront(stack) } }
         } else {

@@ -142,8 +142,9 @@ final class ProfileMapModel: ObservableObject {
 
     /// Fit: the whole canvas at once, recentred.
     func fit() {
-        apply(CanvasViewport.fitting(CGRect(origin: .zero, size: layout.canvasSize), in: viewport, padding: 0, maxZoom: 1),
-              clamp: false)
+        // Fit the monitors' bounds (not the whole canvas, which is at least viewport-sized and top-left anchored), centred.
+        let content = layout.monitors.dropFirst().reduce(layout.monitors.first?.frame ?? CGRect(origin: .zero, size: layout.canvasSize)) { $0.union($1.frame) }
+        apply(CanvasViewport.fitting(content.insetBy(dx: -16, dy: -16), in: viewport, padding: 0, maxZoom: 1), clamp: false)
         DebugLog.log("studio", "map fit")
     }
 

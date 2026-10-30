@@ -85,7 +85,7 @@ final class ProfileStudioModel: ObservableObject {
     private var builderCancellable: AnyCancellable?
 
     private func bindBuilder() {
-        builderCancellable = builder?.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.syncHistory() }
+        builderCancellable = builder?.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.syncHistory(); self?.titleChanged() }
         syncHistory()
     }
 
@@ -156,7 +156,11 @@ final class ProfileStudioModel: ObservableObject {
 
     /// The profile name (the window title); "Profiles" when there is none.
     var windowTitle: String {
-        if mode == .edit, let b = builder { return b.nameText.isEmpty ? "Untitled profile" : b.nameText }
+        if mode == .edit, let b = builder {
+            if !b.nameText.isEmpty { return b.nameText }
+            if !b.isNewProfile, let name = selectedRow?.name { return name }   // draft still loading
+            return "Untitled profile"
+        }
         return selectedRow?.name ?? "Profiles"
     }
 

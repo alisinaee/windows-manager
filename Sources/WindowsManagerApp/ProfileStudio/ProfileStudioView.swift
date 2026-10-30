@@ -289,8 +289,11 @@ struct StudioEditToolbar: ToolbarContent {
                 .accessibilityLabel("Redo")
         }
         ToolbarItem(placement: .primaryAction) {
-            Toggle("Live", isOn: Binding(get: { builder.isLive }, set: { builder.setLive($0) }))
-                .toggleStyle(.switch).controlSize(.small)
+            HStack(spacing: 6) {
+                Text("Live").font(.callout)
+                Toggle("Live", isOn: Binding(get: { builder.isLive }, set: { builder.setLive($0) }))
+                    .toggleStyle(.switch).controlSize(.small).labelsHidden()
+            }
             .help("Live: the draft follows your real windows and updates every 2 s. Off: the draft changes only when you edit it.")
             .accessibilityLabel("Live sync")
         }
@@ -618,7 +621,7 @@ struct ProfileStudioRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name).lineLimit(1).truncationMode(.tail)
                 Text(Self.subtitle(row)).font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1).truncationMode(.tail)
             }
             Spacer(minLength: 0)
         }

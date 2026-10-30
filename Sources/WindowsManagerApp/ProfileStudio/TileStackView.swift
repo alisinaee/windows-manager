@@ -51,12 +51,15 @@ struct StackBadge: View {
     let metrics: MapMetrics
     let isInteractive: Bool
     let onCycle: () -> Void
+    /// Tile size; a small tile shows just the count so the badge stays inside it.
+    var tileSize: CGSize = CGSize(width: 1000, height: 1000)
+    private var isCompact: Bool { tileSize.width < 170 || tileSize.height < 100 }
 
     private var label: String { "\(appName) \u{00D7}\(stack.count): \(stack.count) windows overlap here" }
 
     var body: some View {
-        let badge = Label("\(stack.count) windows", systemImage: "square.stack.3d.down.right")
-            .labelStyle(.titleAndIcon)
+        let badge = Label(isCompact ? "\(stack.count)" : "\(stack.count) windows", systemImage: "square.stack.3d.down.right")
+            .labelStyle(.titleAndIcon).lineLimit(1).fixedSize()
             .font(.system(size: metrics.font(11), weight: .bold)).monospacedDigit()
             .padding(.horizontal, 6).padding(.vertical, 1)
             .background(.regularMaterial, in: Capsule())
@@ -74,7 +77,8 @@ struct StackBadge: View {
                     .allowsHitTesting(false)
             }
         }
-        .padding(5)
+        .padding(isCompact ? 2 : 5)
+        .frame(maxWidth: tileSize.width, maxHeight: tileSize.height, alignment: .bottomTrailing)
     }
 }
 

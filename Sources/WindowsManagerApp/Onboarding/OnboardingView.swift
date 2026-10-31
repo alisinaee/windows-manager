@@ -67,7 +67,8 @@ struct OnboardingView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
+                .wmGlass(.strong, in: RoundedRectangle(cornerRadius: Radius.large + 4, style: .continuous))
+                .padding([.horizontal, .top], Spacing.m)
             Group {
                 switch model.step {
                 case .accessibility: accessibilityStep
@@ -76,10 +77,20 @@ struct OnboardingView: View {
                 }
             }
             .formStyle(.grouped)
-            Divider()
+            .scrollContentBackground(.hidden)
             footer
+                .wmGlass(.regular, in: Capsule())
+                .padding([.horizontal, .bottom], Spacing.m)
         }
         .frame(width: 540, height: 500)
+        .background(alignment: .topLeading) {
+            ZStack {
+                Palette.canvas
+                RadialGradient(colors: [Palette.accent.opacity(0.35), .clear], center: .topLeading, startRadius: 0, endRadius: 360)
+                RadialGradient(colors: [Palette.teal.opacity(0.25), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 340)
+            }
+            .ignoresSafeArea()
+        }
         .tint(Palette.accent)
         // Live re-check: the user flips the switch in System Settings and this window follows.
         .task {
@@ -126,15 +137,16 @@ struct OnboardingView: View {
         HStack {
             if model.step != .accessibility {
                 Button("Back") { model.move(by: -1) }
+                    .buttonStyle(.glass)
             }
             Spacer()
             if model.step == .done {
                 Button("Finish") { onFinish() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent).tint(Palette.accentStrong)
                     .keyboardShortcut(.defaultAction)
             } else {
                 Button("Continue") { model.move(by: 1) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent).tint(Palette.accentStrong)
                     .keyboardShortcut(.defaultAction)
             }
         }
@@ -150,12 +162,12 @@ struct OnboardingView: View {
                 ProfileStudioWindowController.shared.show()
                 ProfileStudioWindowController.shared.model.beginNewProfile()
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glassProminent).tint(Palette.accentStrong)
             Button("Open Profile Studio") {
                 onFinish()
                 ProfileStudioWindowController.shared.show()
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
         }
     }
 
@@ -243,8 +255,7 @@ struct OnboardingView: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 400)
-            GroupBox {
-                VStack(spacing: 0) {
+            VStack(spacing: 0) {
                     summaryRow(
                         "Accessibility",
                         model.report.accessibilityTrusted ? "Allowed" : "Not allowed yet",
@@ -260,8 +271,8 @@ struct OnboardingView: View {
                         model.report.stageManagerOn ? "On" : "Off",
                         .good)
                 }
-                .padding(4)
-            }
+                .padding(Spacing.m)
+                .wmGlass(.strong)
             .frame(maxWidth: 400)
             if !model.report.accessibilityTrusted {
                 Text("Without Accessibility access Windows Manager cannot move windows. Go back to step 1 to allow it.")

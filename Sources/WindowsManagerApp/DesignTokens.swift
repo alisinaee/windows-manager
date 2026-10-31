@@ -36,6 +36,8 @@ enum Palette {
     }
 
     static let accent = dynamic(light: 0x5B6CFF, dark: 0x8290FF)
+    /// Deeper indigo for filled controls: white text on it passes 4.5:1 in both appearances.
+    static let accentStrong = dynamic(light: 0x4A5BF0, dark: 0x5B6CFF)
     static let teal = dynamic(light: 0x1FBFA3, dark: 0x3DDCBF)
     static let warn = dynamic(light: 0xF5A524, dark: 0xF5A524)
     static let danger = dynamic(light: 0xF2557A, dark: 0xFF7A99)
@@ -123,7 +125,8 @@ struct Banner: View {
             }
         }
         .padding(Spacing.m)
-        .background(tone.fill, in: RoundedRectangle(cornerRadius: Radius.medium))
+        .background(tone.fill, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
+        .wmGlass(.subtle, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
     }
 }
 
@@ -135,14 +138,51 @@ struct StatusBadge: View {
     var body: some View {
         Text(text)
             .font(.wmCaption.weight(.medium))
-            .foregroundStyle(tone.color)
+            .foregroundStyle(tone == .warning ? AnyShapeStyle(.primary) : AnyShapeStyle(tone.color))
             .padding(.horizontal, Spacing.s)
             .padding(.vertical, Spacing.xs)
-            .background(tone.fill, in: Capsule())
+            .background(tone == .warning ? Palette.warn.opacity(0.20) : tone.fill, in: Capsule())
+    }
+}
+
+/// How "liquid" a glass surface is. Use on a few floating containers only, never per row or tile.
+enum GlassLevel { case subtle, regular, strong }
+
+private struct WMGlassModifier<S: Shape>: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let level: GlassLevel
+    let shape: S
+
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content.background(level == .subtle ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Palette.surface), in: shape)
+        } else {
+            switch level {
+            case .subtle: content.glassEffect(.clear, in: shape)
+            case .regular: content.glassEffect(.regular, in: shape)
+            case .strong: content.glassEffect(.regular.tint(Palette.accent.opacity(0.10)), in: shape)
+            }
+        }
+    }
+}
+
+/// Wraps a few nearby glass views so they blend and share one render pass.
+struct WMGlassGroup<Content: View>: View {
+    var spacing: CGFloat = Spacing.s
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        GlassEffectContainer(spacing: spacing) { content() }
     }
 }
 
 extension View {
+    /// Native Liquid Glass at a chosen level. No shadow. Falls back to a solid surface/material under Reduce Transparency.
+    func wmGlass(_ level: GlassLevel,
+                 in shape: some Shape = RoundedRectangle(cornerRadius: Radius.large, style: .continuous)) -> some View {
+        modifier(WMGlassModifier(level: level, shape: shape))
+    }
+
     /// Padded rounded secondary-background container.
     func wmCard() -> some View {
         padding(Spacing.m)

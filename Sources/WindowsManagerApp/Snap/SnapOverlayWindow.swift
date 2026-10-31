@@ -18,18 +18,18 @@ private struct SnapOverlayView: View {
     @ObservedObject var model: SnapOverlayModel
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(model.items) { item in
-                let on = item.id == model.highlighted
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.accentColor.opacity(on ? 0.40 : 0.12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .strokeBorder(Color.accentColor.opacity(on ? 0.95 : 0.45), lineWidth: on ? 3 : 1.5)
-                    )
-                    .overlay(Text(item.name).font(.title3.weight(.medium)).foregroundColor(.white).opacity(on ? 1 : 0.7))
-                    .frame(width: item.rect.width, height: item.rect.height)
-                    .offset(x: item.rect.minX, y: item.rect.minY)
+        GlassEffectContainer(spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                ForEach(model.items) { item in
+                    let on = item.id == model.highlighted
+                    let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    shape
+                        .fill(Color.accentColor.opacity(on ? 0.40 : 0.12))
+                        .overlay(Text(item.name).font(.title3.weight(.medium)).foregroundColor(.white).opacity(on ? 1 : 0.7))
+                        .frame(width: item.rect.width, height: item.rect.height)
+                        .wmGlass(.subtle, in: shape)
+                        .offset(x: item.rect.minX, y: item.rect.minY)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

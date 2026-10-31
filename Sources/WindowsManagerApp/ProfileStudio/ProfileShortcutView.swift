@@ -60,7 +60,7 @@ struct ProfileShortcutView: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let free = ShortcutAdvice.firstFreeSuggestion(taken: taken, ownCombo: own), free != own {
                     Button { assign(free) } label: { Label("Use next free: \(Self.text(free))", systemImage: "wand.and.stars").frame(maxWidth: .infinity) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.borderedProminent).tint(Palette.accentStrong)
                         .help("Pick the first safe shortcut no other hotkey uses")
                 }
                 suggestionGroup("Safest", ShortcutAdvice.hyperSuggestions, taken: taken, own: own)

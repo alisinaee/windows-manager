@@ -41,7 +41,7 @@ struct StudioCopyPickerSheet: View {
                     if let id = local.copySourceID ?? profiles.first?.id { onCopy(id) }
                 }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent).tint(Palette.accentStrong)
                 .disabled(profiles.isEmpty)
                 .help("Open a draft copy of the chosen profile (Return)")
             }
@@ -136,7 +136,7 @@ struct StudioSaveSheet: View {
                     .help("Close without saving (Esc)")
                 Button("Save", action: save)
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.borderedProminent).tint(Palette.accentStrong)
                     .disabled(builder.blocksSaving || trimmedName.isEmpty || needsChoice)
                     .help(builder.blocksSaving ? "Fix the problems marked in red first"
                           : needsChoice ? "Choose Replace or Keep both, or change the name" : "Save the profile (Return)")

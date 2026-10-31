@@ -13,6 +13,7 @@ struct WindowsManagerMain: App {
             SelfCheck.runAndExit()
         }
         _appState = StateObject(wrappedValue: AppState())
+        AppearanceManager.shared.apply()
     }
 
     var body: some Scene {

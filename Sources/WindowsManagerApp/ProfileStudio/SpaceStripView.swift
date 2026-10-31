@@ -20,10 +20,8 @@ struct SpaceStripView: View {
                                    windows: windows, missing: missingStatus(for: space),
                                    name: spaceName(space), metrics: metrics, onSelect: { onSelect(thumb.id) })
                     .offset(x: thumb.rect.minX, y: thumb.rect.minY)
-                    .transition(.scale(scale: 0.92).combined(with: .opacity))
             }
         }
-        .animation(reduceMotion ? nil : Motion.spring, value: thumbnails.map(\.id))
     }
 
     private func missingStatus(for space: ProfileSpaceIndex.Space) -> SpaceLiveStatus? {
@@ -70,7 +68,7 @@ struct SpaceThumbnailView: View {
                             .foregroundStyle(.primary)
                             .minimumScaleFactor(0.7).lineLimit(1)
                             .padding(.horizontal, 5).padding(.vertical, 1)
-                            .glassEffect(.regular, in: Capsule())
+                            .background(.regularMaterial, in: Capsule())
                     }
                     if missing != nil {
                         Image(systemName: "circle.dashed").font(.system(size: max(metrics.font(10), 11))).foregroundStyle(Tone.warning.color)
@@ -79,7 +77,6 @@ struct SpaceThumbnailView: View {
             }
             .frame(width: max(rect.width, 1), height: max(rect.height, 1))
             .contentShape(shape)
-            .animation(reduceMotion ? nil : Motion.spring, value: isSelected)
         }
         .buttonStyle(.plain)
         .help(helpText)

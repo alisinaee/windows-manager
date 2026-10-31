@@ -117,6 +117,9 @@ struct LayoutEditorView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 .disabled(model.selectedZoneID == nil)
+                .padding(.horizontal, Spacing.m)
+                .padding(.vertical, Spacing.s)
+                .wmGlass(.regular, in: Capsule())
                 if let error = model.errorText {
                     Banner(tone: .danger, title: "Something went wrong", message: error, onDismiss: { model.dismissError() })
                 }
@@ -261,8 +264,7 @@ private struct AppChip: View {
             .font(.callout)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(Capsule().fill(Palette.accent.opacity(0.18)))
-            .overlay(Capsule().stroke(Palette.accent.opacity(0.5)))
+            .background(Capsule().fill(Palette.accentWash))
     }
 }
 

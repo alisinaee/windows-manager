@@ -23,13 +23,11 @@ struct TileStackView<Front: View>: View {
                             .strokeBorder(tint.opacity(0.9), lineWidth: 1.5))
                         .frame(width: max(size.width, 1), height: max(size.height, 1))
                         .offset(x: CGFloat(depth) * 7, y: CGFloat(depth) * 7)
-                        .transition(.scale(scale: 0.92).combined(with: .opacity))
                         .accessibilityHidden(true)
                 }
             }
             front()
         }
-        .animation(reduceMotion ? nil : Motion.spring, value: showsEdges)
         .frame(width: max(size.width, 1), height: max(size.height, 1), alignment: .topLeading)
     }
 }
@@ -67,7 +65,7 @@ struct StackBadge: View {
             .labelStyle(.titleAndIcon).lineLimit(1).fixedSize()
             .font(.system(size: metrics.font(11), weight: .bold)).monospacedDigit()
             .padding(.horizontal, 6).padding(.vertical, 1)
-            .glassEffect(.regular, in: Capsule())
+            .background(.regularMaterial, in: Capsule())
         Group {
             if isInteractive {
                 Button(action: onCycle) { badge }
@@ -115,7 +113,7 @@ struct StackFanView: View {
             }
         }
         .padding(2)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .offset(x: x - 2, y: y - 2)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(windows.first?.app.name ?? "Windows") \u{00D7}\(stack.count): \(stack.count) windows overlap here")

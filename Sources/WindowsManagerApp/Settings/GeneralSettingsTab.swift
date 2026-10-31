@@ -7,6 +7,9 @@ struct GeneralSettingsTab: View {
 
     var body: some View {
         Form {
+            Section("Appearance") {
+                LabeledContent("Theme") { AppearanceMenu() }
+            }
             Section("Accessibility") {
                 LabeledContent("Status") {
                     Text(appState.isAccessibilityTrusted ? "Allowed" : "Not allowed")

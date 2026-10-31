@@ -137,7 +137,7 @@ struct WindowTileView: View {
                     .font(.system(size: metrics.font(12), weight: .semibold))
                     .foregroundStyle(WindowStatusStyle.color(status))
                     .padding(3)
-                    .glassEffect(.regular, in: Circle())
+                    .background(.regularMaterial, in: Circle())
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(3)
             }
@@ -157,7 +157,7 @@ struct WindowTileView: View {
                 Text("\(Int(f.width))\u{00D7}\(Int(f.height)) at \(Int(f.minX)), \(Int(f.minY))")
                     .font(.system(size: metrics.font(10), weight: .medium)).monospacedDigit()
                     .padding(.horizontal, 5).padding(.vertical, 1)
-                    .glassEffect(.regular, in: Capsule())
+                    .background(.regularMaterial, in: Capsule())
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .padding(4)
                     .allowsHitTesting(false)
@@ -167,23 +167,16 @@ struct WindowTileView: View {
                 Text(tile.isSplitHalf ? "Split View" : "Full screen")
                     .font(.system(size: metrics.font(11), weight: .medium))
                     .padding(.horizontal, 5).padding(.vertical, 1)
-                    .glassEffect(.regular, in: Capsule())
+                    .background(.regularMaterial, in: Capsule())
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .padding(5)
             }
         }
         .frame(width: max(size.width, 1), height: max(size.height, 1))
         .overlay {
-            // 2pt accent outline floating 2pt outside the tile; springs in and out with the selection.
-            RoundedRectangle(cornerRadius: (tile.isFullScreen ? 4 : 6) + 4, style: .continuous)
-                .inset(by: -4)
-                .strokeBorder(Palette.accent, lineWidth: 2)
-                .opacity(isSelected ? 1 : 0)
-                .scaleEffect(isSelected ? 1 : 0.96)
+            // Selection outline sits inside the tile: no outer glow or scale.
+            if isSelected { shape.strokeBorder(Palette.accent, lineWidth: 3).allowsHitTesting(false) }
         }
-        .scaleEffect(isSelected ? 1.015 : 1)
-        .shadow(color: isSelected ? Palette.accent.opacity(0.35) : .clear, radius: isSelected ? 10 : 0)
-        .animation(reduceMotion ? nil : Motion.spring, value: isSelected)
         .contentShape(shape)
         .onTapGesture(perform: onSelect)
         .onHover(perform: onHover)

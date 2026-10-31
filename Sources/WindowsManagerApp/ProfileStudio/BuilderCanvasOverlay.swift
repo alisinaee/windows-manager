@@ -665,7 +665,7 @@ struct BuilderCanvasOverlay: View {
             ForEach(layout.monitors) { monitor in zoneOverlay(monitor) }
             ForEach(layout.monitors) { monitor in gridOverlay(monitor) }
             ForEach(layout.windows.sorted { $0.zIndex > $1.zIndex }) { tile in tileHitArea(tile) }
-            if let tile = selectedTile { handles(for: tile).id(tile.windowID) }
+            if let tile = selectedTile { handles(for: tile) }
             if let preview = controller.drag {
                 ghost(preview); guideLines(preview)
                 ForEach(preview.linked.sorted { $0.key.uuidString < $1.key.uuidString }, id: \.key) { _, rect in linkedGhost(rect) }
@@ -674,7 +674,6 @@ struct BuilderCanvasOverlay: View {
         }
         .frame(width: local.toScreen(layout.canvasSize).width, height: local.toScreen(layout.canvasSize).height,
                alignment: .topLeading)
-        .animation(reduceMotion ? nil : Motion.spring, value: builder.selectedWindowID)
         .coordinateSpace(name: Self.space)
     }
 
@@ -813,7 +812,6 @@ struct BuilderCanvasOverlay: View {
                 .overlay(Circle().strokeBorder(Palette.accent, lineWidth: 2))
                 .frame(width: ResizeHandles.handleSize, height: ResizeHandles.handleSize)
                 .contentShape(Rectangle().inset(by: -3))
-                .transition(.scale(scale: 0.01).combined(with: .opacity))
                 .position(x: c.x, y: c.y)
                 .pointerStyle(Self.pointer(for: handle))
                 .help("Drag to resize the window")
@@ -866,14 +864,12 @@ struct BuilderCanvasOverlay: View {
                 if let zone = preview.zoneName {
                     Text(zone).font(.system(size: 11, weight: .medium))
                         .padding(.horizontal, 5).padding(.vertical, 1)
-                        .glassEffect(.regular, in: Capsule())
+                        .background(.regularMaterial, in: Capsule())
                         .padding(5)
                 }
             }
             .frame(width: local.toScreen(preview.rect).width, height: local.toScreen(preview.rect).height)
-            .shadow(color: Palette.accent.opacity(showsGhost ? 0.3 : 0), radius: showsGhost ? 14 : 0, y: showsGhost ? 6 : 0)
             .position(x: local.toScreen(preview.rect).midX, y: local.toScreen(preview.rect).midY)
-            .animation(reduceMotion ? nil : Motion.quick, value: showsGhost)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
@@ -1044,12 +1040,10 @@ private struct ToolIconBody: View {
             .labelStyle(.iconOnly)
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(isOn ? Palette.accent : Color.primary)
-            .offset(y: hovering ? -2 : 0)
-            .animation(reduceMotion ? nil : Motion.quick, value: hovering)
             .frame(width: width, height: 28)
-            .background(Capsule().fill(isOn ? Palette.accentWash : Color.clear))
-            .animation(Animation.wm(reduceMotion), value: isOn)
-            .contentShape(Capsule())
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isOn ? Palette.accentWash : Color.primary.opacity(hovering ? 0.06 : 0)))
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .opacity(configuration.isPressed ? 0.7 : 1)
             .onHover { hovering = $0 }
     }
@@ -1265,17 +1259,9 @@ struct BuilderMapCanvas: View {
         ProfileMapCanvas(model: map,
                          canvasOverlay: AnyView(BuilderCanvasOverlay(controller: controller)),
                          keyOverride: { controller.handleKey($0) })
-            .overlay(alignment: .top) {
-                ZStack {
-                    // Drops in from the top when Edit mode opens (and leaves the same way if the host animates its removal).
-                    if toolsShown {
-                        BuilderToolsBar(controller: controller, onSync: { Task { await builder.syncNow() } })
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                }
-                .animation(reduceMotion ? nil : Motion.spring, value: toolsShown)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                // Inset (not an overlay): the bar never covers the canvas, so pan / zoom / drag events reach it unchanged.
+                BuilderToolsBar(controller: controller, onSync: { Task { await builder.syncNow() } })
             }
-            .onAppear { toolsShown = true }
-            .onDisappear { toolsShown = false }
     }
 }

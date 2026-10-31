@@ -102,7 +102,7 @@ struct ProfileMapCanvas: View {
                         Text("Drag to move, handles to resize")
                             .font(.wmCaption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
                             .padding(.horizontal, Spacing.s).padding(.vertical, Spacing.xs)
-                            .glassEffect(.regular, in: Capsule())
+                            .background(.ultraThinMaterial, in: Capsule())
                             .padding(Spacing.m)
                             .opacity(geo.size.width < 520 || hintDismissed ? 0 : 1)
                             .animation(Animation.wm(reduceMotion), value: hintDismissed)
@@ -171,8 +171,6 @@ struct ProfileMapCanvas: View {
                 Button { model.fit() } label: {
                     Text("\(Int((model.zoom * 100).rounded()))%")
                         .font(.wmCaption).monospacedDigit()
-                        .contentTransition(.numericText())
-                        .animation(Animation.wm(reduceMotion), value: model.zoom)
                         .frame(minWidth: 40)
                 }
                 .accessibilityLabel("Zoom \(Int((model.zoom * 100).rounded())) percent, fit map to window")
@@ -249,7 +247,6 @@ struct ProfileMapCanvas: View {
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(focusedHere ? Palette.accent.opacity(0.6) : Color.primary.opacity(0.08),
                                   lineWidth: focusedHere ? 1.5 : 1))
-                .shadow(color: Color.black.opacity(0.12), radius: 24, x: 0, y: 10)
                 .frame(width: monitor.frame.width, height: monitor.frame.height)
                 .offset(x: monitor.frame.minX, y: monitor.frame.minY)
             RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.canvas.opacity(0.6))
@@ -266,7 +263,6 @@ struct ProfileMapCanvas: View {
                 if let window = windowsByID[tile.windowID] {
                     tileView(window, tile: tile, monitor: monitor, shown: shown, among: tiles)
                         .offset(x: tile.rect.minX, y: tile.rect.minY)
-                        .transition(.scale(scale: 0.92).combined(with: .opacity))
                 }
             }
             if model.collapsesStacks, let id = model.fannedStackID, let stack = model.stack(withID: id),
@@ -276,7 +272,6 @@ struct ProfileMapCanvas: View {
                              windows: model.orderedMembers(of: stack).compactMap { windowsByID[$0] },
                              selectedID: model.selectedWindowID, anchor: front.rect, bounds: monitor.frame,
                              metrics: metrics, onSelect: { model.selectWindow($0); focused = true })
-                    .transition(.scale(scale: 0.92, anchor: .top).combined(with: .opacity))
             }
             if tiles.isEmpty {
                 Text("No windows on this display")
@@ -302,9 +297,6 @@ struct ProfileMapCanvas: View {
                            onSelect: { model.selectSpace($0); focused = true }, metrics: metrics)
         }
         .frame(width: layout.canvasSize.width, height: layout.canvasSize.height, alignment: .topLeading)
-        .animation(spring, value: tiles.map(\.id))
-        .animation(spring, value: thumbs.map(\.id))
-        .animation(spring, value: model.fannedStackID)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(monitor.name)\(monitor.isMain ? ", main" : ""), showing \(shownLabel ?? "no Space")"
             + (spaceCount > 0 ? " of \(spaceCount) Spaces" : "") + (stageLane != nil ? ", Stage Manager" : ""))
@@ -431,7 +423,6 @@ struct ProfileMapCanvas: View {
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(AppTint.color(for: window.app).opacity(0.18), in: Capsule())
                             .overlay(Capsule().strokeBorder(selected ? Palette.accent : Color.clear, lineWidth: 2))
-                            .animation(spring, value: selected)
                         }
                         .buttonStyle(.plain)
                         .help("Select \(trayText(window)) on the map")

@@ -257,7 +257,7 @@ struct RestorePreviewSheet: View {
             Spacer()
             Button { model.load() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(model.phase == .loading)
                 .help("Scan your Mac again (Cmd+R)")
@@ -414,11 +414,11 @@ struct RestorePreviewSheet: View {
             if let app = AppState.current {
                 if scope.isWhole {
                     RunProfileButton(app: app, profileID: profileID, profileName: profileName, title: "Run now")
-                        .buttonStyle(.glassProminent)
+                        .buttonStyle(.borderedProminent).tint(Palette.accentStrong)
                         .keyboardShortcut(.defaultAction)
                 } else {
                     Button { model.runScoped() } label: { Label("Run now (scope only)", systemImage: "play.fill") }
-                        .buttonStyle(.glassProminent)
+                        .buttonStyle(.borderedProminent).tint(Palette.accentStrong)
                         .keyboardShortcut(.defaultAction)
                         .disabled(!app.canAct || model.isRunning || model.profile == nil)
                         .help(studioRunBlockReason(app) ?? "Restore only \(scope.describe(profile: model.profile ?? Profile.emptyForMap))")

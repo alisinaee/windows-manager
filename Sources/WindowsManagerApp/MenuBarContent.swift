@@ -69,6 +69,7 @@ struct MenuBarContent: View {
         }
         .padding(Spacing.xs + 2)
         .frame(width: 280)
+        .wmGlass(.strong, in: RoundedRectangle(cornerRadius: Radius.large + 4, style: .continuous))
         .focusable()
         .focusEffectDisabled()
         .onKeyPress(.downArrow) { nav.move(1, count: appState.savedProfiles.count); return .handled }

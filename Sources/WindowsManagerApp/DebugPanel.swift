@@ -27,6 +27,9 @@ struct DebugPanel: View {
             Button("Run all") { model.runAll() }
                 .disabled(model.isBusy)
         }
+        .padding(.horizontal, Spacing.m)
+        .padding(.vertical, Spacing.s)
+        .wmGlass(.regular, in: Capsule())
     }
 
     private var scenarioList: some View {
@@ -146,6 +149,9 @@ struct DebugPanel: View {
             Button("Copy result") { model.copyResult() }
                 .disabled(model.results.isEmpty)
         }
+        .padding(.horizontal, Spacing.m)
+        .padding(.vertical, Spacing.s)
+        .wmGlass(.regular, in: Capsule())
     }
 
     private func badge(_ status: DebugRunStatus) -> some View {

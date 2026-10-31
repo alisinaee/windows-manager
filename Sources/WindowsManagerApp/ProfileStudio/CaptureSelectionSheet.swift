@@ -128,7 +128,7 @@ struct CaptureReviewPanel: View {
                 .frame(minHeight: 160, maxHeight: .infinity)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.06)))
             }
-            HStack { Spacer(); Button("Done", action: onDone).buttonStyle(.glassProminent).keyboardShortcut(.defaultAction).help("Close the review (Return)") }
+            HStack { Spacer(); Button("Done", action: onDone).buttonStyle(.borderedProminent).tint(Palette.accentStrong).keyboardShortcut(.defaultAction).help("Close the review (Return)") }
         }
         .padding(20)
         .frame(width: 380, height: 420)

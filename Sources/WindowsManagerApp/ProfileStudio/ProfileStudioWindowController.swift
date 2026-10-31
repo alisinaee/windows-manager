@@ -38,6 +38,7 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
         clampToScreen(window)
         self.window = window
         model.onTitleChange = { [weak window] title, subtitle in window?.title = title; window?.subtitle = subtitle }
+        model.onEnterEdit = { [weak self, weak window] in if let window { self?.makeEditRoom(window) } }
         present(window)
     }
 
@@ -51,6 +52,27 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
         frame.origin.x = min(max(frame.minX, visible.minX), max(visible.maxX - frame.width, visible.minX))
         frame.origin.y = min(max(frame.minY, visible.minY), max(visible.maxY - frame.height, visible.minY))
         if frame != window.frame { window.setFrame(frame, display: false) }
+    }
+
+    /// Content size the Edit layout (sidebar, map, Details inspector, edit toolbar) needs. In a smaller window
+    /// (e.g. 1017 x 848 on a laptop) AppKit's split view loops on its minimum sizes and aborts: the crash on Edit.
+    static let editSize = NSSize(width: 1400, height: 820)
+
+    /// Grows the window (never shrinks it) toward `editSize`, as far as the screen allows, before Edit opens.
+    private func makeEditRoom(_ window: NSWindow) {
+        let visible = (window.screen ?? NSScreen.main)?.visibleFrame ?? window.frame
+        let wanted = window.frameRect(forContentRect: NSRect(origin: .zero, size: Self.editSize)).size
+        var frame = window.frame
+        let width = min(max(frame.width, wanted.width), visible.width)
+        let height = min(max(frame.height, wanted.height), visible.height)
+        guard width > frame.width || height > frame.height else { return }
+        frame.origin.x -= (width - frame.width) / 2
+        frame.origin.y -= height - frame.height
+        frame.size = NSSize(width: width, height: height)
+        frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+        frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+        DebugLog.log("studio", "edit: window widened to \(Int(width)) x \(Int(height))")
+        window.setFrame(frame, display: true, animate: false)
     }
 
     private func present(_ window: NSWindow) {

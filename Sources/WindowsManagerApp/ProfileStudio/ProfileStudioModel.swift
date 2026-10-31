@@ -55,9 +55,17 @@ final class ProfileStudioModel: ObservableObject {
         if shown != isSidebarShown { toggleSidebar() }
     }
 
+    /// Called from `onGeometryChange`, i.e. during layout. Publishing there (even an unchanged value: a mutating call
+    /// on a `@Published` struct always publishes) re-renders the split view mid-layout, and AppKit aborts with
+    /// "needs another Update Constraints pass" (crash on entering Edit). So: compare, and apply after the pass.
     func contentWidthChanged(_ width: CGFloat) {
-        sidebar.contentWidthChanged(Double(width))
-        autoInspector(for: width)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            var next = sidebar
+            next.contentWidthChanged(Double(width))
+            if next != sidebar { sidebar = next }
+            autoInspector(for: width)
+        }
     }
 
     // MARK: Compare with now (UI3)
@@ -251,8 +259,12 @@ final class ProfileStudioModel: ObservableObject {
         }
     }
 
+    /// Runs just before the Studio switches to Edit; the window controller makes room for the Edit layout there.
+    var onEnterEdit: (() -> Void)?
+
     /// "Edit this profile": opens the saved profile in place.
     func startEditing(_ id: UUID) {
+        onEnterEdit?()
         let b = ProfileBuilderModel()
         builder = b
         mode = .edit
@@ -263,6 +275,7 @@ final class ProfileStudioModel: ObservableObject {
 
     /// A new draft session in Edit mode; the caller starts it.
     private func enterNewDraft() -> ProfileBuilderModel {
+        onEnterEdit?()
         let b = ProfileBuilderModel()
         builder = b
         mode = .edit

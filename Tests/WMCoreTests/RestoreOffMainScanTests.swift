@@ -42,8 +42,10 @@ private final class BlockingRestoreEnvironment: RestoreEnvironment {
     func sleep(_ seconds: TimeInterval) async { await inner.sleep(seconds) }
 }
 
+/// Serialized: every off-main call shares one serial work queue, so a test running beside another one would wait
+/// behind its blocked call and miss its timing.
 @MainActor
-@Suite struct RestoreOffMainScanTests {
+@Suite(.serialized) struct RestoreOffMainScanTests {
     typealias F = RestoreFixtures
 
     /// Counts how often the main actor gets to run while `work` is in flight.

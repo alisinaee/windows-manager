@@ -80,6 +80,7 @@ struct MenuBarContent: View {
         }
         .onKeyPress(.escape) { Self.closePopup(); return .handled }
         .onAppear { appState.refreshPermissions(); nav.index = nil }
+        .tint(Palette.accent)
     }
 
     /// Hides the menu bar popup (a MenuBarExtra window-style panel) before another window opens.
@@ -292,7 +293,7 @@ struct MenuBarContent: View {
     private var accessibilityRow: some View {
         HStack(spacing: 8) {
             Image(systemName: appState.isAccessibilityTrusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(appState.isAccessibilityTrusted ? Color.green : Color.orange)
+                .foregroundStyle(appState.isAccessibilityTrusted ? Tone.success.color : Tone.warning.color)
             Text(appState.isAccessibilityTrusted ? "Accessibility: allowed" : "Accessibility: not allowed")
             Spacer(minLength: 8)
             if !appState.isAccessibilityTrusted {
@@ -376,8 +377,8 @@ private struct MenuRowBackground<Content: View>: View {
             .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
             .background(
                 RoundedRectangle(cornerRadius: Radius.small + 1)
-                    .fill(isEnabled && isPressed ? Color.accentColor.opacity(0.3)
-                          : isEnabled && (hover.hovering || highlighted) ? Color.accentColor.opacity(0.15) : Color.clear)
+                    .fill(isEnabled && isPressed ? Palette.accent.opacity(0.3)
+                          : isEnabled && (hover.hovering || highlighted) ? Palette.accent.opacity(0.15) : Color.clear)
             )
             .onHover { hover.hovering = $0 }
     }

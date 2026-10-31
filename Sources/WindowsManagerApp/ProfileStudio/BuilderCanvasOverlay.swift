@@ -645,6 +645,7 @@ struct BuilderCanvasOverlay: View {
     @ObservedObject private var builder: ProfileBuilderModel
     @Environment(\.canvasFocusRequest) private var requestFocus
     @Environment(\.canvasFitRequest) private var requestFit
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let space = "builderCanvas"
 
@@ -664,7 +665,7 @@ struct BuilderCanvasOverlay: View {
             ForEach(layout.monitors) { monitor in zoneOverlay(monitor) }
             ForEach(layout.monitors) { monitor in gridOverlay(monitor) }
             ForEach(layout.windows.sorted { $0.zIndex > $1.zIndex }) { tile in tileHitArea(tile) }
-            if let tile = selectedTile { handles(for: tile) }
+            if let tile = selectedTile { handles(for: tile).id(tile.windowID) }
             if let preview = controller.drag {
                 ghost(preview); guideLines(preview)
                 ForEach(preview.linked.sorted { $0.key.uuidString < $1.key.uuidString }, id: \.key) { _, rect in linkedGhost(rect) }
@@ -673,6 +674,7 @@ struct BuilderCanvasOverlay: View {
         }
         .frame(width: local.toScreen(layout.canvasSize).width, height: local.toScreen(layout.canvasSize).height,
                alignment: .topLeading)
+        .animation(reduceMotion ? nil : Motion.spring, value: builder.selectedWindowID)
         .coordinateSpace(name: Self.space)
     }
 
@@ -693,7 +695,7 @@ struct BuilderCanvasOverlay: View {
                 if controller.isDropTargeted {
                     ForEach(map.layout.monitors) { monitor in
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [6, 4]))
+                            .strokeBorder(Palette.accent, style: StrokeStyle(lineWidth: 3, dash: [6, 4]))
                             .frame(width: local.toScreen(monitor.frame).width, height: local.toScreen(monitor.frame).height)
                             .position(x: local.toScreen(monitor.frame).midX, y: local.toScreen(monitor.frame).midY)
                     }
@@ -715,8 +717,8 @@ struct BuilderCanvasOverlay: View {
                 let active = zone.name == preview.zoneName
                 let rect = local.toScreen(zone.rect)
                 Rectangle()
-                    .fill(Color.accentColor.opacity(active ? 0.25 : 0.06))
-                    .overlay(Rectangle().strokeBorder(Color.accentColor.opacity(active ? 0.9 : 0.4),
+                    .fill(Palette.accent.opacity(active ? 0.25 : 0.06))
+                    .overlay(Rectangle().strokeBorder(Palette.accent.opacity(active ? 0.9 : 0.4),
                                                       style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
                     .frame(width: rect.width, height: rect.height)
                     .position(x: rect.midX, y: rect.midY)
@@ -742,7 +744,7 @@ struct BuilderCanvasOverlay: View {
                     path.move(to: CGPoint(x: screen.minX, y: sy)); path.addLine(to: CGPoint(x: screen.maxX, y: sy))
                 }
             }
-            .stroke(Color.secondary.opacity(0.35), lineWidth: 0.5)
+            .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
@@ -764,7 +766,7 @@ struct BuilderCanvasOverlay: View {
                     }
                 }
             }
-            .stroke(Color.pink, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+            .stroke(Palette.danger, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
@@ -787,8 +789,13 @@ struct BuilderCanvasOverlay: View {
                     controller.moveChanged(tile: tile, translation: local.toCanvas(value.translation),
                                            pointer: local.toCanvas(value.location))
                 }
-                .onEnded { _ in controller.dragEnded() })
+                .onEnded { _ in settle { controller.dragEnded() } })
             .accessibilityHidden(true)
+    }
+
+    /// Commits a drop with a spring so the tile settles into place; the drag itself has no implicit animation.
+    private func settle(_ commit: () -> Void) {
+        withAnimation(reduceMotion ? nil : Motion.spring, commit)
     }
 
     private func handles(for tile: ProfileMapLayout.WindowTile) -> some View {
@@ -801,11 +808,12 @@ struct BuilderCanvasOverlay: View {
             return !((movesX && widthFixed && (!movesY || heightFixed)) || (movesY && heightFixed && !movesX))
         }, id: \.self) { handle in
             let c = ResizeHandles.center(of: handle, in: rect)
-            RoundedRectangle(cornerRadius: 2)
-                .fill(Color(nsColor: .controlBackgroundColor))
-                .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Color.accentColor, lineWidth: 1.5))
+            Circle()
+                .fill(Color.white)
+                .overlay(Circle().strokeBorder(Palette.accent, lineWidth: 2))
                 .frame(width: ResizeHandles.handleSize, height: ResizeHandles.handleSize)
                 .contentShape(Rectangle().inset(by: -3))
+                .transition(.scale(scale: 0.01).combined(with: .opacity))
                 .position(x: c.x, y: c.y)
                 .pointerStyle(Self.pointer(for: handle))
                 .help("Drag to resize the window")
@@ -814,7 +822,7 @@ struct BuilderCanvasOverlay: View {
                         requestFocus()
                         controller.resizeChanged(tile: tile, handle: handle, translation: local.toCanvas(value.translation))
                     }
-                    .onEnded { _ in controller.dragEnded() })
+                    .onEnded { _ in settle { controller.dragEnded() } })
                 .accessibilityHidden(true)
         }
     }
@@ -834,7 +842,7 @@ struct BuilderCanvasOverlay: View {
 
     private func linkedGhost(_ rect: CGRect) -> some View {
         RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .strokeBorder(Color.accentColor.opacity(0.7), style: StrokeStyle(lineWidth: 2, dash: [3, 3]))
+            .strokeBorder(Palette.accent.opacity(0.7), style: StrokeStyle(lineWidth: 2, dash: [3, 3]))
             .frame(width: local.toScreen(rect).width, height: local.toScreen(rect).height)
             .position(x: local.toScreen(rect).midX, y: local.toScreen(rect).midY)
             .allowsHitTesting(false)
@@ -844,7 +852,7 @@ struct BuilderCanvasOverlay: View {
     @ViewBuilder private func ghost(_ preview: BuilderDragPreview) -> some View {
         if let thumbID = preview.thumbnailSpaceID, let thumb = map.layout.thumbnails.first(where: { $0.id == thumbID }) {
             RoundedRectangle(cornerRadius: 5)
-                .strokeBorder(Color.accentColor, lineWidth: 3)
+                .strokeBorder(Palette.accent, lineWidth: 3)
                 .frame(width: local.toScreen(thumb.rect).width, height: local.toScreen(thumb.rect).height)
                 .position(x: local.toScreen(thumb.rect).midX, y: local.toScreen(thumb.rect).midY)
                 .allowsHitTesting(false)
@@ -852,18 +860,20 @@ struct BuilderCanvasOverlay: View {
             let showsGhost = preview.kind == .move
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.accentColor.opacity(showsGhost ? 0.18 : 0.08))
+                    .fill(Palette.accent.opacity(showsGhost ? 0.18 : 0.08))
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6, 3]))
+                    .strokeBorder(Palette.accent, style: StrokeStyle(lineWidth: 2, dash: [6, 3]))
                 if let zone = preview.zoneName {
                     Text(zone).font(.system(size: 11, weight: .medium))
                         .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(.regularMaterial, in: Capsule())
+                        .glassEffect(.regular, in: Capsule())
                         .padding(5)
                 }
             }
             .frame(width: local.toScreen(preview.rect).width, height: local.toScreen(preview.rect).height)
+            .shadow(color: Palette.accent.opacity(showsGhost ? 0.3 : 0), radius: showsGhost ? 14 : 0, y: showsGhost ? 6 : 0)
             .position(x: local.toScreen(preview.rect).midX, y: local.toScreen(preview.rect).midY)
+            .animation(reduceMotion ? nil : Motion.quick, value: showsGhost)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
@@ -900,19 +910,13 @@ struct BuilderCanvasOverlay: View {
 
 }
 
-/// "Auto layout" button with a popover that previews 1-3 candidate layouts (G4).
-private struct AutoLayoutControl: View {
+/// Auto layout popover (G4): previews 1-3 candidate layouts. Shown from the bar's ellipsis menu.
+private struct AutoLayoutPopover: View {
     @ObservedObject var controller: BuilderCanvasController
     let monitor: ProfileMapLayout.Monitor
-    @State private var showing = false
+    @Binding var showing: Bool
 
-    var body: some View {
-        Button { showing.toggle() } label: { Label("Auto layout", systemImage: "wand.and.stars") }
-            .buttonStyle(ToolBarButtonStyle(isOn: showing))
-            .help("Auto layout: arrange this Desktop's windows on \(monitor.name) by how many there are")
-            .accessibilityLabel("Auto layout")
-            .popover(isPresented: $showing, arrowEdge: .bottom) { popover }
-    }
+    var body: some View { popover }
 
     private var popover: some View {
         let candidates = controller.autoLayoutCandidates(on: monitor)
@@ -949,8 +953,8 @@ private struct AutoLayoutControl: View {
                 RoundedRectangle(cornerRadius: 3).fill(Color.secondary.opacity(0.12))
                 ForEach(candidate.frames.sorted { $0.key.uuidString < $1.key.uuidString }, id: \.key) { _, r in
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.accentColor.opacity(0.35))
-                        .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Color.accentColor, lineWidth: 1))
+                        .fill(Palette.accent.opacity(0.35))
+                        .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Palette.accent, lineWidth: 1))
                         .frame(width: r.width / content.width * geo.size.width, height: r.height / content.height * geo.size.height)
                         .offset(x: (r.minX - content.minX) / content.width * geo.size.width,
                                 y: (r.minY - content.minY) / content.height * geo.size.height)
@@ -973,12 +977,12 @@ private struct GridControl: View {
             Button { controller.setGrid(monitorID) { $0.isOn.toggle() } } label: {
                 Label("Grid", systemImage: "grid")
             }
-            .buttonStyle(ToolBarButtonStyle(isOn: g.isOn))
+            .buttonStyle(ToolIconStyle(isOn: g.isOn))
             .help("Grid: show a grid on this monitor and snap dragging and resizing to it, \(g.spec.columns) x \(g.spec.rows) (\(g.isOn ? "on" : "off"))")
             .accessibilityLabel("Grid overlay")
             .accessibilityValue(g.isOn ? "on" : "off")
             Button { showing.toggle() } label: { Label("Grid size", systemImage: "chevron.down") }
-                .buttonStyle(ToolBarButtonStyle(isOn: false, width: 18))
+                .buttonStyle(ToolIconStyle(isOn: false, width: 18))
                 .help("Grid size: \(g.spec.columns) x \(g.spec.rows)")
                 .accessibilityLabel("Grid size")
                 .popover(isPresented: $showing, arrowEdge: .bottom) { popover }
@@ -1018,51 +1022,47 @@ private struct GridControl: View {
 
 // MARK: - Tools bar
 
-/// Equal 28pt tool button: accent fill when on, soft fill on hover.
-private struct ToolLabelsKey: EnvironmentKey { static let defaultValue = false }
-private extension EnvironmentValues {
-    /// True when the tools bar has room to print a short word next to each tool icon.
-    var toolLabels: Bool {
-        get { self[ToolLabelsKey.self] }
-        set { self[ToolLabelsKey.self] = newValue }
-    }
-}
-
-private struct ToolBarButtonStyle: ButtonStyle {
+/// Compact icon-only tool button: accent wash with accent icon when on, plain when off. The icon lifts on hover.
+private struct ToolIconStyle: ButtonStyle {
     var isOn: Bool
     var width: CGFloat = 28
-    @Environment(\.toolLabels) private var toolLabels
-    @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
-        let labeled = toolLabels && width == 28
-        return Group {
-            if labeled {
-                configuration.label.labelStyle(.titleAndIcon)
-            } else {
-                configuration.label.labelStyle(.iconOnly)
-            }
-        }
-            .font(.system(size: labeled ? 12 : 13, weight: .medium))
-            .lineLimit(1)
-            .foregroundStyle(isOn ? Color.white : Color.primary)
-            .padding(.horizontal, labeled ? 6 : 0)
-            .frame(width: labeled ? nil : width, height: 28)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isOn ? Color.accentColor
-                      : Color.primary.opacity(configuration.isPressed ? 0.16 : (hovering ? 0.08 : 0))))
-            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .onHover { hovering = $0 }
-            .opacity(configuration.isPressed ? 0.85 : 1)
+        ToolIconBody(configuration: configuration, isOn: isOn, width: width)
     }
 }
 
-/// The edit tools for one monitor, floating in a glass cluster over the map (it does not zoom or pan). Monitor name on the left.
+private struct ToolIconBody: View {
+    let configuration: ButtonStyleConfiguration
+    let isOn: Bool
+    let width: CGFloat
+    @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        configuration.label
+            .labelStyle(.iconOnly)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(isOn ? Palette.accent : Color.primary)
+            .offset(y: hovering ? -2 : 0)
+            .animation(reduceMotion ? nil : Motion.quick, value: hovering)
+            .frame(width: width, height: 28)
+            .background(Capsule().fill(isOn ? Palette.accentWash : Color.clear))
+            .animation(Animation.wm(reduceMotion), value: isOn)
+            .contentShape(Capsule())
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .onHover { hovering = $0 }
+    }
+}
+
+/// The edit tools for one monitor: one floating glass capsule, top centre over the map (it does not zoom or pan).
+/// Monitor name on the left, icon toggles in the middle, an ellipsis menu for the actions and a plus for Add Desktop.
 struct BuilderToolsBar: View {
     @ObservedObject var controller: BuilderCanvasController
     @ObservedObject private var map: ProfileMapModel
     @ObservedObject private var builder: ProfileBuilderModel
     @State private var chosenMonitorID: String?
+    @State private var showsAutoLayout = false
 
     /// Re-reads the real windows; lives here so Edit mode has one tools row instead of two.
     var onSync: (() -> Void)?
@@ -1082,28 +1082,34 @@ struct BuilderToolsBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            if let monitor {
-                header(monitor)
-                Spacer(minLength: 8)
-                ViewThatFits(in: .horizontal) {
-                    tools(monitor, labels: true).environment(\.toolLabels, true)
-                    tools(monitor, labels: false).environment(\.toolLabels, false)
+        if let monitor {
+            GlassEffectContainer(spacing: 6) {
+                HStack(spacing: 6) {
+                    header(monitor)
+                    divider()
+                    tools(monitor)
                 }
-            } else {
-                Spacer()
+                .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.xs)
+                .frame(minHeight: 36)
+                .glassEffect(.regular, in: Capsule())
+            }
+            .padding(Spacing.s)
+            .onChange(of: map.focusedDisplayUUID) { _, _ in chosenMonitorID = nil }
+            .sheet(isPresented: Binding(get: { controller.zoneEditorMonitor == monitor.id },
+                                        set: { if !$0 { controller.zoneEditorMonitor = nil; controller.reloadLayouts() } })) {
+                VStack(spacing: 0) {
+                    LayoutEditorView(model: LayoutEditorModel())
+                    Divider()
+                    HStack { Spacer(); Button("Done") { controller.zoneEditorMonitor = nil; controller.reloadLayouts() }.keyboardShortcut(.defaultAction) }
+                        .padding(8)
+                }
             }
         }
-        .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.xs)
-        .frame(minHeight: 36)
-        .glassEffect(.regular, in: Capsule())
-        .padding(Spacing.s)
-        .onChange(of: map.focusedDisplayUUID) { _, _ in chosenMonitorID = nil }
     }
 
     @ViewBuilder private func header(_ monitor: ProfileMapLayout.Monitor) -> some View {
         let title = HStack(spacing: 4) {
-            if monitor.isMain { Image(systemName: "star.fill").font(.system(size: 10)).foregroundStyle(.yellow) }
+            if monitor.isMain { Image(systemName: "star.fill").font(.system(size: 10)).foregroundStyle(Tone.warning.color) }
             Text(monitor.name).fontWeight(.semibold).lineLimit(1).truncationMode(.tail)
         }
         if map.layout.monitors.count > 1 {
@@ -1123,66 +1129,55 @@ struct BuilderToolsBar: View {
     }
 
     private func divider() -> some View {
-        Divider().frame(height: 18).padding(.horizontal, 4)
+        Divider().frame(height: 18).padding(.horizontal, 2)
     }
 
     private func state(_ on: Bool) -> String { on ? "on" : "off" }
 
-    @ViewBuilder private func tools(_ monitor: ProfileMapLayout.Monitor, labels: Bool) -> some View {
+    @ViewBuilder private func tools(_ monitor: ProfileMapLayout.Monitor) -> some View {
         let desktopCount = map.index.spaces(onDisplay: monitor.id).filter { $0.kind == .desktop }.count
         let selected = builder.selectedWindowID.flatMap { controller.window($0) }.flatMap { $0.displayUUID == monitor.id ? $0 : nil }
         HStack(spacing: 2) {
-            if let onSync {
-                Button(action: onSync) { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
-                    .buttonStyle(ToolBarButtonStyle(isOn: false))
-                    .help("Sync: read your real windows now and update the map")
-                    .accessibilityLabel("Sync with real windows")
-                divider()
-            }
             if let window = selected {
                 Button { controller.toggleFullScreen(window) } label: {
                     Label("Make full screen", systemImage: "arrow.up.left.and.arrow.down.right")
                 }
-                .buttonStyle(ToolBarButtonStyle(isOn: window.isFullScreen))
+                .buttonStyle(ToolIconStyle(isOn: window.isFullScreen))
                 .help(window.isFullScreen ? "Full screen: leave full screen (on)" : "Full screen: make the selected window full screen in a new Space (off)")
                 .accessibilityLabel("Make full screen")
                 .accessibilityValue(state(window.isFullScreen))
                 divider()
             }
-            layoutMenu(monitor, labels: labels)
             Button { controller.snapEnabled.toggle() } label: { Label("Snap", systemImage: "square.dashed.inset.filled") }
-                .buttonStyle(ToolBarButtonStyle(isOn: controller.snapEnabled))
+                .buttonStyle(ToolIconStyle(isOn: controller.snapEnabled))
                 .help("Snap: snap to Layout zones and edges, hold Option to turn off while dragging (\(state(controller.snapEnabled)))")
                 .accessibilityLabel("Snap to layout zones and edges")
                 .accessibilityValue(state(controller.snapEnabled))
-            divider()
             GridControl(controller: controller, monitorID: monitor.id)
-            divider()
             Button { controller.magnetEnabled.toggle() } label: { Label("Magnet", systemImage: "arrow.left.to.line") }
-                .buttonStyle(ToolBarButtonStyle(isOn: controller.magnetEnabled))
+                .buttonStyle(ToolIconStyle(isOn: controller.magnetEnabled))
                 .help("Magnet: snap to other windows and monitor edges while dragging or resizing, Option turns off (\(state(controller.magnetEnabled)))")
                 .accessibilityLabel("Magnet to window and monitor edges")
                 .accessibilityValue(state(controller.magnetEnabled))
             Button { controller.linkEnabled.toggle() } label: { Label("Link", systemImage: "link") }
-                .buttonStyle(ToolBarButtonStyle(isOn: controller.linkEnabled))
+                .buttonStyle(ToolIconStyle(isOn: controller.linkEnabled))
                 .help("Link: resizing an edge shared with a neighbour also resizes the neighbour (\(state(controller.linkEnabled)))")
                 .accessibilityLabel("Linked resize")
                 .accessibilityValue(state(controller.linkEnabled))
             Button { controller.allowOverlap.toggle() } label: {
                 Label("Overlap", systemImage: controller.allowOverlap ? "lock.open" : "lock")
             }
-            .buttonStyle(ToolBarButtonStyle(isOn: controller.allowOverlap))
+            .buttonStyle(ToolIconStyle(isOn: controller.allowOverlap))
             .help(controller.allowOverlap ? "Allow overlap: tiles can be placed freely (on)"
                   : "Allow overlap: tiles cannot overlap or leave the monitor while dragging and resizing (off)")
             .accessibilityLabel("Allow overlap")
             .accessibilityValue(state(controller.allowOverlap))
             divider()
-            AutoLayoutControl(controller: controller, monitor: monitor)
-            divider()
+            actionsMenu(monitor)
             Button { controller.builder.addDesktop(onDisplay: monitor.id) } label: {
-                Label("Add Desktop", systemImage: "rectangle.stack.badge.plus")
+                Label("Add Desktop", systemImage: "plus")
             }
-            .buttonStyle(ToolBarButtonStyle(isOn: false))
+            .buttonStyle(ToolIconStyle(isOn: false))
             .disabled(desktopCount >= ProfileDraftEditor.maxDesktopsPerDisplay)
             .help("Add Desktop: add a Desktop to \(monitor.name)")
             .accessibilityLabel("Add Desktop")
@@ -1192,10 +1187,33 @@ struct BuilderToolsBar: View {
         .accessibilityLabel("Edit tools for \(monitor.name)")
     }
 
-    fileprivate func layoutMenu(_ monitor: ProfileMapLayout.Monitor, labels: Bool) -> some View {
+    /// Ellipsis menu with the text-labelled actions: Sync, Layout zones, Auto layout.
+    private func actionsMenu(_ monitor: ProfileMapLayout.Monitor) -> some View {
+        Menu {
+            if let onSync {
+                Button(action: onSync) { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
+                    .help("Sync: read your real windows now and update the map")
+            }
+            layoutMenu(monitor)
+            Button { showsAutoLayout = true } label: { Label("Auto layout", systemImage: "wand.and.stars") }
+                .help("Auto layout: arrange this Desktop's windows on \(monitor.name) by how many there are")
+        } label: {
+            Image(systemName: "ellipsis").frame(width: 28, height: 28)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More: Sync, Layout, Auto layout")
+        .accessibilityLabel("More edit actions")
+        .popover(isPresented: $showsAutoLayout, arrowEdge: .bottom) {
+            AutoLayoutPopover(controller: controller, monitor: monitor, showing: $showsAutoLayout)
+        }
+    }
+
+    @ViewBuilder fileprivate func layoutMenu(_ monitor: ProfileMapLayout.Monitor) -> some View {
         let matching = controller.layoutsMatching(monitor.id)
         let active = controller.activeLayout(monitor.id)
-        return Menu {
+        Menu {
             Button { controller.chooseLayout(nil, on: monitor.id) } label: {
                 if active == nil { Label("No layout", systemImage: "checkmark") } else { Text("No layout") }
             }
@@ -1221,28 +1239,9 @@ struct BuilderToolsBar: View {
                 }
             }
         } label: {
-            HStack(spacing: 2) {
-                Image(systemName: "square.grid.2x2")
-                if labels { Text("Layout").font(.system(size: 12, weight: .medium)) }
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
-            }
-            .frame(width: labels ? nil : 40, height: 28)
+            Label("Layout", systemImage: "square.grid.2x2")
         }
-        .labelStyle(.iconOnly)
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
         .help("Layout: zones to snap to on this monitor (\(active?.name ?? "none"))")
-        .accessibilityLabel("Layout zones")
-        .sheet(isPresented: Binding(get: { controller.zoneEditorMonitor == monitor.id },
-                                    set: { if !$0 { controller.zoneEditorMonitor = nil; controller.reloadLayouts() } })) {
-            VStack(spacing: 0) {
-                LayoutEditorView(model: LayoutEditorModel())
-                Divider()
-                HStack { Spacer(); Button("Done") { controller.zoneEditorMonitor = nil; controller.reloadLayouts() }.keyboardShortcut(.defaultAction) }
-                    .padding(8)
-            }
-        }
     }
 }
 
@@ -1253,6 +1252,8 @@ struct BuilderMapCanvas: View {
     @ObservedObject var map: ProfileMapModel
     @StateObject private var controller: BuilderCanvasController
     private let builder: ProfileBuilderModel
+    @State private var toolsShown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(map: ProfileMapModel, builder: ProfileBuilderModel) {
         self.map = map
@@ -1264,11 +1265,17 @@ struct BuilderMapCanvas: View {
         ProfileMapCanvas(model: map,
                          canvasOverlay: AnyView(BuilderCanvasOverlay(controller: controller)),
                          keyOverride: { controller.handleKey($0) })
-            .safeAreaInset(edge: .top, spacing: 0) {
-                GlassEffectContainer {
-                    BuilderToolsBar(controller: controller, onSync: { Task { await builder.syncNow() } })
+            .overlay(alignment: .top) {
+                ZStack {
+                    // Drops in from the top when Edit mode opens (and leaves the same way if the host animates its removal).
+                    if toolsShown {
+                        BuilderToolsBar(controller: controller, onSync: { Task { await builder.syncNow() } })
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                 }
-                .padding(.vertical, Spacing.xs)
+                .animation(reduceMotion ? nil : Motion.spring, value: toolsShown)
             }
+            .onAppear { toolsShown = true }
+            .onDisappear { toolsShown = false }
     }
 }

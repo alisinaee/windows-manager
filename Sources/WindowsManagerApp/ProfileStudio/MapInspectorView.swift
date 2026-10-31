@@ -27,7 +27,7 @@ struct MapInspectorView: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Palette.canvas)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Inspector")
     }
@@ -114,7 +114,7 @@ struct MapInspectorView: View {
                             Image(nsImage: AppIconCache.icon(for: member.app)).resizable().frame(width: 16, height: 16)
                             Text(RestoreStepText.quoted(member.app.name, member.title)).font(.callout).lineLimit(2)
                             Spacer(minLength: 0)
-                            if isSelected { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                            if isSelected { Image(systemName: "checkmark").foregroundStyle(Palette.accent) }
                         }
                         .contentShape(Rectangle())
                     }
@@ -153,8 +153,8 @@ struct MapInspectorView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .windowBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08)))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Status: \(text)" + (reason.map { ". \($0)" } ?? ""))
     }

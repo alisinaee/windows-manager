@@ -11,6 +11,7 @@ struct SpaceStripView: View {
     let spaceName: (ProfileSpaceIndex.Space) -> String
     let onSelect: (String) -> Void
     var metrics = MapMetrics()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ForEach(thumbnails) { thumb in
@@ -19,8 +20,10 @@ struct SpaceStripView: View {
                                    windows: windows, missing: missingStatus(for: space),
                                    name: spaceName(space), metrics: metrics, onSelect: { onSelect(thumb.id) })
                     .offset(x: thumb.rect.minX, y: thumb.rect.minY)
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
             }
         }
+        .animation(reduceMotion ? nil : Motion.spring, value: thumbnails.map(\.id))
     }
 
     private func missingStatus(for space: ProfileSpaceIndex.Space) -> SpaceLiveStatus? {
@@ -38,16 +41,17 @@ struct SpaceThumbnailView: View {
     let name: String
     var metrics = MapMetrics()
     let onSelect: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 4, style: .continuous) }
 
     var body: some View {
         Button(action: onSelect) {
             ZStack {
-                shape.fill(Color(nsColor: .windowBackgroundColor))
+                shape.fill(Palette.surface)
                 miniPicture
                 shape.strokeBorder(
-                    isSelected ? Color.accentColor : Color(nsColor: .separatorColor),
+                    isSelected ? Palette.accent : Color.primary.opacity(0.2),
                     style: StrokeStyle(lineWidth: isSelected ? 2 : 1, dash: missing == nil ? [] : [3, 2]))
                 HStack(spacing: 2) {
                     if space.kind == .fullScreen {
@@ -66,15 +70,16 @@ struct SpaceThumbnailView: View {
                             .foregroundStyle(.primary)
                             .minimumScaleFactor(0.7).lineLimit(1)
                             .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(.regularMaterial, in: Capsule())
+                            .glassEffect(.regular, in: Capsule())
                     }
                     if missing != nil {
-                        Image(systemName: "circle.dashed").font(.system(size: max(metrics.font(10), 11))).foregroundStyle(.orange)
+                        Image(systemName: "circle.dashed").font(.system(size: max(metrics.font(10), 11))).foregroundStyle(Tone.warning.color)
                     }
                 }
             }
             .frame(width: max(rect.width, 1), height: max(rect.height, 1))
             .contentShape(shape)
+            .animation(reduceMotion ? nil : Motion.spring, value: isSelected)
         }
         .buttonStyle(.plain)
         .help(helpText)

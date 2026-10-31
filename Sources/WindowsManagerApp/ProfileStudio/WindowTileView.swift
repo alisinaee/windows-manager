@@ -22,15 +22,18 @@ enum AppIconCache {
     }
 }
 
-/// Stable per-app tint: system colors only, so light and dark mode both work. Labels stay `.primary`.
+/// Stable per-app tint: alternates the accent and teal palette colors, warn for terminal-like apps.
+/// Palette colors adapt to light and dark mode. Labels stay `.primary`.
 enum AppTint {
-    private static let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .brown]
+    private static let terminalHints = ["terminal", "iterm", "ghostty", "warp", "kitty", "alacritty", "wezterm", "hyper"]
 
     static func color(for app: AppRef) -> Color {
         let text = app.bundleID ?? app.name
+        let lowered = text.lowercased()
+        if terminalHints.contains(where: { lowered.contains($0) }) { return Palette.warn }
         var hash: UInt64 = 14695981039346656037   // FNV-1a, so the choice is stable across launches
         for byte in text.utf8 { hash = (hash ^ UInt64(byte)) &* 1099511628211 }
-        return palette[Int(hash % UInt64(palette.count))]
+        return hash % 2 == 0 ? Palette.accent : Palette.teal
     }
 }
 
@@ -63,10 +66,10 @@ enum WindowStatusStyle {
 
     static func color(_ status: WindowLiveStatus) -> Color {
         switch status {
-        case .inPlace: return .green
-        case .willMove: return .blue
-        case .willLaunch: return .purple
-        case .notFound: return .orange
+        case .inPlace: return Tone.success.color
+        case .willMove: return Tone.info.color
+        case .willLaunch: return Palette.accent
+        case .notFound: return Tone.warning.color
         case .notRestored: return .secondary
         }
     }
@@ -95,6 +98,7 @@ struct WindowTileView: View {
     let locationText: String
     let onSelect: () -> Void
     let onHover: (Bool) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var tint: Color { AppTint.color(for: window.app) }
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: tile.isFullScreen ? 4 : 6, style: .continuous) }
@@ -103,6 +107,7 @@ struct WindowTileView: View {
         let size = tile.rect.size
         let roomy = size.width >= 80 && size.height >= 40
         ZStack(alignment: .topLeading) {
+            shape.fill(Palette.surface)
             shape.fill(tint.opacity(tile.isRestored ? 0.22 : 0.10))
             if !tile.isRestored {
                 HatchShape().stroke(tint.opacity(0.4), lineWidth: 1).clipShape(shape)
@@ -112,9 +117,6 @@ struct WindowTileView: View {
                                                   dash: tile.isOnAllDesktops ? [4, 3] : []))
             if isHovered && !isSelected {
                 shape.strokeBorder(Color.primary.opacity(0.5), lineWidth: 2)
-            }
-            if isSelected {
-                shape.strokeBorder(Color.accentColor, lineWidth: 3)
             }
             if size.height >= 110, min(size.width, size.height) >= 56 {
                 let side = min(size.width, size.height) * 0.5
@@ -135,7 +137,7 @@ struct WindowTileView: View {
                     .font(.system(size: metrics.font(12), weight: .semibold))
                     .foregroundStyle(WindowStatusStyle.color(status))
                     .padding(3)
-                    .background(.regularMaterial, in: Circle())
+                    .glassEffect(.regular, in: Circle())
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(3)
             }
@@ -155,7 +157,7 @@ struct WindowTileView: View {
                 Text("\(Int(f.width))\u{00D7}\(Int(f.height)) at \(Int(f.minX)), \(Int(f.minY))")
                     .font(.system(size: metrics.font(10), weight: .medium)).monospacedDigit()
                     .padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(.regularMaterial, in: Capsule())
+                    .glassEffect(.regular, in: Capsule())
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .padding(4)
                     .allowsHitTesting(false)
@@ -165,12 +167,23 @@ struct WindowTileView: View {
                 Text(tile.isSplitHalf ? "Split View" : "Full screen")
                     .font(.system(size: metrics.font(11), weight: .medium))
                     .padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(.regularMaterial, in: Capsule())
+                    .glassEffect(.regular, in: Capsule())
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .padding(5)
             }
         }
         .frame(width: max(size.width, 1), height: max(size.height, 1))
+        .overlay {
+            // 2pt accent outline floating 2pt outside the tile; springs in and out with the selection.
+            RoundedRectangle(cornerRadius: (tile.isFullScreen ? 4 : 6) + 4, style: .continuous)
+                .inset(by: -4)
+                .strokeBorder(Palette.accent, lineWidth: 2)
+                .opacity(isSelected ? 1 : 0)
+                .scaleEffect(isSelected ? 1 : 0.96)
+        }
+        .scaleEffect(isSelected ? 1.015 : 1)
+        .shadow(color: isSelected ? Palette.accent.opacity(0.35) : .clear, radius: isSelected ? 10 : 0)
+        .animation(reduceMotion ? nil : Motion.spring, value: isSelected)
         .contentShape(shape)
         .onTapGesture(perform: onSelect)
         .onHover(perform: onHover)

@@ -49,7 +49,7 @@ struct LayoutGridControls: View {
             if let message = model.message {
                 Text(message)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Tone.danger.color)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

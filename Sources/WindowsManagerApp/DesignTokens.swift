@@ -21,16 +21,47 @@ enum Radius {
     static let card: CGFloat = large
 }
 
+/// Indigo + teal palette. Each colour adapts to light and dark appearance; use these instead of literals.
+enum Palette {
+    private static func dynamic(light: UInt32, dark: UInt32) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let hex = isDark ? dark : light
+            return NSColor(
+                srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255,
+                alpha: 1)
+        })
+    }
+
+    static let accent = dynamic(light: 0x5B6CFF, dark: 0x8290FF)
+    static let teal = dynamic(light: 0x1FBFA3, dark: 0x3DDCBF)
+    static let warn = dynamic(light: 0xF5A524, dark: 0xF5A524)
+    static let danger = dynamic(light: 0xF2557A, dark: 0xFF7A99)
+    static let surface = dynamic(light: 0xFFFFFF, dark: 0x161821)
+    static let canvas = dynamic(light: 0xF3F4F9, dark: 0x0D0E14)
+    /// Soft accent wash for selected rows and toggled-on tools.
+    static var accentWash: Color { accent.opacity(0.16) }
+}
+
+/// Shared springs. Short and slightly bouncy; `Animation.wm(_:)` still returns nil for Reduce Motion.
+enum Motion {
+    static let spring = Animation.spring(response: 0.42, dampingFraction: 0.72)
+    static let smooth = Animation.smooth(duration: 0.3)
+    static let quick = Animation.snappy(duration: 0.2)
+}
+
 /// Semantic meaning of a message or status, mapped to system colors and symbols.
 enum Tone {
     case info, success, warning, danger, neutral
 
     var color: Color {
         switch self {
-        case .info: .accentColor
-        case .success: .green
-        case .warning: .orange
-        case .danger: .red
+        case .info: Palette.accent
+        case .success: Palette.teal
+        case .warning: Palette.warn
+        case .danger: Palette.danger
         case .neutral: .secondary
         }
     }
@@ -123,6 +154,6 @@ extension Animation {
     /// Returns `nil` (no animation) when Reduce Motion is on.
     /// Pass `@Environment(\.accessibilityReduceMotion)`.
     static func wm(_ reduceMotion: Bool) -> Animation? {
-        reduceMotion ? nil : .easeInOut(duration: 0.2)
+        reduceMotion ? nil : Motion.smooth
     }
 }

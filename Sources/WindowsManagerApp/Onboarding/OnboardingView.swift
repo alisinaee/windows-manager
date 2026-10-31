@@ -80,6 +80,7 @@ struct OnboardingView: View {
             footer
         }
         .frame(width: 540, height: 500)
+        .tint(Palette.accent)
         // Live re-check: the user flips the switch in System Settings and this window follows.
         .task {
             while !Task.isCancelled {
@@ -111,7 +112,7 @@ struct OnboardingView: View {
             HStack(spacing: 6) {
                 ForEach(OnboardingStep.allCases, id: \.self) { step in
                     Capsule()
-                        .fill(step.rawValue <= model.step.rawValue ? Color.accentColor : Color.secondary.opacity(0.3))
+                        .fill(step.rawValue <= model.step.rawValue ? Palette.accent : Color.secondary.opacity(0.3))
                         .frame(width: 22, height: 5)
                 }
             }
@@ -235,7 +236,7 @@ struct OnboardingView: View {
         VStack(spacing: 14) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 52))
-                .foregroundStyle(.green)
+                .foregroundStyle(Tone.success.color)
             Text("You're ready to go")
                 .font(.title.bold())
             Text("Windows Manager lives in the menu bar. You can open this guide again any time from the menu with Setup.")
@@ -302,7 +303,7 @@ private struct StatusLabel: View {
             Text(text)
         } icon: {
             Image(systemName: kind == .good ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(kind == .good ? Color.green : Color.orange)
+                .foregroundStyle(kind == .good ? Tone.success.color : Tone.warning.color)
         }
     }
 }

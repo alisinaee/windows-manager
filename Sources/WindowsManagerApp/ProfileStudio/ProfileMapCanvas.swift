@@ -58,6 +58,10 @@ struct ProfileMapCanvas: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
     @State private var showsLegend = false
+    @State private var hintDismissed = false
+
+    /// Spring for structural changes (tiles, stacks, Desktops); nil under Reduce Motion.
+    private var spring: Animation? { reduceMotion ? nil : Motion.spring }
 
     init(model: ProfileMapModel, onSync: (() -> Void)? = nil, canvasOverlay: AnyView? = nil, keyOverride: ((KeyPress) -> Bool)? = nil) {
         self.onSync = onSync
@@ -93,21 +97,23 @@ struct ProfileMapCanvas: View {
                 .background(CanvasNavigator(model: model))
                 .overlay(alignment: .bottomTrailing) { zoomCluster }
                 .overlay(alignment: .bottomLeading) {
+                    // Short hint; hides on narrow canvases (so it never meets the zoom cluster) and after the first interaction.
                     if keyOverride != nil {
-                        Text("Drag a tile to move it, its handles to resize. Lock = fixed-size window.")
-                            .font(.wmCaption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                        Text("Drag to move, handles to resize")
+                            .font(.wmCaption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
                             .padding(.horizontal, Spacing.s).padding(.vertical, Spacing.xs)
-                            .background(.ultraThinMaterial, in: Capsule())
+                            .glassEffect(.regular, in: Capsule())
                             .padding(Spacing.m)
-                            .frame(maxWidth: max(0, geo.size.width - 460), alignment: .leading)
+                            .opacity(geo.size.width < 520 || hintDismissed ? 0 : 1)
+                            .animation(Animation.wm(reduceMotion), value: hintDismissed)
                             .allowsHitTesting(false)
-                            .help("Edit mode: drag tiles to move, drag handles to resize. A lock badge on a tile means the app does not allow resizing.")
+                            .accessibilityHidden(true)
                     }
                 }
                 .onAppear { model.setViewport(geo.size) }
                 .onChange(of: geo.size) { _, size in model.setViewport(size) }
             }
-            .background(Color(nsColor: .underPageBackgroundColor))
+            .background(Palette.canvas)
             if !model.index.tray.isEmpty {
                 Divider()
                 trayRow
@@ -115,6 +121,8 @@ struct ProfileMapCanvas: View {
         }
         .focusable()
         .focused($focused)
+        .onChange(of: model.selectedWindowID) { _, _ in hintDismissed = true }
+        .onChange(of: model.zoom) { _, _ in hintDismissed = true }
         .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .tab, .delete, .deleteForward, .escape, .return,
                            "1", "2", "3", "4", "5", "6", "7", "8", "9"]) { press in
             if keyOverride?(press) == true { return .handled }
@@ -154,41 +162,43 @@ struct ProfileMapCanvas: View {
         .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.xs + 2)
     }
 
-    /// Floating zoom / Fit / legend cluster over the canvas, bottom right.
+    /// Compact glass zoom cluster, bottom right: minus, percentage (click = fit), plus. Slider-free; the rest lives in the ellipsis menu.
     private var zoomCluster: some View {
-        HStack(spacing: Spacing.s) {
-            Button { model.zoomBy(1 / 1.25) } label: { Image(systemName: "minus.magnifyingglass") }
-                .accessibilityLabel("Zoom out").help("Zoom out (Cmd+-)")
-            Slider(value: Binding(get: { model.zoom }, set: { model.setZoom($0) }), in: CanvasViewport.zoomRange)
-                .frame(width: 100)
-                .accessibilityLabel("Zoom")
-                .accessibilityValue("\(Int((model.zoom * 100).rounded())) percent")
-                .help("Hold Space and drag to pan, pinch or Cmd+scroll to zoom")
-            Button { model.zoomBy(1.25) } label: { Image(systemName: "plus.magnifyingglass") }
-                .accessibilityLabel("Zoom in").help("Zoom in (Cmd+=)")
-            Button { model.actualSize() } label: {
-                Text("\(Int((model.zoom * 100).rounded()))%")
-                    .font(.wmCaption).monospacedDigit().foregroundStyle(.secondary)
-                    .frame(width: 40, alignment: .trailing)
-            }
-            .accessibilityLabel("Reset zoom to 100 percent").help("Reset zoom to 100% (Cmd+0)")
-            Button { model.fit() } label: { Text("Fit").lineLimit(1).fixedSize() }
-                .help("Fit the map to the window (Cmd+1)")
-            Button { model.zoomToSelection() } label: { Image(systemName: "scope") }
-                .accessibilityLabel("Zoom to selection").help("Zoom to the selected window or Space (Cmd+2)")
-            Divider().frame(height: 16)
-            Button { showsLegend.toggle() } label: { Image(systemName: "info.circle") }
-                .accessibilityLabel("Legend").help("Show what the symbols on the map mean")
-                .popover(isPresented: $showsLegend, arrowEdge: .top) {
-                    MapLegendView(showsStatus: model.status != nil, showsStageStrip: model.usesStageManager)
+        GlassEffectContainer {
+            HStack(spacing: Spacing.xs) {
+                Button { model.zoomBy(1 / 1.25) } label: { Image(systemName: "minus") }
+                    .accessibilityLabel("Zoom out").help("Zoom out (Cmd+-)")
+                Button { model.fit() } label: {
+                    Text("\(Int((model.zoom * 100).rounded()))%")
+                        .font(.wmCaption).monospacedDigit()
+                        .contentTransition(.numericText())
+                        .animation(Animation.wm(reduceMotion), value: model.zoom)
+                        .frame(minWidth: 40)
                 }
+                .accessibilityLabel("Zoom \(Int((model.zoom * 100).rounded())) percent, fit map to window")
+                .help("Fit the map to the window (Cmd+1). Hold Space and drag to pan, pinch or Cmd+scroll to zoom")
+                Button { model.zoomBy(1.25) } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("Zoom in").help("Zoom in (Cmd+=)")
+                Menu {
+                    Button("Fit to window") { model.fit() }
+                    Button("Actual size (100%)") { model.actualSize() }
+                    Button("Zoom to selection") { model.zoomToSelection() }
+                    Divider()
+                    Button("Legend…") { showsLegend.toggle() }
+                } label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .accessibilityLabel("More map options").help("Fit, actual size, zoom to selection, legend")
+                    .popover(isPresented: $showsLegend, arrowEdge: .top) {
+                        MapLegendView(showsStatus: model.status != nil, showsStageStrip: model.usesStageManager)
+                    }
+            }
+            .buttonStyle(.borderless)
+            .padding(.horizontal, Spacing.s).padding(.vertical, Spacing.xs)
+            .modifier(FloatingGlass())
         }
-        .buttonStyle(.borderless)
-        .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.s)
-        .modifier(FloatingGlass())
         .padding(Spacing.m)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Map zoom and legend")
+        .accessibilityLabel("Map zoom")
     }
 
     /// The model's summary does not count parked windows, so the canvas adds them when Compare data is present.
@@ -234,14 +244,16 @@ struct ProfileMapCanvas: View {
         let stageLane = model.usesStageManager ? ProfileMapModel.stageLaneRect(for: monitor) : nil
 
         return ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(focusedHere ? Color.accentColor.opacity(0.6) : Color(nsColor: .separatorColor), lineWidth: 1.5))
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Palette.surface)
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(focusedHere ? Palette.accent.opacity(0.6) : Color.primary.opacity(0.08),
+                                  lineWidth: focusedHere ? 1.5 : 1))
+                .shadow(color: Color.black.opacity(0.12), radius: 24, x: 0, y: 10)
                 .frame(width: monitor.frame.width, height: monitor.frame.height)
                 .offset(x: monitor.frame.minX, y: monitor.frame.minY)
-            Rectangle().fill(Color(nsColor: .windowBackgroundColor))
-                .overlay(Rectangle().strokeBorder(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 0.5))
+            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.canvas.opacity(0.6))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
                 .frame(width: monitor.contentRect.width, height: monitor.contentRect.height)
                 .offset(x: monitor.contentRect.minX, y: monitor.contentRect.minY)
             monitorTitle(monitor, shownLabel: shownLabel, showsStageBadge: stageLane != nil)
@@ -254,6 +266,7 @@ struct ProfileMapCanvas: View {
                 if let window = windowsByID[tile.windowID] {
                     tileView(window, tile: tile, monitor: monitor, shown: shown, among: tiles)
                         .offset(x: tile.rect.minX, y: tile.rect.minY)
+                        .transition(.scale(scale: 0.92).combined(with: .opacity))
                 }
             }
             if model.collapsesStacks, let id = model.fannedStackID, let stack = model.stack(withID: id),
@@ -263,6 +276,7 @@ struct ProfileMapCanvas: View {
                              windows: model.orderedMembers(of: stack).compactMap { windowsByID[$0] },
                              selectedID: model.selectedWindowID, anchor: front.rect, bounds: monitor.frame,
                              metrics: metrics, onSelect: { model.selectWindow($0); focused = true })
+                    .transition(.scale(scale: 0.92, anchor: .top).combined(with: .opacity))
             }
             if tiles.isEmpty {
                 Text("No windows on this display")
@@ -288,6 +302,9 @@ struct ProfileMapCanvas: View {
                            onSelect: { model.selectSpace($0); focused = true }, metrics: metrics)
         }
         .frame(width: layout.canvasSize.width, height: layout.canvasSize.height, alignment: .topLeading)
+        .animation(spring, value: tiles.map(\.id))
+        .animation(spring, value: thumbs.map(\.id))
+        .animation(spring, value: model.fannedStackID)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(monitor.name)\(monitor.isMain ? ", main" : ""), showing \(shownLabel ?? "no Space")"
             + (spaceCount > 0 ? " of \(spaceCount) Spaces" : "") + (stageLane != nil ? ", Stage Manager" : ""))
@@ -413,7 +430,8 @@ struct ProfileMapCanvas: View {
                             }
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(AppTint.color(for: window.app).opacity(0.18), in: Capsule())
-                            .overlay(Capsule().strokeBorder(selected ? Color.accentColor : Color.clear, lineWidth: 2))
+                            .overlay(Capsule().strokeBorder(selected ? Palette.accent : Color.clear, lineWidth: 2))
+                            .animation(spring, value: selected)
                         }
                         .buttonStyle(.plain)
                         .help("Select \(trayText(window)) on the map")

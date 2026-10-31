@@ -10,7 +10,7 @@ struct GeneralSettingsTab: View {
             Section("Accessibility") {
                 LabeledContent("Status") {
                     Text(appState.isAccessibilityTrusted ? "Allowed" : "Not allowed")
-                        .foregroundStyle(appState.isAccessibilityTrusted ? Color.green : Color.orange)
+                        .foregroundStyle(appState.isAccessibilityTrusted ? Tone.success.color : Tone.warning.color)
                 }
                 if !appState.isAccessibilityTrusted {
                     Button("Grant Accessibility Access…") { appState.requestAccessibility() }

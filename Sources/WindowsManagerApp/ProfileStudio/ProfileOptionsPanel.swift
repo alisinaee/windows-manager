@@ -116,7 +116,7 @@ struct ProfileOptionsPanel: View {
                 get: { builder.profile?.options[keyPath: keyPath] ?? false },
                 set: { value in builder.setOptions { $0[keyPath: keyPath] = value } }))
                 .toggleStyle(.switch)
-                .tint(.accentColor)
+                .tint(Palette.accent)
                 .help("Turn \(title) on or off")
             Text(caption)
                 .font(.caption).foregroundStyle(.secondary)

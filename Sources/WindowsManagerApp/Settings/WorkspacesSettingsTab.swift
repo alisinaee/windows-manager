@@ -96,7 +96,7 @@ struct WorkspacesSettingsTab: View {
                     Toggle("Follow Cmd+Tab and Dock clicks", isOn: $workspaces.followAppSwitch)
                 }
                 if let text = workspaces.statusText {
-                    Text(text).font(.footnote).foregroundStyle(.orange)
+                    Text(text).font(.footnote).foregroundStyle(Tone.warning.color)
                 }
             }
             if workspaces.isEnabled {
@@ -114,7 +114,7 @@ struct WorkspacesSettingsTab: View {
             Section("Snapping") {
                 Toggle("Snap windows into layout zones", isOn: $snap.settings.enabled)
                 if let hint = snapHint {
-                    Text(hint).font(.footnote).foregroundStyle(.orange)
+                    Text(hint).font(.footnote).foregroundStyle(Tone.warning.color)
                 }
                 Picker("Modifier key", selection: $snap.settings.modifier) {
                     Text("Option").tag(SnapModifier.option)

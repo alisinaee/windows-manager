@@ -165,7 +165,7 @@ struct CanvasGridBackground: View {
                 }
                 y += spacing
             }
-            context.fill(path, with: .color(.primary.opacity(0.1)))
+            context.fill(path, with: .color(.primary.opacity(0.06)))
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)

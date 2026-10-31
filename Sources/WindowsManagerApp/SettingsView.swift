@@ -54,6 +54,7 @@ struct SettingsView: View {
                 .navigationTitle((SettingsPane(rawValue: selectedRaw) ?? .general).title)
         }
         .frame(minWidth: 720, idealWidth: 820, minHeight: 480, idealHeight: 540)
+        .tint(Palette.accent)
     }
 
     @ViewBuilder

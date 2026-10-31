@@ -172,12 +172,25 @@ struct LayoutEditorView: View {
                     .accessibilityLabel("Refresh running apps")
                     .help("Refresh running apps")
             }
-            Text("Drag an app onto a zone").font(.footnote).foregroundStyle(.secondary)
+            Text("Drag an app onto a zone, or use its menu").font(.footnote).foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(model.runningApps) { app in
-                        AppChip(title: app.name)
-                            .draggable(app.bundleID)
+                        HStack(spacing: 2) {
+                            AppChip(title: app.name)
+                                .draggable(app.bundleID)
+                            // Keyboard and VoiceOver route for what dragging does.
+                            Menu {
+                                ForEach(model.selected?.zones ?? []) { zone in
+                                    Button(zone.name) { model.assign(bundleID: app.bundleID, to: zone.id) }
+                                }
+                            } label: { Image(systemName: "plus.circle") }
+                                .menuStyle(.borderlessButton)
+                                .fixedSize()
+                                .disabled(model.selected?.zones.isEmpty ?? true)
+                                .accessibilityLabel("Assign \(app.name) to a zone")
+                                .help("Assign \(app.name) to a zone")
+                        }
                     }
                 }
             }
@@ -248,8 +261,8 @@ private struct AppChip: View {
             .font(.callout)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(Capsule().fill(Color.accentColor.opacity(0.18)))
-            .overlay(Capsule().stroke(Color.accentColor.opacity(0.5)))
+            .background(Capsule().fill(Palette.accent.opacity(0.18)))
+            .overlay(Capsule().stroke(Palette.accent.opacity(0.5)))
     }
 }
 
@@ -258,6 +271,7 @@ private struct MiniMap: View {
     @ObservedObject var model: LayoutEditorModel
     let layout: WMCore.Layout
     let display: DisplayIdentity
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let aspect = display.frame.height > 0 ? display.frame.width / display.frame.height : 16.0 / 10.0
@@ -265,8 +279,8 @@ private struct MiniMap: View {
             let size = fit(aspect: aspect, in: proxy.size)
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.black.opacity(0.08))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary, lineWidth: 2))
+                    .fill(Palette.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.2), lineWidth: 2))
                 ForEach(layout.zones) { zone in
                     zoneView(zone, size: size)
                 }
@@ -297,8 +311,9 @@ private struct MiniMap: View {
         let selected = model.selectedZoneIDs.contains(zone.id)
         return ZStack(alignment: .topLeading) {
             Rectangle()
-                .fill(Color.accentColor.opacity(selected ? 0.30 : 0.15))
-                .overlay(Rectangle().stroke(Color.accentColor, lineWidth: selected ? 2 : 1))
+                .fill(Palette.accent.opacity(selected ? 0.30 : 0.15))
+                .overlay(Rectangle().stroke(Palette.accent, lineWidth: selected ? 2 : 1))
+                .animation(reduceMotion ? nil : Motion.spring, value: selected)
             VStack(alignment: .leading, spacing: 2) {
                 Text(zone.name).font(.caption.bold()).lineLimit(1)
                 ForEach(layout.apps(in: zone.id), id: \.self) { bundleID in
@@ -312,8 +327,8 @@ private struct MiniMap: View {
                     .font(.caption2)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.white.opacity(0.7)))
-                    .foregroundStyle(Color.black)
+                    .background(Capsule().fill(Palette.surface.opacity(0.85)))
+                    .foregroundStyle(Color.primary)
                 }
             }
             .padding(5)
@@ -325,6 +340,11 @@ private struct MiniMap: View {
             let flags = NSEvent.modifierFlags
             model.tapZone(zone.id, extend: flags.contains(.shift) || flags.contains(.command))
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Zone \(zone.name)")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction(named: "Select zone") { model.tapZone(zone.id, extend: false) }
+        .accessibilityAction(named: "Add to selection") { model.tapZone(zone.id, extend: true) }
         .offset(x: r.x * size.width, y: r.y * size.height)
     }
 

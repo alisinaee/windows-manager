@@ -128,9 +128,9 @@ struct CaptureReviewPanel: View {
                 .frame(minHeight: 160, maxHeight: .infinity)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.06)))
             }
-            HStack { Spacer(); Button("Done", action: onDone).keyboardShortcut(.defaultAction).help("Close the review (Return)") }
+            HStack { Spacer(); Button("Done", action: onDone).buttonStyle(.glassProminent).keyboardShortcut(.defaultAction).help("Close the review (Return)") }
         }
-        .padding(16)
+        .padding(20)
         .frame(width: 380, height: 420)
     }
 
@@ -184,7 +184,7 @@ struct CaptureReviewPanel: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: state == .on ? "checkmark.square.fill" : state == .mixed ? "minus.square.fill" : "square")
-                    .foregroundStyle(state == .off ? Color.secondary : Color.accentColor)
+                    .foregroundStyle(state == .off ? Color.secondary : Palette.accent)
                 if let icon { Image(systemName: icon).foregroundStyle(.secondary) }
                 Text(title).fontWeight(bold ? .semibold : .regular).lineLimit(1).truncationMode(.tail)
                 if let detail {

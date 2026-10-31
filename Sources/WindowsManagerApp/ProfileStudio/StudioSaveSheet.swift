@@ -41,20 +41,20 @@ struct StudioCopyPickerSheet: View {
                     if let id = local.copySourceID ?? profiles.first?.id { onCopy(id) }
                 }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(profiles.isEmpty)
                 .help("Open a draft copy of the chosen profile (Return)")
             }
         }
-        .padding(Spacing.xl)
+        .padding(20)
         .frame(width: 420)
     }
 }
 
 private final class NameDraft: ObservableObject {
     @Published var text: String?
-    /// How a name clash is resolved: nil = not chosen yet.
-    @Published var choice: ConflictChoice?
+    /// How a name clash is resolved; defaults to the non-destructive "keep both".
+    @Published var choice: ConflictChoice? = .keepBoth
 }
 
 private enum ConflictChoice { case replace, keepBoth }
@@ -90,7 +90,7 @@ struct StudioSaveSheet: View {
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(save)
                 .help("Name the profile (Return saves)")
-                .onChange(of: shownName) { _, _ in draft.choice = nil }
+                .onChange(of: shownName) { _, _ in draft.choice = .keepBoth }
 
             if let clash = conflict {
                 VStack(alignment: .leading, spacing: Spacing.s) {
@@ -107,44 +107,51 @@ struct StudioSaveSheet: View {
             }
 
             if shownName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                issueRow("exclamationmark.octagon.fill", .red, "Give the profile a name.")
+                issueRow("exclamationmark.octagon.fill", Tone.danger.color, "Give the profile a name.")
             }
-            ScrollView {
-                VStack(alignment: .leading, spacing: Spacing.s) {
-                    ForEach(Array(errors.enumerated()), id: \.offset) { issueRow("exclamationmark.octagon.fill", .red, $0.element.message) }
-                    ForEach(Array(builder.launchIssues.enumerated()), id: \.offset) { issueRow("exclamationmark.triangle.fill", .orange, $0.element.message) }
-                    ForEach(Array(warnings.enumerated()), id: \.offset) { issueRow("exclamationmark.triangle.fill", .orange, $0.element.message) }
-                    if errors.isEmpty, warnings.isEmpty, builder.launchIssues.isEmpty, conflict == nil, !trimmedName.isEmpty {
-                        issueRow("checkmark.circle.fill", .green, "No problems found.")
-                    }
+            VStack(alignment: .leading, spacing: Spacing.s) {
+                ForEach(Array(errors.enumerated()), id: \.offset) { issueRow("exclamationmark.octagon.fill", Tone.danger.color, $0.element.message) }
+                ForEach(Array(builder.launchIssues.enumerated()), id: \.offset) { issueRow("exclamationmark.triangle.fill", Tone.warning.color, $0.element.message) }
+                ForEach(Array(warnings.enumerated()), id: \.offset) { issueRow("exclamationmark.triangle.fill", Tone.warning.color, $0.element.message) }
+                if errors.isEmpty, warnings.isEmpty, builder.launchIssues.isEmpty, conflict == nil, !trimmedName.isEmpty {
+                    issueRow("checkmark.circle.fill", Tone.success.color, "No problems found.")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(minHeight: 60, maxHeight: 220)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if !errors.isEmpty {
                 Text("Fix the \(errors.count) problem\(errors.count == 1 ? "" : "s") marked in red to save. Warnings never block saving.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let message = builder.lastError {
-                Text(message).font(.caption).foregroundStyle(.red)
+                Text(message).font(.caption).foregroundStyle(Tone.danger.color)
             }
 
             HStack {
+                if let reason = saveDisabledReason {
+                    Text(reason).font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction)
                     .help("Close without saving (Esc)")
                 Button("Save", action: save)
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.blue)
+                    .buttonStyle(.glassProminent)
                     .disabled(builder.blocksSaving || trimmedName.isEmpty || needsChoice)
                     .help(builder.blocksSaving ? "Fix the problems marked in red first"
                           : needsChoice ? "Choose Replace or Keep both, or change the name" : "Save the profile (Return)")
             }
         }
-        .padding(Spacing.xl)
-        .frame(width: 480)
+        .padding(20)
+        .frame(minWidth: 420, idealWidth: 480)
+    }
+
+    /// Why Save is disabled, shown next to the button (nil when it is enabled).
+    private var saveDisabledReason: String? {
+        if trimmedName.isEmpty { return "Give the profile a name to save." }
+        if builder.blocksSaving { return "Fix the problems marked in red to save." }
+        if needsChoice { return "Choose Replace or Keep both, or change the name." }
+        return nil
     }
 
     private func save() {
@@ -162,4 +169,21 @@ struct StudioSaveSheet: View {
         }
         .accessibilityElement(children: .combine)
     }
+}
+
+/// Sheet content fades in as the system sheet transition runs; Reduce Motion shows it at once.
+private struct SheetFadeIn: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown || reduceMotion ? 1 : 0)
+            .onAppear { withAnimation(reduceMotion ? nil : Motion.smooth) { shown = true } }
+    }
+}
+
+extension View {
+    /// Fade a sheet's content in on appear.
+    func sheetFadeIn() -> some View { modifier(SheetFadeIn()) }
 }

@@ -9,22 +9,27 @@ struct TileStackView<Front: View>: View {
     /// Draw the edges only when the stack is collapsed; in Edit mode every window keeps its own tile.
     let showsEdges: Bool
     @ViewBuilder let front: () -> Front
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             if showsEdges {
                 ForEach([2, 1], id: \.self) { depth in
+                    // Opaque base under the tint so each layer's outline reads clearly against the one in front.
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(tint.opacity(0.14))
+                        .fill(Palette.surface)
+                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(tint.opacity(0.18)))
                         .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(tint.opacity(0.7), lineWidth: 1))
+                            .strokeBorder(tint.opacity(0.9), lineWidth: 1.5))
                         .frame(width: max(size.width, 1), height: max(size.height, 1))
-                        .offset(x: CGFloat(depth) * 5, y: CGFloat(depth) * 5)
+                        .offset(x: CGFloat(depth) * 7, y: CGFloat(depth) * 7)
+                        .transition(.scale(scale: 0.92).combined(with: .opacity))
                         .accessibilityHidden(true)
                 }
             }
             front()
         }
+        .animation(reduceMotion ? nil : Motion.spring, value: showsEdges)
         .frame(width: max(size.width, 1), height: max(size.height, 1), alignment: .topLeading)
     }
 }
@@ -62,8 +67,7 @@ struct StackBadge: View {
             .labelStyle(.titleAndIcon).lineLimit(1).fixedSize()
             .font(.system(size: metrics.font(11), weight: .bold)).monospacedDigit()
             .padding(.horizontal, 6).padding(.vertical, 1)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.35), lineWidth: 1))
+            .glassEffect(.regular, in: Capsule())
         Group {
             if isInteractive {
                 Button(action: onCycle) { badge }
@@ -111,7 +115,7 @@ struct StackFanView: View {
             }
         }
         .padding(2)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .offset(x: x - 2, y: y - 2)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(windows.first?.app.name ?? "Windows") \u{00D7}\(stack.count): \(stack.count) windows overlap here")
@@ -131,7 +135,7 @@ struct StackFanView: View {
             .frame(width: width, height: cardHeight)
             .background(tint.opacity(0.2), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(selected ? Color.accentColor : tint.opacity(0.8), lineWidth: selected ? 3 : 1))
+                .strokeBorder(selected ? Palette.accent : tint.opacity(0.8), lineWidth: selected ? 3 : 1))
         }
         .buttonStyle(.plain)
         .help("\(window.app.name) \"\(window.title ?? "")\": window \(position) of \(stack.count). Click to bring to the front")

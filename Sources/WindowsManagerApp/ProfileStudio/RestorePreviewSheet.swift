@@ -128,7 +128,7 @@ struct RunStatusLine: View {
             .accessibilityLabel("Running: \(text)")
         case .failure(let text):
             Label(text, systemImage: "exclamationmark.triangle")
-                .font(.callout).foregroundStyle(.orange).lineLimit(2)
+                .font(.callout).foregroundStyle(Tone.warning.color).lineLimit(2)
                 .accessibilityLabel("Failed: \(text)")
         case .success(let text):
             Label(text, systemImage: "checkmark.circle")
@@ -235,12 +235,10 @@ struct RestorePreviewSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             content
-            Divider()
             footer
         }
-        .frame(minWidth: 360, idealWidth: 640, maxWidth: 640, minHeight: 320, idealHeight: 520, maxHeight: 520)
+        .frame(minWidth: 360, idealWidth: 560, maxWidth: 720, minHeight: 160, maxHeight: 520)
         .onAppear { model.load() }
         .onDisappear { model.cancel() }
         .accessibilityElement(children: .contain)
@@ -252,25 +250,31 @@ struct RestorePreviewSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Preview restore of \"\(profileName)\"").font(.title3.bold())
                 Text("Nothing is changed until you press Run now.").font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                scopeChip
             }
+            .layoutPriority(1)
             Spacer()
-            scopeChip
             Button { model.load() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                .buttonStyle(.bordered)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.glass)
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(model.phase == .loading)
                 .help("Scan your Mac again (Cmd+R)")
         }
-        .padding(Spacing.l)
+        .padding(20)
     }
 
     /// "Whole profile" or "Desktop 2 on DELL only".
     private var scopeChip: some View {
         let text = scope.isWhole ? "Whole profile" : (model.profile.map { scope.describe(profile: $0) } ?? "Part of the profile")
-        return Text(text).font(.callout).lineLimit(1)
-            .padding(.horizontal, Spacing.s).padding(.vertical, Spacing.xs)
-            .background(Capsule().fill((scope.isWhole ? Color.secondary : Color.blue).opacity(0.15)))
-            .accessibilityLabel("Scope: \(text)")
+        // The scope is fixed when the sheet opens, so it is shown as a labelled value, not a control.
+        return HStack(spacing: Spacing.xs) {
+            Text("Scope:").font(.callout).foregroundStyle(.secondary)
+            Text(text).font(.callout.bold()).lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Scope: \(text)")
     }
 
     @ViewBuilder private var content: some View {
@@ -298,29 +302,35 @@ struct RestorePreviewSheet: View {
     }
 
     private func planView(_ plan: RestorePlan, _ profile: Profile) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.l) {
-                Label(RestoreStepText.summaryLine(model.summary), systemImage: "checklist")
-                    .font(.headline)
-                    .accessibilityLabel("Summary: \(RestoreStepText.summaryLine(model.summary))")
-                if !plan.warnings.isEmpty { warnings(plan.warnings) }
-                if plan.steps.isEmpty {
-                    Text("Nothing to do: every matched window is already where the profile says.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(Array(plan.phases.enumerated()), id: \.element) { offset, phase in
-                    phaseGroup(phase, number: offset + 1, plan: plan, profile: profile)
-                }
-                if !plan.unmatched.isEmpty { notFound(plan) }
-                if !plan.possiblyParked.isEmpty {
-                    Label("\(plan.possiblyParked.count) window\(plan.possiblyParked.count == 1 ? "" : "s") may be in the Stage Manager strip, so they are not counted as missing.",
-                          systemImage: "rectangle.stack")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-            }
-            .padding(Spacing.l)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        // Short plans size to their content; long ones scroll.
+        ViewThatFits(in: .vertical) {
+            planBody(plan, profile)
+            ScrollView { planBody(plan, profile) }
         }
+    }
+
+    private func planBody(_ plan: RestorePlan, _ profile: Profile) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.l) {
+            Label(RestoreStepText.summaryLine(model.summary), systemImage: "checklist")
+                .font(.headline)
+                .accessibilityLabel("Summary: \(RestoreStepText.summaryLine(model.summary))")
+            if !plan.warnings.isEmpty { warnings(plan.warnings) }
+            if plan.steps.isEmpty {
+                Text("Nothing to do: every matched window is already where the profile says.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(Array(plan.phases.enumerated()), id: \.element) { offset, phase in
+                phaseGroup(phase, number: offset + 1, plan: plan, profile: profile)
+            }
+            if !plan.unmatched.isEmpty { notFound(plan) }
+            if !plan.possiblyParked.isEmpty {
+                Label("\(plan.possiblyParked.count) window\(plan.possiblyParked.count == 1 ? "" : "s") may be in the Stage Manager strip, so they are not counted as missing.",
+                      systemImage: "rectangle.stack")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        }
+        .padding(Spacing.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func warnings(_ items: [String]) -> some View {
@@ -404,19 +414,17 @@ struct RestorePreviewSheet: View {
             if let app = AppState.current {
                 if scope.isWhole {
                     RunProfileButton(app: app, profileID: profileID, profileName: profileName, title: "Run now")
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
+                        .buttonStyle(.glassProminent)
                         .keyboardShortcut(.defaultAction)
                 } else {
                     Button { model.runScoped() } label: { Label("Run now (scope only)", systemImage: "play.fill") }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
+                        .buttonStyle(.glassProminent)
                         .keyboardShortcut(.defaultAction)
                         .disabled(!app.canAct || model.isRunning || model.profile == nil)
                         .help(studioRunBlockReason(app) ?? "Restore only \(scope.describe(profile: model.profile ?? Profile.emptyForMap))")
                 }
             }
         }
-        .padding(Spacing.l)
+        .padding(20)
     }
 }

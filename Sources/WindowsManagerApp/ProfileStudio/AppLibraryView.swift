@@ -274,7 +274,7 @@ private struct LibraryRow: View {
                 .resizable().frame(width: 20, height: 20).accessibilityHidden(true)
             Text(entry.name).lineLimit(1)
             if entry.isRunning {
-                Image(systemName: "circle.fill").font(.wmCaption).foregroundStyle(.green)
+                Image(systemName: "circle.fill").font(.wmCaption).foregroundStyle(Tone.success.color)
                     .accessibilityHidden(true)
             }
             Spacer(minLength: 4)

@@ -107,7 +107,7 @@ struct PinRulesSection: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             if !model.message.isEmpty {
-                Text(model.message).font(.footnote).foregroundStyle(.red)
+                Text(model.message).font(.footnote).foregroundStyle(Tone.danger.color)
             }
         } header: {
             Text("Pin rules")

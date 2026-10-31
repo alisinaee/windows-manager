@@ -38,8 +38,8 @@ struct MonitorsSettingsTab: View {
             ForEach(model.displays, id: \.uuid) { display in
                 let f = display.frame
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(display.isMain ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.18))
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(display.isMain ? Color.accentColor : Color.secondary))
+                    .fill(display.isMain ? Palette.accent.opacity(0.25) : Color.secondary.opacity(0.18))
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(display.isMain ? Palette.accent : Color.secondary))
                     .overlay(
                         VStack(spacing: 2) {
                             Text((display.isMain ? "\u{2605} " : "") + display.name).font(.caption.bold())

@@ -19,15 +19,18 @@ struct StudioNewProfileMenu: View {
                 }
             } label: {
                 Label("New Profile", systemImage: "plus")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
             } primaryAction: {
                 model.beginNewProfile()
             }
+            // The sidebar's main action: a full-width prominent button, not plain text.
             .menuStyle(.button)
-            .buttonStyle(.borderless)
-            .fixedSize()
+            .buttonStyle(.glassProminent)
+            .tint(Palette.accentStrong)
+            .controlSize(.large)
             .help("New Profile: start one from the current workspace. The menu has blank, copy and Review Capture.")
             .accessibilityLabel("New profile")
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.s)
     }

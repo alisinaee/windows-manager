@@ -178,4 +178,24 @@ struct DebugFixturesTests {
         #expect(second.map(\.id) == first.map(\.id))
         #expect(store.list().count == DebugFixtures.scenarios.count)
     }
+
+    @Test func runnerCleanupRemovesOnlyTheProfilesItSaved() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("debug-cleanup-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let store = ProfileStore(folder: base.appendingPathComponent("Profiles", isDirectory: true))
+        // A user profile that has the same name as a fixture must survive the run.
+        let clashName = DebugFixtures.namePrefix + DebugFixtures.scenarios[0].title
+        let user = try store.save(Profile(name: clashName, monitorSetKey: "user", displays: [], spaces: [], windows: []))
+        let displays = DebugFixtures.syntheticDisplays(count: 2)
+        let runner = DebugTestRunner(store: store)
+        let made = try DebugFixtures.installPowerUserFixtures(into: store, displays: displays, reuseIDs: false)
+        runner.recordFixtureProfiles(made)
+        #expect(made.count == DebugFixtures.scenarios.count)
+        #expect(store.list().count == made.count + 1)
+        // A fresh runner (as after a killed run) removes what the ledger lists, and nothing else.
+        DebugTestRunner(store: store).removeFixtureProfiles()
+        #expect(store.list().map(\.id) == [user.id])
+        #expect(DebugTestRunner(store: store).fixtureLedgerIDs().isEmpty)
+    }
 }

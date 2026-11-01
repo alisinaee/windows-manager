@@ -235,15 +235,16 @@ public enum DebugFixtures {
 
     // MARK: Store
 
-    /// Saves every scenario profile into `store`, replacing an installed profile with the same name (same id).
+    /// Saves every scenario profile into `store`. By default an installed profile with the same name is replaced (same id);
+    /// `reuseIDs: false` saves fresh copies instead, so a profile the user already has is never overwritten.
     @discardableResult
-    public static func installPowerUserFixtures(into store: ProfileStore,
-                                                displays: [DisplayIdentity]? = nil) throws -> [Profile] {
+    public static func installPowerUserFixtures(into store: ProfileStore, displays: [DisplayIdentity]? = nil,
+                                                reuseIDs: Bool = true) throws -> [Profile] {
         let live = displays ?? liveDisplays()
         let existing = store.list()
         var saved: [Profile] = []
         for (_, var p) in profiles(displays: live) {
-            if let old = existing.first(where: { $0.name == p.name }) { p.id = old.id }
+            if reuseIDs, let old = existing.first(where: { $0.name == p.name }) { p.id = old.id }
             saved.append(try store.save(p))
         }
         return saved

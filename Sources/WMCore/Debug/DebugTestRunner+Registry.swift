@@ -12,6 +12,9 @@ extension DebugTestRunner {
     }
 
     private func runPowerUser(_ entry: DebugRunnerEntry, onEvent: @escaping @Sendable (DebugEvent) -> Void) async -> DebugRunResult {
+        // Leftovers of an earlier run go first; the sample profiles are removed however this run ends.
+        removeFixtureProfiles()
+        defer { removeFixtureProfiles() }
         let sink = DebugSink(onEvent: onEvent)
         sink.send(.phase("Start \(entry.title)"))
         func finish(_ status: DebugRunStatus) -> DebugRunResult {
@@ -34,7 +37,8 @@ extension DebugTestRunner {
 
         do {
             sink.send(.phase("Installing fixture profiles"))
-            let profiles = try DebugFixtures.installPowerUserFixtures(into: store)
+            let profiles = try DebugFixtures.installPowerUserFixtures(into: store, reuseIDs: false)
+            recordFixtureProfiles(profiles)
             guard let profile = profiles.first(where: { $0.name == entry.fixtureProfile }) else {
                 sink.send(.check(DebugCheck(id: "setup", name: "setup", passed: false, detail: "\(entry.fixtureProfile) missing")))
                 return finish(.fail)

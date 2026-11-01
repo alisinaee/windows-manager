@@ -20,7 +20,7 @@ public final class DebugTestRunner: @unchecked Sendable {
     // MARK: Fixtures
 
     @discardableResult
-    public static func installFixtureProfiles(into store: ProfileStore) throws -> [Profile] {
+    public static func installFixtureProfiles(into store: ProfileStore, reuseIDs: Bool = true) throws -> [Profile] {
         let displays = DisplayMap.current()
         guard let main = displays.first(where: \.isMain) ?? displays.first else {
             throw NSError(domain: "DebugTestRunner", code: 1, userInfo: [NSLocalizedDescriptionKey: "no display"])
@@ -61,13 +61,47 @@ public final class DebugTestRunner: @unchecked Sendable {
             snap(textEdit, "TextEdit", CGRect(x: 700, y: top, width: 600, height: 500), desktop: 1,
                  title: "Untitled", match: .exact("Untitled"), index: 1),
         ])
-        // Reuse the ids of already installed fixtures so reinstalling replaces instead of duplicating.
+        // Reuse the ids of already installed fixtures so reinstalling replaces instead of duplicating (install button).
+        // The runner passes reuseIDs: false so it never overwrites a profile the user has.
         var saved: [Profile] = []
         let existing = store.list()
         for var p in [work, home, dup] {
-            if let old = existing.first(where: { $0.name == p.name }) { p.id = old.id }
+            if reuseIDs, let old = existing.first(where: { $0.name == p.name }) { p.id = old.id }
             saved.append(try store.save(p))
         }
         return saved
+    }
+
+    // MARK: Cleanup
+
+    /// File next to the profiles folder that lists the ids of fixture profiles the runner saved. It survives a killed
+    /// run, so the next run can still remove them. Only ids in this file are ever deleted.
+    var fixtureLedgerURL: URL {
+        store.folder.deletingLastPathComponent().appendingPathComponent("debug-fixture-ledger.json")
+    }
+
+    func fixtureLedgerIDs() -> [UUID] {
+        guard let data = try? Data(contentsOf: fixtureLedgerURL) else { return [] }
+        return (try? JSONDecoder().decode([UUID].self, from: data)) ?? []
+    }
+
+    func writeFixtureLedger(_ ids: [UUID]) {
+        guard !ids.isEmpty else { try? FileManager.default.removeItem(at: fixtureLedgerURL); return }
+        if let data = try? JSONEncoder().encode(ids) { try? data.write(to: fixtureLedgerURL, options: .atomic) }
+    }
+
+    /// Remembers the profiles a run just saved as fixtures.
+    func recordFixtureProfiles(_ profiles: [Profile]) {
+        writeFixtureLedger(fixtureLedgerIDs() + profiles.map(\.id))
+    }
+
+    /// Deletes every fixture profile in the ledger (this run's and leftovers of earlier runs), then clears it.
+    /// Ids that could not be deleted stay in the ledger for the next run.
+    public func removeFixtureProfiles() {
+        var kept: [UUID] = []
+        for id in fixtureLedgerIDs() {
+            do { try store.delete(id) } catch ProfileStoreError.notFound { continue } catch { kept.append(id) }
+        }
+        writeFixtureLedger(kept)
     }
 }

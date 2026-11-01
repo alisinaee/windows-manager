@@ -52,6 +52,9 @@ final class DebugSink: @unchecked Sendable {
 
 extension DebugTestRunner {
     public func run(_ s: DebugScenarioID, onEvent: @escaping @Sendable (DebugEvent) -> Void) async -> DebugRunResult {
+        // Leftovers of an earlier run go first; the sample profiles are removed however this run ends.
+        removeFixtureProfiles()
+        defer { removeFixtureProfiles() }
         let sink = DebugSink(onEvent: onEvent)
         sink.send(.phase("Start \(s.title)"))
         func check(_ id: String, _ name: String, _ ok: Bool, _ detail: String) {
@@ -59,7 +62,8 @@ extension DebugTestRunner {
         }
         do {
             sink.send(.phase("Installing fixture profiles"))
-            let profiles = try Self.installFixtureProfiles(into: store)
+            let profiles = try Self.installFixtureProfiles(into: store, reuseIDs: false)
+            recordFixtureProfiles(profiles)
             let name = s == .home ? "Home" : "Challenge Work"
             if AXIsProcessTrusted(), let profile = profiles.first(where: { $0.name == name }) {
                 sink.send(.phase("Scramble"))

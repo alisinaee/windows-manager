@@ -134,7 +134,15 @@ final class ProfileStudioModel: ObservableObject {
     private var closeCancellable: AnyCancellable?
 
     /// The map the zoom menu commands act on (set by whichever map host is on screen).
-    weak var activeMap: ProfileMapModel?
+    weak var activeMap: ProfileMapModel? {
+        // The canvas "Restore Only This Monitor / Desktop…" menu items open the scoped restore preview.
+        didSet {
+            activeMap?.onRestoreScope = { [weak self] scope in
+                self?.previewScope = scope
+                self?.isPreviewPresented = true
+            }
+        }
+    }
     /// True while the Studio window is the key window; the app menu items are disabled otherwise.
     @Published private(set) var isFront = false
     private var keyObservers: [AnyCancellable] = []

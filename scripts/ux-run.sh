@@ -16,5 +16,6 @@ sleep 0.5
 open -g -n -a "$APP" \
     --env WM_UX_TEST=1 \
     --env "WM_PROFILES_DIR=$PWD/ux/fixtures/${UX_FIXTURES:-many}" \
-    --env "WM_UX_DISPLAY=${WM_UX_DISPLAY:-PA248QV}"
+    --env "WM_UX_DISPLAY=${WM_UX_DISPLAY:-PA248QV}" \
+    --env "WM_UX_KEY=${WM_UX_KEY:-0}"
 echo "UX app started in the background (display: ${WM_UX_DISPLAY:-PA248QV})"

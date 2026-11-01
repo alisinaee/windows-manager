@@ -87,7 +87,7 @@ struct WorkspacesSettingsTab: View {
             Section("Virtual workspaces") {
                 Toggle("Virtual workspaces", isOn: $workspaces.isEnabled)
                 Text("Experimental. Switching hides the windows of the other workspaces. Off by default; turning it off brings every window back.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.wmFootnote).foregroundStyle(.secondary)
                 if workspaces.isEnabled {
                     Picker("Three-finger swipe", selection: $workspaces.naturalSwipe) {
                         Text("Natural").tag(true)
@@ -96,7 +96,7 @@ struct WorkspacesSettingsTab: View {
                     Toggle("Follow Cmd+Tab and Dock clicks", isOn: $workspaces.followAppSwitch)
                 }
                 if let text = workspaces.statusText {
-                    Text(text).font(.footnote).foregroundStyle(Tone.warning.color)
+                    Text(text).font(.wmFootnote).foregroundStyle(Tone.warning.color)
                 }
             }
             if workspaces.isEnabled {
@@ -114,7 +114,7 @@ struct WorkspacesSettingsTab: View {
             Section("Snapping") {
                 Toggle("Snap windows into layout zones", isOn: $snap.settings.enabled)
                 if let hint = snapHint {
-                    Text(hint).font(.footnote).foregroundStyle(Tone.warning.color)
+                    Text(hint).font(.wmFootnote).foregroundStyle(Tone.warning.color)
                 }
                 Picker("Modifier key", selection: $snap.settings.modifier) {
                     Text("Option").tag(SnapModifier.option)
@@ -126,7 +126,7 @@ struct WorkspacesSettingsTab: View {
                     Text("Gap: \(Int(snap.settings.gap)) pt")
                 }
                 Text("Hold the modifier while dragging a window to see the zones of a layout. Needs Accessibility and at least one saved layout.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.wmFootnote).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

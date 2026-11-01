@@ -15,6 +15,15 @@ enum OnboardingStep: Int, CaseIterable {
         }
     }
 
+    /// Height of the step's content area, so the window fits each step instead of leaving dead space.
+    var contentHeight: CGFloat {
+        switch self {
+        case .accessibility: return 270
+        case .spaces: return 330
+        case .done: return 380
+        }
+    }
+
     var symbol: String {
         switch self {
         case .accessibility: return "hand.raised.fill"
@@ -43,7 +52,17 @@ final class OnboardingModel: ObservableObject {
     /// Re-reads Accessibility trust and the Spaces settings. Cheap, read only, never shows a dialog.
     func refresh() {
         let latest = Self.currentReport()
-        if latest != report { report = latest }
+        guard latest != report else { return }
+        let justAllowed = !report.accessibilityTrusted && latest.accessibilityTrusted
+        report = latest
+        // Access was just granted on this step: move on after a short beat so the "Allowed" state is seen.
+        if justAllowed, step == .accessibility {
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(800))
+                guard let self, self.step == .accessibility, self.report.accessibilityTrusted else { return }
+                self.move(by: 1)
+            }
+        }
     }
 
     func move(by delta: Int) {
@@ -78,11 +97,10 @@ struct OnboardingView: View {
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
+            .frame(height: model.step.contentHeight)
             footer
-                .wmGlass(.regular, in: Capsule())
-                .padding([.horizontal, .bottom], Spacing.m)
         }
-        .frame(width: 540, height: 500)
+        .frame(width: 540)
         .background(alignment: .topLeading) {
             ZStack {
                 Palette.canvas
@@ -114,10 +132,7 @@ struct OnboardingView: View {
                 .frame(width: 64, height: 64)
             VStack(alignment: .leading, spacing: 3) {
                 Text(model.step.title)
-                    .font(.title2.bold())
-                Text("Step \(model.step.rawValue + 1) of \(OnboardingStep.allCases.count)")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(.wmHeading)
             }
             Spacer()
             HStack(spacing: 6) {
@@ -127,7 +142,8 @@ struct OnboardingView: View {
                         .frame(width: 22, height: 5)
                 }
             }
-            .accessibilityHidden(true)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Step \(model.step.rawValue + 1) of \(OnboardingStep.allCases.count)")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
@@ -183,19 +199,19 @@ struct OnboardingView: View {
                         kind: model.report.accessibilityTrusted ? .good : .warning)
                 }
                 HStack {
-                    Button("Ask macOS") { AXPermission.prompt() }
+                    Button("Request Access") { AXPermission.prompt() }
                         .disabled(model.report.accessibilityTrusted)
                     Button("Open System Settings") { NSWorkspace.shared.open(Self.accessibilitySettingsURL) }
                 }
                 if !model.report.accessibilityTrusted {
                     Text("This page checks again every second, so it updates as soon as you switch Windows Manager on.")
-                        .font(.footnote)
+                        .font(.wmFootnote)
                         .foregroundStyle(.secondary)
                 }
             } footer: {
                 #if DEBUG
                 Text("After you rebuild the app, macOS may stop trusting it, because an ad-hoc signature changes with every build. If the switch is on but the status stays \"Not allowed yet\", select Windows Manager in the Accessibility list, remove it with the minus button and add it again.")
-                    .font(.footnote)
+                    .font(.wmFootnote)
                     .foregroundStyle(.secondary)
                 #else
                 EmptyView()
@@ -220,7 +236,7 @@ struct OnboardingView: View {
                         NSWorkspace.shared.open(Self.desktopAndDockSettingsURL)
                     }
                     Text("Under Mission Control, switch off \"Automatically rearrange Spaces based on most recent use\". Windows Manager never changes this setting itself.")
-                        .font(.footnote)
+                        .font(.wmFootnote)
                         .foregroundStyle(.secondary)
                 } else {
                     Text("Your Desktops keep their order, so profiles always find the right one.")
@@ -236,7 +252,7 @@ struct OnboardingView: View {
                 Text(model.report.stageManagerOn
                     ? "Keep Stage Manager on if you like it. Windows Manager works with it and restores your windows inside it."
                     : "Stage Manager is off. Windows Manager works with it on or off.")
-                    .font(.footnote)
+                    .font(.wmFootnote)
                     .foregroundStyle(.secondary)
             }
         }
@@ -250,7 +266,7 @@ struct OnboardingView: View {
                 .font(.system(size: 52))
                 .foregroundStyle(Tone.success.color)
             Text("You're ready to go")
-                .font(.title.bold())
+                .font(.wmDisplay)
             Text("Windows Manager lives in the menu bar. You can open this guide again any time from the menu with Setup.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
@@ -276,7 +292,7 @@ struct OnboardingView: View {
             .frame(maxWidth: 400)
             if !model.report.accessibilityTrusted {
                 Text("Without Accessibility access Windows Manager cannot move windows. Go back to step 1 to allow it.")
-                    .font(.footnote)
+                    .font(.wmFootnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 400)

@@ -19,8 +19,9 @@ wid=$(python3 -c 'import json;print(json.load(open("'"$ready"'"))["window"])')
 sleep 0.5
 if [ -n "${UX_REGION:-}" ] || [ "$name" = "shortcut-recorder" ]; then
   # Popovers are separate windows: capture the screen region around the studio window instead (needs it unobscured).
-  rect=$(python3 -c 'import json;print(json.load(open("'"$ready"'")).get("rect",""))')
-  rect=$(python3 -c 'x,y,w,h=map(int,"'"$rect"'".split(","));print("%d,%d,%d,%d"%(max(x-20,0),max(y-20,0),w+120,h+60))')
+  # "region" = window plus margin in global top-left coordinates (negative on displays left of / above the main one),
+  # clamped to the window's screen by the app. Do not clamp to 0 here: that captured the wrong place on other displays.
+  rect=$(python3 -c 'import json;d=json.load(open("'"$ready"'"));print(d.get("region") or d.get("rect",""))')
   screencapture -R "$rect" "$dir/$name.png"
 else
   screencapture -l "$wid" -o "$dir/$name.png"

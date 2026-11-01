@@ -44,10 +44,13 @@ struct SettingsView: View {
                 Label {
                     Text(pane.title)
                 } icon: {
-                    Image(systemName: pane.symbol).frame(width: 20)
+                    Image(systemName: pane.symbol)
+                        .imageScale(.medium)
+                        .frame(width: 20, height: 20)
                 }
                 .tag(pane)
             }
+            .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
         } detail: {
             detail(SettingsPane(rawValue: selectedRaw) ?? .general)

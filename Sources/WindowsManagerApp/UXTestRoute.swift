@@ -143,15 +143,37 @@ enum UXTestRoute {
         try? await Task.sleep(for: .milliseconds(500))
         if let target {
             target.orderFrontRegardless()
+            await waitForStableFrame(target)
+            // WM_UX_KEY=1: make the window key (active-looking controls and selection) without activating the app.
+            if ProcessInfo.processInfo.environment["WM_UX_KEY"] == "1" { target.makeKey() }
             writeReady(target)
         }
     }
 
+    /// Waits (up to ~1.5 s) until the frame has not changed for three samples, so the ready file holds the final
+    /// rect (late clamping or resizing used to leave the region capture pointing at the wrong place).
+    private static func waitForStableFrame(_ window: NSWindow) async {
+        var last = window.frame
+        var stable = 0
+        for _ in 0..<30 where stable < 3 {
+            try? await Task.sleep(for: .milliseconds(50))
+            stable = window.frame == last ? stable + 1 : 0
+            last = window.frame
+        }
+    }
+
     private static func writeReady(_ window: NSWindow) {
-        // "rect" is the window frame in top-left screen coordinates, for region captures that include popovers.
-        let screenH = NSScreen.screens.first?.frame.height ?? 0
-        let f = window.frame
-        let json = "{\"window\": \(window.windowNumber), \"title\": \"\(window.title)\", \"rect\": \"\(Int(f.minX)),\(Int(screenH - f.maxY)),\(Int(f.width)),\(Int(f.height))\"}"
+        // Global top-left coordinates (origin: top-left of the menu bar screen; other displays can be negative).
+        // "rect" is the window frame; "region" adds a margin for popovers, clamped to the window's own screen, so
+        // `screencapture -R` never needs clamping to 0 (that broke captures on displays left of or above the main one).
+        let primaryH = NSScreen.screens.first?.frame.height ?? 0
+        func topLeft(_ r: NSRect) -> NSRect { NSRect(x: r.minX, y: primaryH - r.maxY, width: r.width, height: r.height) }
+        let f = topLeft(window.frame)
+        var region = f.insetBy(dx: -40, dy: -40)
+        region.size.width += 80   // popovers open to the right of the window
+        if let screen = window.screen ?? chosenScreen() { region = region.intersection(topLeft(screen.frame)) }
+        func s(_ r: NSRect) -> String { "\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))" }
+        let json = "{\"window\": \(window.windowNumber), \"title\": \"\(window.title)\", \"rect\": \"\(s(f))\", \"region\": \"\(s(region))\"}"
         try? json.write(toFile: readyPath, atomically: true, encoding: .utf8)
     }
 
@@ -194,7 +216,7 @@ enum UXTestRoute {
         guard let state = AppState.current else { return nil }
         let host = NSHostingController(rootView: SettingsView().environmentObject(state))
         let window = NSWindow(contentViewController: host)
-        window.title = "Settings (UX)"
+        window.title = "Settings"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         window.center()
@@ -213,7 +235,7 @@ enum UXTestRoute {
             .background(Color(nsColor: .windowBackgroundColor))
         let host = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: host)
-        window.title = "Menu bar popover (UX)"
+        window.title = "Menu Bar"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         window.setContentSize(host.view.fittingSize)

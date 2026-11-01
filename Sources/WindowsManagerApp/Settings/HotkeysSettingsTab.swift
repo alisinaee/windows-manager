@@ -27,7 +27,7 @@ struct HotkeysSettingsTab: View {
                 KeyboardShortcuts.Recorder("Previous workspace", name: .previousWorkspace)
                 if !workspaces.isEnabled {
                     Text("These only work while Virtual workspaces is turned on in the Workspaces tab.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(.wmFootnote).foregroundStyle(.secondary)
                 }
             }
             Section("Snap to zone") {
@@ -35,20 +35,20 @@ struct HotkeysSettingsTab: View {
                     KeyboardShortcuts.Recorder("Zone \(i + 1)", name: KeyboardShortcuts.Name.snapZones[i])
                 }
                 Text("Moves the frontmost window into that zone of the layout for its display.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.wmFootnote).foregroundStyle(.secondary)
             }
             Section("Window size") {
                 ForEach(WindowSizeDirection.allCases, id: \.self) { direction in
                     KeyboardShortcuts.Recorder(Self.title(for: direction), name: .windowSize(direction))
                 }
                 Text("Press again to cycle half, two-thirds and one-third. Center keeps the window centred.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.wmFootnote).foregroundStyle(.secondary)
             }
             Section("Move to display") {
                 KeyboardShortcuts.Recorder("Next display", name: .moveToNextDisplay)
                 KeyboardShortcuts.Recorder("Previous display", name: .moveToPreviousDisplay)
                 Text("Keeps the window's position and size where possible, and moves it onto the other display.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.wmFootnote).foregroundStyle(.secondary)
             }
             Section("Ignored apps") {
                 if ignoreList.bundleIDs.isEmpty {
@@ -65,7 +65,7 @@ struct HotkeysSettingsTab: View {
                 Button(addTitle) { addLastOtherApp() }
                     .disabled(lastOtherApp == nil || ignoreList.contains(lastOtherApp?.bundleID))
                 Text("Shortcuts do nothing while a listed app is frontmost. Switch to the app, then come back here and press Add.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.wmFootnote).foregroundStyle(.secondary)
             }
             Section("Profiles") {
                 if state.savedProfiles.isEmpty {

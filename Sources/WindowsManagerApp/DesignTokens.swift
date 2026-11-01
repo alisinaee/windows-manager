@@ -89,6 +89,15 @@ extension Font {
     static let wmBody = Font.body
     static let wmCaption = Font.caption
     static let wmMonoCaption = Font.caption.monospaced()
+    /// Secondary explanations under a control or row.
+    static let wmFootnote = Font.footnote
+    /// Emphasised row text (a name in a list, a bold sub-label).
+    static let wmCallout = Font.callout
+    /// Large heading on a landing page (onboarding).
+    static let wmDisplay = Font.title.bold()
+    /// Window or step heading.
+    static let wmHeading = Font.title2.bold()
+    static let wmMonoFootnote = Font.footnote.monospaced()
 }
 
 /// Inline message with a tone, optional detail, optional action and dismiss.
@@ -137,7 +146,7 @@ struct StatusBadge: View {
 
     var body: some View {
         Text(text)
-            .font(.wmCaption.weight(.medium))
+            .font(.wmCaption.bold())
             .foregroundStyle(tone == .warning ? AnyShapeStyle(.primary) : AnyShapeStyle(tone.color))
             .padding(.horizontal, Spacing.s)
             .padding(.vertical, Spacing.xs)

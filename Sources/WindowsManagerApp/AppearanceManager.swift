@@ -55,7 +55,8 @@ final class AppearanceManager: ObservableObject {
     }
 }
 
-/// Toolbar / settings control: an icon button showing the current symbol, with System / Light / Dark inside.
+/// Compact icon-menu control (kept for reuse; the toolbar no longer uses it and Settings shows a Theme picker).
+/// An icon button showing the current symbol, with System / Light / Dark inside.
 struct AppearanceMenu: View {
     @ObservedObject private var manager = AppearanceManager.shared
 

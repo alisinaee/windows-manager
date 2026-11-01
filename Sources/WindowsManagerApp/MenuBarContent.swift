@@ -39,7 +39,7 @@ struct MenuBarContent: View {
             MenuRow(title: "Setup…", symbol: "sparkles") {
                 Self.closePopup(); OnboardingWindowController.shared.show()
             }
-            MenuRow(title: "Profiles…", symbol: "rectangle.3.group") {
+            MenuRow(title: "Open Profile Studio", symbol: "rectangle.3.group") {
                 Self.closePopup(); ProfileStudioWindowController.shared.show()
             }
             if updates.isConfigured {
@@ -59,10 +59,12 @@ struct MenuBarContent: View {
 
             Divider().padding(.vertical, 2)
 
-            MenuRow(title: "Debug", symbol: "hammer", checked: appState.debugMode) {
-                Self.closePopup(); appState.debugMode.toggle()
+            if Self.showsDebug || appState.debugMode || nav.optionHeld {
+                MenuRow(title: "Debug", symbol: "hammer", checked: appState.debugMode) {
+                    Self.closePopup(); appState.debugMode.toggle()
+                }
+                .help("Shows the live test panel for the window-restore scenarios")
             }
-            .help("Shows the live test panel for the window-restore scenarios")
             MenuRow(title: "Quit", symbol: "power") {
                 NSApp.terminate(nil)
             }
@@ -80,8 +82,20 @@ struct MenuBarContent: View {
             runProfile(profiles[i]); return .handled
         }
         .onKeyPress(.escape) { Self.closePopup(); return .handled }
-        .onAppear { appState.refreshPermissions(); nav.index = nil }
+        .onAppear {
+            appState.refreshPermissions(); nav.index = nil
+            nav.optionHeld = NSEvent.modifierFlags.contains(.option)
+        }
         .tint(Palette.accent)
+    }
+
+    /// Debug builds always list Debug; release builds list it only while Option is held (or Debug is on).
+    private static var showsDebug: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
     }
 
     /// Hides the menu bar popup (a MenuBarExtra window-style panel) before another window opens.
@@ -128,7 +142,7 @@ struct MenuBarContent: View {
                 Text(progress.label).font(.wmCaption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
             }
             Spacer(minLength: Spacing.s)
-            Button { appState.cancelRun() } label: { Image(systemName: "stop.fill").font(.caption) }
+            Button { appState.cancelRun() } label: { Image(systemName: "stop.fill").imageScale(.small) }
                 .buttonStyle(.borderless)
                 .help("Stop restoring \(progress.profileName)")
                 .accessibilityLabel("Stop running \(progress.profileName)")
@@ -155,7 +169,9 @@ struct MenuBarContent: View {
                                 Button(choice.title) { runProfile(profile, scope: choice.scope) }
                             }
                         } label: {
-                            Image(systemName: "chevron.down").font(.caption.weight(.semibold))
+                            Image(systemName: "chevron.down")
+                                .imageScale(.small)
+                                .foregroundStyle(appState.canAct ? Color.primary : Color.secondary)
                         }
                         .menuStyle(.borderlessButton)
                         .menuIndicator(.hidden)
@@ -182,7 +198,7 @@ struct MenuBarContent: View {
         if workspaces.isEnabled {
             Divider().padding(.vertical, 2)
             Text("Workspaces")
-                .font(.footnote).foregroundStyle(.secondary)
+                .font(.wmFootnote).foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
             ForEach(workspaces.workspaces) { ws in
                 MenuRow(title: ws.name, symbol: "square.grid.2x2", checked: ws.id == workspaces.activeID) {
@@ -194,15 +210,15 @@ struct MenuBarContent: View {
                     ProgressView().controlSize(.small)
                     Text("Switching…").foregroundStyle(.secondary)
                 }
-                .font(.footnote)
+                .font(.wmFootnote)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 2)
             }
-            MenuRow(title: "New workspace", symbol: "plus") { workspaces.createWorkspace() }
-            MenuRow(title: "Add front app to current", symbol: "plus.app") { workspaces.addFrontmostAppToActive() }
+            MenuRow(title: "New Workspace", symbol: "plus") { workspaces.createWorkspace() }
+            MenuRow(title: "Add Front App to Current Workspace", symbol: "plus.app") { workspaces.addFrontmostAppToActive() }
                 .disabled(workspaces.activeID == nil)
             if let text = workspaces.statusText {
-                Text(text).font(.footnote).foregroundStyle(.secondary)
+                Text(text).font(.wmFootnote).foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
             }
         }
@@ -223,14 +239,14 @@ struct MenuBarContent: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
         } else {
-            MenuRow(title: "Capture current workspace…", symbol: "camera.viewfinder") { appState.beginCapture() }
+            MenuRow(title: "Capture Current Workspace…", symbol: "camera.viewfinder") { appState.beginCapture() }
                 .disabled(!appState.canAct)
                 .help("Name a new profile and save the current workspace to it")
                 .accessibilityLabel("Capture current workspace")
-            MenuRow(title: "Choose what to save…", symbol: "checklist") { appState.beginSelectiveCapture() }
+            MenuRow(title: "Choose What to Save…", symbol: "checklist") { appState.beginSelectiveCapture() }
                 .disabled(!appState.canAct)
                 .help("Capture now, then tick the monitors, Desktops and windows to keep")
-            MenuRow(title: "Capture now (3 s)", symbol: "timer") {
+            MenuRow(title: "Capture in 3 Seconds", symbol: "timer") {
                 // Close the popup first so it is not in the capture; the countdown gives the stage time to settle.
                 Self.closePopup(); appState.captureNow()
             }
@@ -245,12 +261,12 @@ struct MenuBarContent: View {
         let selection = binding.wrappedValue.selection
         return VStack(alignment: .leading, spacing: 2) {
             Text("Choose what to save (\(selection.selectedWindows) of \(selection.totalWindows) windows)")
-                .font(.footnote).foregroundStyle(.secondary)
+                .font(.wmFootnote).foregroundStyle(.secondary)
             ForEach(selection.tree.monitors) { monitor in
                 Toggle(monitor.display?.name ?? "Monitor", isOn: Binding(
                     get: { binding.wrappedValue.selection.state(of: monitor) != .off },
                     set: { _ in binding.wrappedValue.selection.toggle(monitor: monitor) }))
-                    .font(.callout.bold())
+                    .font(.wmCallout.bold())
                 ForEach(monitor.groups) { group in
                     Toggle(Self.groupTitle(group), isOn: Binding(
                         get: { binding.wrappedValue.selection.state(of: group) != .off },
@@ -292,7 +308,7 @@ struct MenuBarContent: View {
     }
 
     private func failureActionLabel(_ text: String) -> String? {
-        text.localizedCaseInsensitiveContains("accessibility") ? "Grant access" : nil
+        text.localizedCaseInsensitiveContains("accessibility") ? "Grant Access…" : nil
     }
 
     private func failureAction(_ text: String) -> (() -> Void)? {
@@ -314,24 +330,32 @@ struct MenuBarContent: View {
             }
             Spacer(minLength: 0)
         }
-        .font(.footnote)
+        .font(.wmFootnote)
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
     }
 
     private var accessibilityRow: some View {
-        HStack(spacing: 8) {
-            Image(systemName: appState.isAccessibilityTrusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(appState.isAccessibilityTrusted ? Tone.success.color : Tone.warning.color)
-            Text(appState.isAccessibilityTrusted ? "Accessibility: allowed" : "Accessibility: not allowed")
-            Spacer(minLength: 8)
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.s) {
+                Image(systemName: appState.isAccessibilityTrusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(appState.isAccessibilityTrusted ? Tone.success.color : Tone.warning.color)
+                    .accessibilityHidden(true)
+                Text(appState.isAccessibilityTrusted ? "Accessibility access allowed" : "Accessibility access needed")
+                    .lineLimit(1)
+                    .fixedSize()
+                Spacer(minLength: 0)
+            }
             if !appState.isAccessibilityTrusted {
-                Button("Grant…") { appState.requestAccessibility() }
+                Button("Grant Access…") { appState.requestAccessibility() }
+                    .controlSize(.small)
+                    .padding(.leading, Spacing.l + Spacing.xs)
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -357,8 +381,8 @@ private struct MenuRow: View {
         Button(action: action) {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: symbol)
-                    .font(.caption)
-                    .frame(width: 16)
+                    .imageScale(.medium)
+                    .frame(width: 18)
                     .accessibilityHidden(true)
                 Text(title).font(.wmBody)
                 Spacer(minLength: Spacing.s)
@@ -367,7 +391,7 @@ private struct MenuRow: View {
                 }
                 if checked == true {
                     Image(systemName: "checkmark")
-                        .font(.caption.weight(.semibold))
+                        .imageScale(.small)
                         .accessibilityHidden(true)
                 }
             }
@@ -388,6 +412,7 @@ private final class HoverState: ObservableObject {
 private final class MenuNav: ObservableObject {
     @Published var index: Int?
     @Published var lastRunID: UUID?
+    @Published var optionHeld = false
     func move(_ delta: Int, count: Int) {
         guard count > 0 else { return }
         guard let i = index else { index = delta > 0 ? 0 : count - 1; return }

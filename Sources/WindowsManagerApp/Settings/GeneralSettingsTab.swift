@@ -4,21 +4,29 @@ import SwiftUI
 struct GeneralSettingsTab: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var launchAtLogin = LaunchAtLogin()
+    @ObservedObject private var appearance = AppearanceManager.shared
 
     var body: some View {
         Form {
             Section("Appearance") {
-                LabeledContent("Theme") { AppearanceMenu() }
+                Picker("Theme", selection: $appearance.appearance) {
+                    ForEach(AppAppearance.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.menu)
             }
             Section("Accessibility") {
                 LabeledContent("Status") {
-                    Text(appState.isAccessibilityTrusted ? "Allowed" : "Not allowed")
-                        .foregroundStyle(appState.isAccessibilityTrusted ? Tone.success.color : Tone.warning.color)
+                    HStack(spacing: Spacing.s) {
+                        Text(appState.isAccessibilityTrusted ? "Allowed" : "Not allowed")
+                            .foregroundStyle(appState.isAccessibilityTrusted ? Tone.success.color : Tone.warning.color)
+                        if !appState.isAccessibilityTrusted {
+                            Button("Grant Access…") { appState.requestAccessibility() }
+                        }
+                    }
                 }
                 if !appState.isAccessibilityTrusted {
-                    Button("Grant Accessibility Access…") { appState.requestAccessibility() }
                     Text("Windows Manager needs Accessibility access to read and move windows.")
-                        .font(.footnote)
+                        .font(.wmFootnote)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -29,7 +37,7 @@ struct GeneralSettingsTab: View {
                 ))
                 if launchAtLogin.needsApproval {
                     Text("Approve Windows Manager in System Settings > General > Login Items.")
-                        .font(.footnote)
+                        .font(.wmFootnote)
                         .foregroundStyle(.secondary)
                 }
                 if let error = launchAtLogin.errorText {
@@ -41,11 +49,13 @@ struct GeneralSettingsTab: View {
                            })
                 }
                 Text("Windows Manager lives in the menu bar and has no Dock icon.")
-                    .font(.footnote)
+                    .font(.wmFootnote)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.top, 8, for: .scrollContent)
         .onAppear {
             appState.refreshPermissions()
             launchAtLogin.refresh()

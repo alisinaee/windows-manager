@@ -1,5 +1,5 @@
 #!/bin/bash
-# The 18 UX states (docs/UX-AUDIT-PLAN.md). Format: name|fixture dir (WM_PROFILES_DIR=ux/fixtures/<dir>)|open query.
+# The UX states (docs/UX-AUDIT-PLAN.md). Format: name|fixture dir (WM_PROFILES_DIR=ux/fixtures/<dir>)|open query.
 # Usage: scripts/ux-matrix.sh            list all states
 #        scripts/ux-matrix.sh --query N  print the open query of state N
 # Run the app with: WM_UX_TEST=1 WM_PROFILES_DIR=$PWD/ux/fixtures/<dir> .build/debug/WindowsManagerApp
@@ -17,9 +17,11 @@ inspector-launch|many|section=studio&profile=Work&mode=edit&inspectorTab=launch|
 save-sheet-conflict|many|section=studio&profile=Work&mode=edit&sheet=save&saveName=Writing|name of an existing profile
 capture-sheet|many|section=studio&profile=Work&mode=edit&sheet=capture
 new-profile-refused|many|section=studio&profile=Work&mode=edit&sheet=newprofile|New profile pressed in Edit: notice under the button
-sidebar-collapsed|many|section=studio&profile=Work&mode=view&sidebar=collapsed|icon rail, toggle Cmd+Opt+S
+sidebar-collapsed|many|section=studio&profile=Work&mode=view&sidebar=collapsed|system collapse hides the sidebar completely (no rail), toggle Cmd+Opt+S
 shortcut-recorder|many|section=studio&profile=Work&mode=view&sheet=shortcut|popover: capture with UX_REGION=1
 restore-preview|many|section=studio&profile=Work&mode=view&sheet=restore
+studio-edit-resize|many|section=studio&profile=Work&mode=edit&size=900x560|Edit mode at a small size (tile map and inspector squeeze)
+sidebar-many|many-profiles|section=studio&mode=view&sidebar=expanded|32 profiles: sidebar scroll, row density
 studio-narrow|many|section=studio&profile=Work&mode=view&size=600x450
 studio-wide|many|section=studio&profile=Work&mode=view&size=1500x900
 studio-dark-edit|many|section=studio&profile=Work&mode=edit&appearance=dark

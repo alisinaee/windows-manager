@@ -3,6 +3,23 @@ import WMCore
 
 // Sheets of the Profile Builder (plan B2): the copy picker (New profile menu, P6.54) and the save sheet (step 7).
 
+/// One header style for every Studio sheet (P2-9): a `.title3.bold()` title and an optional secondary subtitle.
+struct SheetHeader: View {
+    let title: String
+    var subtitle: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.title3.bold())
+            if let subtitle {
+                Text(subtitle).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
 /// Local state of the copy picker (`@State` is not used in the app target).
 @MainActor
 final class CopyPickState: ObservableObject {
@@ -20,9 +37,7 @@ struct StudioCopyPickerSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
-            Text("Copy of a profile").font(.title2.bold())
-            Text("The copy opens as a draft. Nothing is saved until you press Save.")
-                .font(.callout).foregroundStyle(.secondary)
+            SheetHeader(title: "Copy of a Profile", subtitle: "The copy opens as a draft. Nothing is saved until you press Save.")
 
             if profiles.isEmpty {
                 Text("There are no saved profiles yet.").foregroundStyle(.secondary)
@@ -85,7 +100,7 @@ struct StudioSaveSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
-            Text("Save profile").font(.title2.bold())
+            SheetHeader(title: "Save Profile")
             TextField("Name", text: Binding(get: { shownName }, set: { draft.text = $0 }))
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(save)
@@ -93,17 +108,24 @@ struct StudioSaveSheet: View {
                 .onChange(of: shownName) { _, _ in draft.choice = .keepBoth }
 
             if let clash = conflict {
+                // One box: the warning and the choice it asks for (P1-9), not the same sentence twice.
                 VStack(alignment: .leading, spacing: Spacing.s) {
-                    Banner(tone: .warning,
-                           title: "A profile named \u{201C}\(clash.name)\u{201D} already exists.",
-                           message: "Replace it, keep both, or type another name above.")
+                    Label("A profile named \u{201C}\(clash.name)\u{201D} already exists.", systemImage: Tone.warning.symbol)
+                        .font(.callout.bold())
+                        .foregroundStyle(Tone.warning.color)
                     Picker("When the name exists", selection: Binding(get: { draft.choice }, set: { draft.choice = $0 })) {
                         Text("Replace the old one").tag(Optional(ConflictChoice.replace))
                         Text("Keep both (adds a number)").tag(Optional(ConflictChoice.keepBoth))
                     }
                     .pickerStyle(.radioGroup)
+                    .labelsHidden()
                     .help("Replace moves the old profile to the Trash. Keep both saves this one with a number added to its name.")
+                    Text("Or type another name above.").font(.caption).foregroundStyle(.secondary)
                 }
+                .padding(Spacing.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: Radius.medium).fill(Tone.warning.color.opacity(0.12)))
+                .accessibilityElement(children: .contain)
             }
 
             if shownName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -134,7 +156,7 @@ struct StudioSaveSheet: View {
                 Spacer()
                 Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction)
                     .help("Close without saving (Esc)")
-                Button("Save", action: save)
+                Button(saveTitle, action: save)
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent).tint(Palette.accentStrong)
                     .disabled(builder.blocksSaving || trimmedName.isEmpty || needsChoice)
@@ -144,6 +166,16 @@ struct StudioSaveSheet: View {
         }
         .padding(20)
         .frame(minWidth: 420, idealWidth: 480)
+    }
+
+    /// "Save", or what Save will do about a name clash: "Replace" / "Save as Writing 2".
+    private var saveTitle: String {
+        guard conflict != nil, let choice = draft.choice else { return "Save" }
+        switch choice {
+        case .replace: return "Replace"
+        case .keepBoth:
+            return "Save as \(ProfileTransfer.uniqueName(trimmedName, among: store.list().map(\.name)))"
+        }
     }
 
     /// Why Save is disabled, shown next to the button (nil when it is enabled).

@@ -4,8 +4,7 @@ import WMCore
 
 /// Deterministic hooks for UX capture (P6.103). Used only by `UXTestRoute`, which runs only with WM_UX_TEST=1.
 extension ProfileStudioModel {
-    /// Wanted initial inspector tab for the next Edit session. NOT YET READ by the view: `StudioEditLocalState.tab`
-    /// should start from `ProfileStudioModel.uxInspectorTab ?? .inspector` (one-line change in ProfileStudioView.swift).
+    /// Wanted initial inspector tab for the next Edit session. Read by `inspectorTab` (and by the view's local state).
     @MainActor static var uxInspectorTab: StudioInspectorTab?
 
     /// The model of the open Studio window, found through its hosting controller.
@@ -35,6 +34,8 @@ extension ProfileStudioModel {
         isPreviewPresented = false; isSaveSheetPresented = false; isReviewCapturePresented = false; isCopyPickerPresented = false
         isShortcutEditorPresented = false
         // Deterministic: expanded unless asked otherwise (a narrow window still collapses by itself).
+        inspectorTab = Self.uxInspectorTab ?? .inspector
+        isNewProfileConfirmPresented = false
         if let sidebar { setSidebar(shown: sidebar == .expanded) } else if !self.sidebar.isVisible { setSidebar(shown: true) }
         try? await Task.sleep(for: .milliseconds(400))
         var found = true
@@ -70,7 +71,12 @@ extension ProfileStudioModel {
                 b.selectedWindowID = last.id
             }
         }
-        if mode == .edit, let saveName { builder?.setName(saveName) }   // makes the draft dirty without a sheet
+        if mode == .edit, let saveName, let b = builder {
+            // A real edit, so the unsaved dot and the enabled Save show. A name equal to the current one changes nothing,
+            // so then the icon is changed (an undoable edit like any other).
+            b.setName(saveName)
+            if !b.isDirty { b.setIcon(b.profile?.icon == "star.fill" ? "bolt.fill" : "star.fill") }
+        }
         switch sheet {
         case .save:
             if mode == .edit {
@@ -82,7 +88,7 @@ extension ProfileStudioModel {
             try? await Task.sleep(for: .milliseconds(300))
             isShortcutEditorPresented = selectedID != nil
         case .restore: isPreviewPresented = true
-        case .newprofile: beginNewProfile()   // in Edit mode: shows why nothing started
+        case .newprofile: beginNewProfile()   // in Edit with unsaved changes: shows the confirmation
         case nil: break
         }
         return found

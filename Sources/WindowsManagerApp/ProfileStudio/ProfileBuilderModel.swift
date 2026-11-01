@@ -34,6 +34,12 @@ final class ProfileBuilderModel: ObservableObject {
     /// Notes from the capture (missing titles, Stage Manager, ...).
     @Published private(set) var startNotes: [String] = []
 
+    /// One line for the banner (P1-7): repeated "has no title" notes become a count, the rest is counted.
+    /// Nil when there are no notes. The full list stays in `startNoteDetails`.
+    var startNoteSummary: String? { CaptureNotes.summary(startNotes) }
+    /// The notes for "Show Details": the repeated per-window notes grouped into one line with a count.
+    var startNoteDetails: [String] { CaptureNotes.grouped(startNotes) }
+
     // Selection
     @Published var selectedDisplayUUID: String?
     @Published var selectedDesktop: Int?
@@ -513,5 +519,62 @@ final class ProfileBuilderModel: ObservableObject {
         if let d = selectedDisplayUUID, !p.displays.contains(where: { $0.uuid == d }) { selectedDisplayUUID = p.displays.first?.uuid }
         let desktops = p.spaces.filter { $0.displayUUID == selectedDisplayUUID && $0.kind == .desktop }.compactMap(\.desktopNumber)
         if let n = selectedDesktop, !desktops.contains(n) { selectedDesktop = desktops.first }
+    }
+}
+
+/// Condenses the capture's per-window notes (`ProfileCapture.makeProfile`) into a summary and a short grouped list.
+enum CaptureNotes {
+    private static let noTitleMarker = " has no title"
+    private static let unknownPlacementMarker = " has an unknown placement"
+
+    static func isNoTitle(_ note: String) -> Bool { note.contains(noTitleMarker) }
+    static func isUnknownPlacement(_ note: String) -> Bool { note.contains(unknownPlacementMarker) }
+
+    /// One sentence, e.g. "11 windows have no title and are matched by app and position. 2 more notes."
+    static func summary(_ notes: [String]) -> String? {
+        guard !notes.isEmpty else { return nil }
+        let noTitle = notes.filter(isNoTitle).count
+        let placement = notes.filter(isUnknownPlacement).count
+        let others = notes.count - noTitle - placement
+        var parts: [String] = []
+        if noTitle > 0 {
+            parts.append(noTitle == 1 ? "1 window has no title and is matched by app and position."
+                                      : "\(noTitle) windows have no title and are matched by app and position.")
+        }
+        if placement > 0 {
+            parts.append(placement == 1 ? "1 window has an unknown placement." : "\(placement) windows have an unknown placement.")
+        }
+        if others > 0 {
+            if noTitle + placement == 0, others == 1, let only = notes.first { return only }
+            parts.append(others == 1 ? "1 more note." : "\(others) more notes.")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    /// Repeated notes collapse into one line with a count; the others stay as they are, in order.
+    static func grouped(_ notes: [String]) -> [String] {
+        var result: [String] = []
+        var noTitle = 0, placement = 0
+        var noTitleAt: Int?, placementAt: Int?
+        for note in notes {
+            if isNoTitle(note) {
+                if noTitleAt == nil { noTitleAt = result.count; result.append("") }
+                noTitle += 1
+            } else if isUnknownPlacement(note) {
+                if placementAt == nil { placementAt = result.count; result.append("") }
+                placement += 1
+            } else {
+                result.append(note)
+            }
+        }
+        if let i = noTitleAt {
+            result[i] = noTitle == 1 ? (notes.first(where: isNoTitle) ?? "")
+                : "\(noTitle) windows have no title (Screen Recording or Accessibility access may be missing); they are matched by app and position only."
+        }
+        if let i = placementAt {
+            result[i] = placement == 1 ? (notes.first(where: isUnknownPlacement) ?? "")
+                : "\(placement) windows have an unknown placement (minimized, or on a Space that is not one of their display's Spaces)."
+        }
+        return result
     }
 }

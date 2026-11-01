@@ -19,6 +19,8 @@ final class CaptureChoiceModel: ObservableObject {
     private(set) var captured: Profile?
     /// A cancelled or left draft cannot stop its capture; its late result is ignored instead.
     private var generation = 0
+    /// How many "Review capture" edits were made (so Cancel in the review can take them back).
+    private(set) var reviewEdits = 0
 
     /// Captures the workspace, then starts the draft with everything kept so the map can show it.
     func run(builder: ProfileBuilderModel) async {
@@ -45,6 +47,16 @@ final class CaptureChoiceModel: ObservableObject {
         generation += 1
         stage = .idle
         captured = nil
+        reviewEdits = 0
+    }
+
+    /// Cancel in "Review capture": takes back the review edits made since the panel opened.
+    func undoReview(builder: ProfileBuilderModel, since start: Int) {
+        while reviewEdits > start, builder.canUndo {
+            builder.undo()
+            reviewEdits -= 1
+        }
+        reviewEdits = min(reviewEdits, start)
     }
 
     /// The ticks as the draft has them now: a captured window is ticked while it is still in the draft.
@@ -68,6 +80,7 @@ final class CaptureChoiceModel: ObservableObject {
         builder.edit(kind: "reviewCapture") { editor in
             for id in removed { try editor.removeWindow(id) }
         }
+        reviewEdits += 1
         DebugLog.log("studio", "capture review: removed \(removed.count) windows, \(kept.count) of \(capturedIDs.count) kept")
     }
 
@@ -86,11 +99,11 @@ struct NewProfileMenu: View {
     var body: some View {
         Menu {
             // Enabled in Edit mode too: a press there shows the same notice as the New profile button.
-            Button("From current workspace") { model.beginNewProfile() }.help("Start a profile from the windows open now")
-            Button("Blank on these monitors") { model.beginBlankProfile() }.help("Start an empty profile on these monitors")
-            Button("Copy of a profile…") { model.requestCopyPicker() }.help("Start from a copy of a saved profile")
+            Button("From Current Workspace") { model.beginNewProfile() }.help("Start a profile from the windows open now")
+            Button("Blank on These Monitors") { model.beginBlankProfile() }.help("Start an empty profile on these monitors")
+            Button("Copy of a Profile…") { model.requestCopyPicker() }.help("Start from a copy of a saved profile")
             if canReview {
-                Button("Review capture…") { model.isReviewCapturePresented = true }.help("Untick the captured windows to leave out")
+                Button("Review Capture…") { model.isReviewCapturePresented = true }.help("Untick the captured windows to leave out")
             }
         } label: {
             Image(systemName: "chevron.down").font(.caption).foregroundStyle(.secondary)
@@ -103,19 +116,26 @@ struct NewProfileMenu: View {
     }
 }
 
+/// The review count when the panel opened (`@State` is not used in the app target).
+@MainActor
+private final class ReviewStart: ObservableObject {
+    var start = 0
+}
+
 /// "Review capture": monitors > Desktops > windows of the capture, ticked as the draft has them. Unticking a window
 /// removes it from the draft; a window already gone is shown unticked and cannot be ticked back (Undo does that).
 struct CaptureReviewPanel: View {
     @ObservedObject var capture: CaptureChoiceModel
     @ObservedObject var builder: ProfileBuilderModel
     let onDone: () -> Void
+    /// Cancel closes the review and takes its changes back. Optional: without it Cancel only closes.
+    var onCancel: (() -> Void)?
+    @StateObject private var local = ReviewStart()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Review capture").font(.headline)
+            SheetHeader(title: "Review Capture", subtitle: "Untick what this profile should leave out.")
             if let selection = capture.selection(for: builder) {
-                Text("Untick what this profile should leave out. Undo takes a change back.")
-                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text("\(selection.selectedWindows) of \(selection.totalWindows) windows kept")
                     .font(.callout).foregroundStyle(.secondary).monospacedDigit()
                 ScrollView {
@@ -125,13 +145,24 @@ struct CaptureReviewPanel: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 2)
                 }
-                .frame(minHeight: 160, maxHeight: .infinity)
+                .frame(minHeight: 240, idealHeight: 360, maxHeight: .infinity)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.06)))
             }
-            HStack { Spacer(); Button("Done", action: onDone).buttonStyle(.borderedProminent).tint(Palette.accentStrong).keyboardShortcut(.defaultAction).help("Close the review (Return)") }
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    capture.undoReview(builder: builder, since: local.start)
+                    (onCancel ?? onDone)()
+                }
+                .keyboardShortcut(.cancelAction)
+                .help("Close and take back the changes made here (Esc)")
+                Button("Done", action: onDone).buttonStyle(.borderedProminent).tint(Palette.accentStrong)
+                    .keyboardShortcut(.defaultAction).help("Keep the changes and close (Return)")
+            }
         }
         .padding(20)
-        .frame(width: 380, height: 420)
+        .frame(minWidth: 380, idealWidth: 420, minHeight: 420, idealHeight: 520)
+        .onAppear { local.start = capture.reviewEdits }
     }
 
     // MARK: Tree
@@ -197,7 +228,8 @@ struct CaptureReviewPanel: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .help(state == .off ? "Tick to keep \(title) in the profile" : "Untick to leave \(title) out of the profile")
+        .help(!enabled && detail == "empty" ? "Empty Desktops are always kept"
+              : state == .off ? "Tick to keep \(title) in the profile" : "Untick to leave \(title) out of the profile")
         .accessibilityElement(children: .combine)
         .accessibilityValue(state == .on ? "checked" : state == .mixed ? "partly checked" : "unchecked")
     }

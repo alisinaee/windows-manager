@@ -112,7 +112,8 @@ struct RunProfileButton: View {
     }
 }
 
-/// The busy / failed / done line of `AppState.status`, or the reason Run is blocked.
+/// The busy / failed / done line of `AppState.status`. Run progress only (P1-12): why Run is blocked is a banner
+/// at the top of the Studio and the disabled button's help, not a second passive line.
 struct RunStatusLine: View {
     @ObservedObject var app: AppState
 
@@ -135,9 +136,7 @@ struct RunStatusLine: View {
                 .font(.callout).foregroundStyle(.secondary).lineLimit(2)
                 .accessibilityLabel("Done: \(text)")
         case .idle:
-            if let reason = studioRunBlockReason(app) {
-                Label(reason, systemImage: "lock").font(.callout).foregroundStyle(.secondary)
-            }
+            EmptyView()
         }
     }
 }
@@ -150,6 +149,8 @@ final class RestorePreviewModel: ObservableObject {
         case loading
         case ready
         case failed(String)
+        /// Accessibility is not allowed, so nothing can be read; the sheet offers the System Settings pane.
+        case needsAccessibility
     }
 
     let profileID: UUID
@@ -191,7 +192,7 @@ final class RestorePreviewModel: ObservableObject {
             return
         }
         guard app.isAccessibilityTrusted else {
-            phase = .failed("Accessibility is not allowed yet, so the preview cannot read your windows. Allow it in System Settings > Privacy & Security > Accessibility.")
+            phase = .needsAccessibility
             return
         }
         phase = .loading
@@ -245,18 +246,20 @@ struct RestorePreviewSheet: View {
         .accessibilityLabel("Preview restore of \(profileName)")
     }
 
+    private static let accessibilitySettingsURL = URL(
+        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+
     private var header: some View {
         HStack(spacing: Spacing.m) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Preview restore of \"\(profileName)\"").font(.title3.bold())
-                Text("Nothing is changed until you press Run now.").font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                SheetHeader(title: "Preview Restore of \u{201C}\(profileName)\u{201D}",
+                            subtitle: "Nothing is changed until you press Run now.")
                 scopeChip
             }
             .layoutPriority(1)
             Spacer()
             Button { model.load() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                .labelStyle(.iconOnly)
+                .labelStyle(.titleAndIcon)
                 .buttonStyle(.bordered)
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(model.phase == .loading)
@@ -286,6 +289,16 @@ struct RestorePreviewSheet: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityElement(children: .combine)
+        case .needsAccessibility:
+            ContentUnavailableView {
+                Label("Accessibility Access Needed", systemImage: "lock.shield")
+            } description: {
+                Text("The preview reads your windows, which macOS only allows with Accessibility access.")
+            } actions: {
+                Button("Open System Settings") { NSWorkspace.shared.open(Self.accessibilitySettingsURL) }
+                    .buttonStyle(.borderedProminent).tint(Palette.accentStrong)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed(let message):
             VStack(spacing: Spacing.s) {
                 Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(.secondary)
@@ -402,7 +415,7 @@ struct RestorePreviewSheet: View {
 
     @ViewBuilder private var footer: some View {
         HStack(spacing: Spacing.m) {
-            if let app = AppState.current {
+            if let app = AppState.current, model.phase != .needsAccessibility {
                 RunStatusLine(app: app)
             }
             if model.isRunning { ProgressView().controlSize(.small) }

@@ -35,6 +35,7 @@ final class DebugWindowController: NSObject, NSWindowDelegate {
         window.setContentSize(NSSize(width: 560, height: 680))
         window.center()
         window.setFrameAutosaveName("DebugTests")
+        UXTestRoute.place(window)
         self.window = window
         present(window)
     }
@@ -49,6 +50,7 @@ final class DebugWindowController: NSObject, NSWindowDelegate {
 
     private func present(_ window: NSWindow) {
         if window.isMiniaturized { window.deminiaturize(nil) }
+        UXTestRoute.place(window)
         if UXTestRoute.isBackground {   // UX harness: show without taking the focus
             window.orderFrontRegardless()
             return

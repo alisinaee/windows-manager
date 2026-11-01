@@ -27,12 +27,15 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.center()
+        UXTestRoute.place(window)
         self.window = window
         present(window)
     }
 
     private func present(_ window: NSWindow) {
         if window.isMiniaturized { window.deminiaturize(nil) }
+        UXTestRoute.place(window)
+        if UXTestRoute.isBackground { window.orderFrontRegardless(); return }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }

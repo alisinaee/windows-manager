@@ -77,6 +77,7 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
 
     private func present(_ window: NSWindow) {
         clampToScreen(window)
+        UXTestRoute.place(window)
         if window.isMiniaturized { window.deminiaturize(nil) }
         if UXTestRoute.isBackground {   // UX harness: show without taking the focus
             window.orderFrontRegardless()

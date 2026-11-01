@@ -13,16 +13,50 @@ enum UXTestRoute {
     static var isBackground: Bool { UXOpenRoute.isEnabled() }
 
     /// The screen picked by WM_UX_DISPLAY: a 1-based index into `NSScreen.screens`, "secondary" (first screen
-    /// without the menu bar) or "largest". Nil when unset or unusable, so the caller keeps the default placement.
+    /// without the menu bar), "largest", or a screen name (`localizedName`, case-insensitive, exact or contains).
+    /// Nil when unset or unusable, so the caller keeps the default placement.
     static func chosenScreen(environment: [String: String] = ProcessInfo.processInfo.environment) -> NSScreen? {
-        guard let value = environment["WM_UX_DISPLAY"]?.lowercased(), !value.isEmpty else { return nil }
+        guard let value = environment["WM_UX_DISPLAY"], !value.isEmpty else { return nil }
         let screens = NSScreen.screens
-        switch value {
-        case "secondary": return screens.dropFirst().first
-        case "largest": return screens.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
-        default:
-            guard let n = Int(value), n >= 1, n <= screens.count else { return nil }
-            return screens[n - 1]
+        let described = screens.map { UXScreenChoice.Screen(name: $0.localizedName, area: $0.frame.width * $0.frame.height) }
+        return UXScreenChoice.pick(value, screens: described).map { screens[$0] }
+    }
+
+    /// Never activates the app in test mode (the user keeps working elsewhere). Use instead of `NSApp.activate()`.
+    static func activateUnlessBackground() {
+        if !isBackground { NSApp.activate() }
+    }
+
+    private static var guardObservers: [NSObjectProtocol] = []
+    private static var lastGuardRun = Date.distantPast
+
+    /// UX test mode only: keeps every visible window (alerts, panels, onboarding, settings, debug) on the chosen
+    /// screen. Moves strays on window / screen / key changes and, throttled, on every app update.
+    static func installWindowGuard() {
+        guard isBackground, chosenScreen() != nil, guardObservers.isEmpty else { return }
+        let nc = NotificationCenter.default
+        let names: [Notification.Name] = [NSWindow.didBecomeKeyNotification, NSWindow.didChangeScreenNotification,
+                                          NSWindow.didBecomeMainNotification, NSApplication.didUpdateNotification]
+        for name in names {
+            guardObservers.append(nc.addObserver(forName: name, object: nil, queue: .main) { note in
+                MainActor.assumeIsolated {
+                    if name == NSApplication.didUpdateNotification {
+                        guard Date().timeIntervalSince(lastGuardRun) > 0.25 else { return }
+                        lastGuardRun = Date()
+                    }
+                    keepOnChosenScreen()
+                }
+            })
+        }
+        keepOnChosenScreen()
+    }
+
+    /// Moves every visible titled window or panel that is not on the chosen screen into it. Sheets follow their parent.
+    static func keepOnChosenScreen() {
+        guard isBackground, let target = chosenScreen() else { return }
+        for w in NSApp.windows where w.isVisible && w.sheetParent == nil && w.parent == nil
+            && (w.styleMask.contains(.titled) || w is NSPanel) && w.screen != target {
+            place(w)
         }
     }
 

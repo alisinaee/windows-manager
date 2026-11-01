@@ -17,7 +17,8 @@ struct WindowsManagerMain: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Windows Manager", systemImage: "rectangle.3.group") {
+        // UX test copy: no status item, so its icon and menu window never show on the active display.
+        MenuBarExtra("Windows Manager", systemImage: "rectangle.3.group", isInserted: .constant(!UXOpenRoute.isEnabled())) {
             MenuBarContent()
                 .environmentObject(appState)
         }

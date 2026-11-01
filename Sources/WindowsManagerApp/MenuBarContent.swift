@@ -50,7 +50,7 @@ struct MenuBarContent: View {
             }
             MenuRow(title: "Settings…", symbol: "gearshape") {
                 Self.closePopup()
-                NSApp.activate()
+                UXTestRoute.activateUnlessBackground()
                 openSettings()
             }
             MenuRow(title: "Report a Bug…", symbol: "ladybug") {

@@ -18,7 +18,7 @@ final class BugReportWindowController: NSObject, NSWindowDelegate {
             w.center()
             window = w
         }
-        NSApp.activate()
+        UXTestRoute.activateUnlessBackground()
         window?.makeKeyAndOrderFront(nil)
     }
 

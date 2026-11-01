@@ -44,7 +44,7 @@ final class UpdateController: ObservableObject {
 
     func checkForUpdates() {
         guard canCheckForUpdates else { return }
-        NSApp.activate()
+        UXTestRoute.activateUnlessBackground()
         controller.checkForUpdates(nil)
     }
 }

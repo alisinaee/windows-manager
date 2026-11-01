@@ -7,8 +7,9 @@ import SwiftUI
 final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
     static let shared = ProfileStudioWindowController()
 
-    /// Smallest content size. Below the roomy layouts the sidebar and the Details inspector collapse.
-    static let minSize = NSSize(width: 720, height: 480)
+    /// Smallest content size. The split view's column minimums (sidebar, map, inspector; 760 at most) must always fit
+    /// inside it with the divider widths, or AppKit's split view loops on its constraints (P0-5).
+    static let minSize = NSSize(width: 800, height: 560)
 
     private var window: NSWindow?
     let model = ProfileStudioModel()
@@ -35,7 +36,7 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
         window.setContentSize(NSSize(width: 1100, height: 700))
         window.center()
         window.setFrameAutosaveName("ProfileStudio")
-        clampToScreen(window)
+        clampToScreen(window)   // a frame restored from the autosave may be too small, too tall or off the screen
         self.window = window
         model.onTitleChange = { [weak window] title, subtitle in window?.title = title; window?.subtitle = subtitle }
         model.onEnterEdit = { [weak self, weak window] in if let window { self?.makeEditRoom(window) } }
@@ -73,11 +74,12 @@ final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
         frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
         DebugLog.log("studio", "edit: window widened to \(Int(width)) x \(Int(height))")
         window.setFrame(frame, display: true, animate: false)
+        clampToScreen(window)   // P0-4: never taller than the visible screen, so the sidebar's end stays reachable
     }
 
     private func present(_ window: NSWindow) {
-        clampToScreen(window)
         UXTestRoute.place(window)
+        clampToScreen(window)   // after the harness (or an autosave) placed it: P0-4
         if window.isMiniaturized { window.deminiaturize(nil) }
         if UXTestRoute.isBackground {   // UX harness: show without taking the focus
             window.orderFrontRegardless()

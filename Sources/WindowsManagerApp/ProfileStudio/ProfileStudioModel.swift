@@ -102,6 +102,8 @@ final class ProfileStudioModel: ObservableObject {
         if canUndo != undo { canUndo = undo }
         if canRedo != redo { canRedo = redo }
     }
+    /// The tab of the Edit inspector (shared with the inspector views; the harness can preset it).
+    @Published var inspectorTab: StudioInspectorTab = ProfileStudioModel.uxInspectorTab ?? .inspector
     /// "Copy of a profile…" from the New profile menu.
     @Published var isCopyPickerPresented = false
     /// "Review capture" popover: unticking windows removes them from the new draft.
@@ -162,14 +164,14 @@ final class ProfileStudioModel: ObservableObject {
 
     var selectedRow: ProfileStudioRow? { rows.first { $0.id == selectedID } }
 
-    /// The profile name (the window title); "Profiles" when there is none.
+    /// The profile name (the window title); "Profile Studio" when there is none.
     var windowTitle: String {
         if mode == .edit, let b = builder {
             if !b.nameText.isEmpty { return b.nameText }
             if !b.isNewProfile, let name = selectedRow?.name { return name }   // draft still loading
             return "Untitled profile"
         }
-        return selectedRow?.name ?? "Profiles"
+        return selectedRow?.name ?? "Profile Studio"
     }
 
     /// "Edited" while the draft has unsaved changes, otherwise the capture date.
@@ -284,43 +286,82 @@ final class ProfileStudioModel: ObservableObject {
         return b
     }
 
-    /// Why the last "New profile" press did nothing; shown under the button until the next press or leaving Edit.
+    /// Retired: a press in Edit mode no longer shows a notice. It starts the draft, or asks first
+    /// (`isNewProfileConfirmPresented`). Kept so existing views compile; it is never set.
     @Published var newProfileNotice: String?
 
-    /// "New profile": captures the current workspace at once and opens the map with everything kept (no start sheet).
-    /// The map pane shows progress until the capture is done. "Review capture" in the New profile menu unticks windows.
-    func beginNewProfile() {
-        if let why = NewProfileGate.refusal(isEditing: mode == .edit, hasUnsavedChanges: hasUnsavedChanges) {
-            DebugLog.log("studio", "new profile refused: \(why)")
-            newProfileNotice = why
-            return
+    /// Where a new draft starts from.
+    enum NewProfileStart {
+        case workspace
+        case blank
+        case copyPicker
+    }
+
+    /// "Leave Edit mode to start a new profile?" (Save... / Discard Changes / Cancel). Shown only when Edit has unsaved changes.
+    @Published var isNewProfileConfirmPresented = false
+    private var pendingNewProfile: NewProfileStart?
+
+    /// The one way into a new draft. Edit without changes is left silently; Edit with changes asks first. Either way it
+    /// happens in this window: nothing is closed, reopened or relaunched.
+    func requestNewProfile(_ start: NewProfileStart) {
+        if mode == .edit {
+            if hasUnsavedChanges {
+                pendingNewProfile = start
+                isNewProfileConfirmPresented = true
+                DebugLog.log("studio", "new profile: asking about unsaved changes")
+                return
+            }
+            leaveEdit()
         }
-        newProfileNotice = nil
-        DebugLog.log("studio", "new profile: from current workspace")
-        let b = enterNewDraft()
-        Task { await capture.run(builder: b) }
+        performNewProfile(start)
     }
 
-    /// "Blank on these monitors" from the New profile menu.
-    func beginBlankProfile() {
-        if let why = NewProfileGate.refusal(isEditing: mode == .edit, hasUnsavedChanges: hasUnsavedChanges) { newProfileNotice = why; return }
-        newProfileNotice = nil
-        DebugLog.log("studio", "new profile: blank")
-        let b = enterNewDraft()
-        Task { await b.start(from: .blank) }
+    /// The answer to the confirmation: save the open draft first, or discard it, then start the new one.
+    func confirmNewProfile(save: Bool) {
+        guard let start = pendingNewProfile else { isNewProfileConfirmPresented = false; return }
+        pendingNewProfile = nil
+        isNewProfileConfirmPresented = false
+        if save {
+            saveThen { [weak self] in self?.leaveEdit(); self?.performNewProfile(start) }
+        } else {
+            leaveEdit()
+            performNewProfile(start)
+        }
     }
 
-    /// "Copy of a profile…" in the menu: opens the picker, or says why not in Edit mode.
-    func requestCopyPicker() {
-        if let why = NewProfileGate.refusal(isEditing: mode == .edit, hasUnsavedChanges: hasUnsavedChanges) { newProfileNotice = why; return }
-        newProfileNotice = nil
-        isCopyPickerPresented = true
+    func cancelNewProfile() {
+        pendingNewProfile = nil
+        isNewProfileConfirmPresented = false
     }
+
+    private func performNewProfile(_ start: NewProfileStart) {
+        switch start {
+        case .workspace:
+            DebugLog.log("studio", "new profile: from current workspace")
+            let b = enterNewDraft()
+            Task { await capture.run(builder: b) }
+        case .blank:
+            DebugLog.log("studio", "new profile: blank")
+            let b = enterNewDraft()
+            Task { await b.start(from: .blank) }
+        case .copyPicker:
+            isCopyPickerPresented = true
+        }
+    }
+
+    /// "New Profile": captures the current workspace at once and opens the map with everything kept (no start sheet).
+    /// The map pane shows progress until the capture is done. "Review Capture" in the New Profile menu unticks windows.
+    func beginNewProfile() { requestNewProfile(.workspace) }
+
+    /// "Blank on these monitors" from the New Profile menu.
+    func beginBlankProfile() { requestNewProfile(.blank) }
+
+    /// "Copy of a Profile…" in the menu: opens the picker (after the same Edit confirmation).
+    func requestCopyPicker() { requestNewProfile(.copyPicker) }
 
     /// "Copy of a profile…": the picked saved profile opens as a draft.
     func beginCopy(of id: UUID) {
-        if let why = NewProfileGate.refusal(isEditing: mode == .edit, hasUnsavedChanges: hasUnsavedChanges) { newProfileNotice = why; return }
-        newProfileNotice = nil
+        if mode == .edit { guard !hasUnsavedChanges else { return }; leaveEdit() }
         DebugLog.log("studio", "new profile: copy")
         isCopyPickerPresented = false
         let b = enterNewDraft()
@@ -379,7 +420,8 @@ final class ProfileStudioModel: ObservableObject {
 
     /// Throws the draft away and returns to View mode.
     func leaveEdit() {
-        newProfileNotice = nil
+        pendingNewProfile = nil
+        isNewProfileConfirmPresented = false
         builder?.discard()
         builder = nil
         capture.reset()

@@ -12,7 +12,7 @@ enum CaptureSession {
     /// windows again. Only the window that had keyboard focus is made key again, so a user who was elsewhere keeps focus.
     static func run<T>(_ scan: @escaping () -> T) async -> T {
         let (hidden, keyBefore) = hideOwnWindows()
-        try? await Task.sleep(for: settleDelay)
+        if !hidden.isEmpty { try? await Task.sleep(for: settleDelay) }
         let result = await Task.detached(priority: .userInitiated) { scan() }.value
         restore(hidden, keyBefore: keyBefore)
         DebugLog.log("capture", "hid \(hidden.count) own windows, settled 700ms")
@@ -26,7 +26,7 @@ enum CaptureSession {
     /// scan ends with an error instead of a Studio that never comes back (P6.132). A late scan result is dropped.
     static func runTimed(limit: Duration = CaptureTimeout.defaultLimit, _ scan: @escaping @Sendable () -> WorkspaceScan) async -> WorkspaceScan? {
         let (hidden, keyBefore) = hideOwnWindows()
-        try? await Task.sleep(for: settleDelay)
+        if !hidden.isEmpty { try? await Task.sleep(for: settleDelay) }
         let result = await CaptureTimeout.race(limit: limit) {
             await Task.detached(priority: .userInitiated) { scan() }.value
         }
@@ -55,7 +55,11 @@ enum CaptureSession {
     // MARK: Hiding and showing
 
     /// Orders out our visible windows. Returns them with the window that had keyboard focus (nil when it was not ours).
+    /// Only with Stage Manager on: that is the only case where our front window changes the stage that is scanned
+    /// (`scanWorkspace` leaves our own windows out anyway). With it off nothing is hidden, so "New profile" no longer
+    /// makes the Studio vanish and come back, which looked like the app quitting and relaunching.
     private static func hideOwnWindows() -> ([NSWindow], NSWindow?) {
+        guard StageManagerProvider.live.isEnabled() == true else { return ([], nil) }
         let windows = NSApp.windows.filter { window in
             window.isVisible && !window.className.contains("MenuBarExtra")
         }

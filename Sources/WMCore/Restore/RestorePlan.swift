@@ -442,8 +442,14 @@ public enum RestorePlanner {
             let snapshot = item.snapshot, live = item.live, target = item.target
             let wantsFullScreen = snapshot.isFullScreen && !snapshot.isMinimized
 
+            // A window that is already full screen, but on the wrong monitor (an app that reopens its windows full
+            // screen, like VS Code, puts them on the main monitor), has to leave full screen, move, and enter again.
+            let fullScreenOnWrongDisplay = wantsFullScreen && live.isFullScreen && options.restoreFullScreen
+                && (item.display.map { !live.isOnDisplay($0) } ?? false)
+            let liveFullScreen = live.isFullScreen && !fullScreenOnWrongDisplay
+
             // 1. Leave full screen. Needed to place a window that should not be full screen.
-            if live.isFullScreen && !wantsFullScreen {
+            if live.isFullScreen && (!wantsFullScreen || fullScreenOnWrongDisplay) {
                 exitFullScreen.append(.exitFullScreen(target))
             }
 
@@ -489,7 +495,7 @@ public enum RestorePlanner {
             if wantsFullScreen {
                 if !options.restoreFullScreen {
                     skippedFullScreen += 1
-                } else if !live.isFullScreen {
+                } else if !liveFullScreen {
                     // Full screen opens on the monitor the window is on, so move it there first.
                     if let display = item.display, !live.isOnDisplay(display) {
                         setFrame.append(.setFrame(target, frame: snapshot.frame, from: live.frame, beforeFullScreen: true))

@@ -112,13 +112,42 @@ struct MenuBarContent: View {
         }
     }
 
+    /// The running profile's row: spinner or bar, the current step, and Stop.
+    private func runningRow(_ progress: RunProgress) -> some View {
+        HStack(spacing: Spacing.xs) {
+            Group {
+                if let fraction = progress.fraction {
+                    ProgressView(value: fraction).progressViewStyle(.linear)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .frame(width: 40, alignment: .leading)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(progress.profileName).font(.wmBody).lineLimit(1)
+                Text(progress.label).font(.wmCaption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+            }
+            Spacer(minLength: Spacing.s)
+            Button { appState.cancelRun() } label: { Image(systemName: "stop.fill").font(.caption) }
+                .buttonStyle(.borderless)
+                .help("Stop restoring \(progress.profileName)")
+                .accessibilityLabel("Stop running \(progress.profileName)")
+        }
+        .padding(.horizontal, Spacing.s + 2)
+        .padding(.vertical, Spacing.xs)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Running \(progress.profileName): \(progress.label)")
+    }
+
     @ViewBuilder private var profileRows: some View {
         let rows = VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(appState.savedProfiles.enumerated()), id: \.element.id) { offset, profile in
                 let hl = nav.index == offset
                 let isLast = nav.lastRunID == profile.id
                 let choices = appState.scopeChoices[profile.id] ?? []
-                if choices.count > 1 {
+                if let progress = appState.runProgress, progress.profileID == profile.id {
+                    runningRow(progress)
+                } else if choices.count > 1 {
                     HStack(spacing: 0) {
                         MenuRow(title: "Run \(profile.name)", symbol: "play.fill", checked: isLast, trailing: shortcutText(profile), highlighted: hl) { runProfile(profile) }
                         Menu {

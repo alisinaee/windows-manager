@@ -389,6 +389,37 @@ struct StudioRunControl: View {
     private var isSaved: Bool { app.savedProfiles.contains { $0.id == profileID } }
 
     var body: some View {
+        if let progress = app.runProgress {
+            runningBody(progress)
+        } else {
+            runMenu
+        }
+    }
+
+    /// Spinner or bar with the current step, and Stop; replaces the Run button while a run is in flight.
+    private func runningBody(_ progress: RunProgress) -> some View {
+        HStack(spacing: Spacing.s) {
+            if let fraction = progress.fraction {
+                ProgressView(value: fraction).progressViewStyle(.linear).frame(width: 64)
+            } else {
+                ProgressView().controlSize(.small)
+            }
+            if !iconOnly {
+                Text(progress.label).font(.wmCaption).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.tail).frame(maxWidth: 220, alignment: .leading)
+            }
+            Button { app.cancelRun() } label: { Label("Stop", systemImage: "stop.fill").labelStyle(.iconOnly) }
+                .buttonStyle(.glass)
+                .help("Stop restoring \(progress.profileName)")
+                .accessibilityLabel("Stop running \(progress.profileName)")
+        }
+        .help(progress.label)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Running \(progress.profileName): \(progress.label)")
+        .animation(Motion.quick, value: progress.done)
+    }
+
+    private var runMenu: some View {
         Menu {
             Button(shortcut.map { "Change Shortcut \($0.description)" } ?? "Set Shortcut…") {
                 DebugLog.log("studio", "shortcut opened: \(profileName)")

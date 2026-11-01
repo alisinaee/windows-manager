@@ -12,8 +12,36 @@ enum MenuStatus: Equatable {
     var isBusy: Bool { if case .running = self { return true } else { return false } }
 }
 
+/// Progress of the profile run in flight: which profile, and the current step out of the total.
+struct RunProgress: Equatable {
+    let profileID: UUID
+    let profileName: String
+    var text: String
+    /// Plan steps finished so far and the plan's step count; total is 0 until the plan is known.
+    var done = 0
+    var total = 0
+
+    var fraction: Double? { total > 0 ? min(1, Double(done) / Double(total)) : nil }
+
+    /// "Step 3 of 12: Move Safari" while stepping, or the phase text before and after.
+    var label: String { total > 0 && done < total ? "Step \(done + 1) of \(total): \(text)" : text }
+
+    mutating func apply(_ event: RestoreProgress) {
+        switch event {
+        case .planned(let plan): total = plan.steps.count; text = event.message
+        case .stepStarted(_, let t, let description): total = t; text = description
+        case .stepFinished(let index, let t, _, _, _): total = t; done = index
+        case .finished: break
+        default: text = event.message
+        }
+    }
+}
+
 @MainActor
 final class AppState: ObservableObject {
+    /// The run in flight (nil when none); drives the Studio's Run control and the menu's profile row.
+    @Published private(set) var runProgress: RunProgress?
+    private var runTask: Task<Void, Never>?
     @Published private(set) var savedProfiles: [ProfileSummary] = []
     @Published private(set) var status: MenuStatus = .idle
     @Published var isNamingCapture = false
@@ -195,8 +223,10 @@ final class AppState: ObservableObject {
         guard checkCanStart() else { return }
         DebugLog.log("run", "start profile=\(summary.name) id=\(summary.id) scope=\(scope.isWhole ? "whole" : "partial")")
         status = .running("Loading \(summary.name)…")
+        runProgress = RunProgress(profileID: summary.id, profileName: summary.name, text: "Loading \(summary.name)…")
         let store = self.store
-        Task { [weak self] in
+        runTask = Task { [weak self] in
+            defer { Task { @MainActor in self?.runProgress = nil; self?.runTask = nil } }
             do {
                 let profile = try await Task.detached(priority: .userInitiated) { try store.load(summary.id) }.value
                 let engine = RestoreEngine()
@@ -215,8 +245,12 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Stops the run in flight; the engine skips the remaining steps and reports them as cancelled.
+    func cancelRun() { runTask?.cancel() }
+
     private func showProgress(_ event: RestoreProgress) {
         guard status.isBusy else { return }
+        runProgress?.apply(event)
         switch event {
         case .finished: break
         case .stepFinished: break

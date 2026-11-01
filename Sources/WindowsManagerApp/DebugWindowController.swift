@@ -49,6 +49,10 @@ final class DebugWindowController: NSObject, NSWindowDelegate {
 
     private func present(_ window: NSWindow) {
         if window.isMiniaturized { window.deminiaturize(nil) }
+        if UXTestRoute.isBackground {   // UX harness: show without taking the focus
+            window.orderFrontRegardless()
+            return
+        }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }

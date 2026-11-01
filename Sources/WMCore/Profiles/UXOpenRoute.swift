@@ -52,9 +52,12 @@ public struct UXOpenRoute: Equatable, Sendable {
         environment["WM_UX_TEST"] == "1"
     }
 
-    /// True when the URL is `windowsmanager://open...` (so the caller can route it before `ControlCommand`).
+    /// Schemes the route answers to: the app's own, and the UX test bundle's (`scripts/ux-bundle.sh`).
+    public static let schemes: Set<String> = [ControlCommand.scheme, "windowsmanager-ux"]
+
+    /// True when the URL is `windowsmanager://open...` or `windowsmanager-ux://open...` (so the caller can route it before `ControlCommand`).
     public static func matches(_ url: URL) -> Bool {
-        url.scheme?.lowercased() == ControlCommand.scheme && (url.host ?? "").lowercased() == "open"
+        schemes.contains(url.scheme?.lowercased() ?? "") && (url.host ?? "").lowercased() == "open"
     }
 
     /// Parses the route. `section` is required; unknown values throw. `size` is `WxH` with both sides at least 100.

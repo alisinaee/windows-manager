@@ -9,6 +9,44 @@ import WMCore
 enum UXTestRoute {
     static let readyPath = "/tmp/wm-ux-ready.json"
 
+    /// True with WM_UX_TEST=1: windows then show without taking the focus (the user keeps working elsewhere).
+    static var isBackground: Bool { UXOpenRoute.isEnabled() }
+
+    /// The screen picked by WM_UX_DISPLAY: a 1-based index into `NSScreen.screens`, "secondary" (first screen
+    /// without the menu bar) or "largest". Nil when unset or unusable, so the caller keeps the default placement.
+    static func chosenScreen(environment: [String: String] = ProcessInfo.processInfo.environment) -> NSScreen? {
+        guard let value = environment["WM_UX_DISPLAY"]?.lowercased(), !value.isEmpty else { return nil }
+        let screens = NSScreen.screens
+        switch value {
+        case "secondary": return screens.dropFirst().first
+        case "largest": return screens.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+        default:
+            guard let n = Int(value), n >= 1, n <= screens.count else { return nil }
+            return screens[n - 1]
+        }
+    }
+
+    /// Centers the window in the chosen screen's visible frame, clamping its size to it. No-op without WM_UX_DISPLAY.
+    static func place(_ window: NSWindow) {
+        guard isBackground, let visible = chosenScreen()?.visibleFrame else { return }
+        var frame = window.frame
+        frame.size.width = min(frame.width, visible.width)
+        frame.size.height = min(frame.height, visible.height)
+        frame.origin.x = visible.midX - frame.width / 2
+        frame.origin.y = visible.midY - frame.height / 2
+        window.setFrame(frame, display: true)
+    }
+
+    /// Shows a window the way the route needs it: without focus in test mode.
+    private static func present(_ window: NSWindow) {
+        if isBackground {
+            window.orderFrontRegardless()
+        } else {
+            NSApp.activate()
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+
     /// True when the URL was an open route (handled or refused), so the caller skips `ControlCommand`.
     static func handleIfOpenRoute(_ url: URL) -> Bool {
         guard UXOpenRoute.matches(url) else { return false }
@@ -47,6 +85,7 @@ enum UXTestRoute {
             target = await waitForWindow { ProfileStudioModel.isStudioWindow($0) }
             // Size first so the layout the sheet or tile selection sees is the final one.
             if let size = route.size, let target { await applySize(size, to: target) }
+            if let target { place(target) }
             if let model = ProfileStudioModel.uxCurrent() {
                 await model.uxApply(profile: route.profile, mode: route.mode, sheet: route.sheet,
                                     selectTile: route.selectTile, saveName: route.saveName, sidebar: route.sidebar)
@@ -65,6 +104,7 @@ enum UXTestRoute {
             target = showPopover()
         }
         if route.section != .studio, let size = route.size, let target { await applySize(size, to: target) }
+        if route.section != .studio, let target { place(target) }
         // Let SwiftUI lay out the sheet or popover before the caller captures.
         try? await Task.sleep(for: .milliseconds(500))
         if let target {
@@ -110,7 +150,7 @@ enum UXTestRoute {
 
     private static func openSettings() async -> NSWindow? {
         let before = Set(NSApp.windows.map { ObjectIdentifier($0) })
-        NSApp.activate()
+        if !isBackground { NSApp.activate() }
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         for _ in 0..<20 {
             try? await Task.sleep(for: .milliseconds(50))
@@ -124,7 +164,7 @@ enum UXTestRoute {
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         window.center()
-        window.makeKeyAndOrderFront(nil)
+        present(window)
         standalone = window
         return window
     }
@@ -144,8 +184,7 @@ enum UXTestRoute {
         window.isReleasedWhenClosed = false
         window.setContentSize(host.view.fittingSize)
         window.center()
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
+        present(window)
         standalone = window
         return window
     }

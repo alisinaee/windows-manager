@@ -100,3 +100,24 @@ extension ProfileMapLayout {
             windows: windows.map { var w = $0; w.rect = s(w.rect); return w })
     }
 }
+
+/// When the map refits itself: on open and on every viewport size change, until the user zooms or pans by hand.
+/// A viewport that is still tiny (a transient size while the window or the inspector column is being laid out) never fits.
+public struct CanvasFitPolicy: Equatable, Sendable {
+    public static let minimumViewport = CGSize(width: 200, height: 150)
+
+    /// True until the user adjusts the view; `fitted()` sets it again (the Fit button restores auto-fit).
+    public private(set) var autoFit = true
+
+    public init() {}
+
+    public static func isUsable(_ size: CGSize) -> Bool {
+        size.width >= minimumViewport.width && size.height >= minimumViewport.height
+    }
+
+    /// Whether to fit now: auto-fit is on and `viewport` is usable.
+    public func shouldFit(viewport: CGSize) -> Bool { autoFit && Self.isUsable(viewport) }
+
+    public mutating func userAdjusted() { autoFit = false }
+    public mutating func fitted() { autoFit = true }
+}

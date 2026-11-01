@@ -143,3 +143,28 @@ import Testing
         #expect(view.zoom == CanvasViewport.zoomRange.lowerBound)
     }
 }
+
+@Suite struct CanvasFitPolicyTests {
+    @Test func zeroAndTransientViewportsNeverFit() {
+        let policy = CanvasFitPolicy()
+        #expect(!policy.shouldFit(viewport: .zero))
+        #expect(!policy.shouldFit(viewport: CGSize(width: 150, height: 400)))
+        #expect(policy.shouldFit(viewport: CGSize(width: 800, height: 500)))
+    }
+
+    @Test func refitsOnResizeUntilUserAdjusts() {
+        var policy = CanvasFitPolicy()
+        #expect(policy.shouldFit(viewport: CGSize(width: 900, height: 600)))
+        policy.userAdjusted()
+        #expect(!policy.shouldFit(viewport: CGSize(width: 1200, height: 700)))
+        policy.fitted()
+        #expect(policy.shouldFit(viewport: CGSize(width: 1200, height: 700)))
+    }
+
+    @Test func fitCentresContentWhenZoomCapped() {
+        let v = CanvasViewport.fitting(CGRect(x: 0, y: 0, width: 400, height: 200), in: CGSize(width: 1000, height: 800), padding: 0, maxZoom: 1)
+        #expect(v.zoom == 1)
+        #expect(abs(v.offset.x - 300) < 0.001)
+        #expect(abs(v.offset.y - 300) < 0.001)
+    }
+}

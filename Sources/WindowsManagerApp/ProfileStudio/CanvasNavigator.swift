@@ -51,17 +51,20 @@ struct CanvasNavigator: NSViewRepresentable {
 
         /// Returns nil when the event was used (it never reaches the tiles), else the event.
         private func handle(_ event: NSEvent) -> NSEvent? {
-            guard let model, event.window === window else { return event }
+            // Only events of the canvas's own window, and only while this view is on screen with a real size:
+            // a stale or hidden navigator (view-mode host during the Edit transition) must never take events.
+            guard let model, let window, event.window === window, !isHiddenOrHasHiddenAncestor,
+                  !visibleRect.isEmpty else { return event }
             // Key events carry no pointer position: use where the pointer is now.
             let location = (event.type == .keyDown || event.type == .keyUp)
-                ? (window?.mouseLocationOutsideOfEventStream ?? .zero) : event.locationInWindow
+                ? (window.mouseLocationOutsideOfEventStream ?? .zero) : event.locationInWindow
             let point = convert(location, from: nil)
             // Over another column (the sidebar list, the inspector) the scroll belongs to that view's scroll view.
-            let inside = bounds.contains(point) && !isOverForeignScrollView(event.locationInWindow)
+            let inside = visibleRect.contains(point) && !isOverForeignScrollView(event.locationInWindow)
             switch event.type {
             case .keyDown:
                 guard event.keyCode == 49, event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
-                      inside || spaceHeld, window?.isKeyWindow == true, !isEditingText else { return event }
+                      inside || spaceHeld, window.isKeyWindow == true, !isEditingText else { return event }
                 if !spaceHeld {
                     spaceHeld = true
                     model.panModeActive = true

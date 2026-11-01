@@ -74,7 +74,7 @@ final class ProfileMapModel: ObservableObject {
             fannedStackID = nil
             zoom = 1
             offset = .zero
-            pendingFit = true
+            fitPolicy = CanvasFitPolicy()
             focusedDisplayUUID = profile?.displays.first?.uuid
         } else {
             // Space ids are positional, so re-resolve each stored selection by kind + Desktop number
@@ -98,7 +98,8 @@ final class ProfileMapModel: ObservableObject {
             }
         }
         relayout()
-        if pendingFit { fit() }
+        // Without a usable viewport yet the fit waits for `setViewport` (P0-1).
+        if fitPolicy.shouldFit(viewport: viewportReady ? viewport : .zero) { fit() }
     }
 
     // MARK: Layout
@@ -120,16 +121,23 @@ final class ProfileMapModel: ObservableObject {
     }
 
     func setViewport(_ size: CGSize) {
-        guard size.width > 1, size.height > 1, size != viewport else { return }
-        viewport = size
-        relayout()
-        if pendingFit { pendingFit = false; fit() }
+        guard size.width > 1, size.height > 1 else { return }
+        let changed = size != viewport
+        if changed { viewport = size; relayout() }
+        // Fit when the viewport first becomes usable and again on every size change (window, sidebar, inspector),
+        // until the user zooms or pans by hand (P0-1, P0-2).
+        let firstUsable = !viewportReady && CanvasFitPolicy.isUsable(size)
+        if firstUsable { viewportReady = true }
+        if (changed || firstUsable), fitPolicy.shouldFit(viewport: size) { fit() }
     }
-    private var pendingFit = false
+    /// Auto-fit state: true until a manual zoom or pan; `fit()` re-arms it.
+    private var fitPolicy = CanvasFitPolicy()
+    private var viewportReady = false
 
     /// Zooms to `value` (clamped) keeping the point under `anchor` (viewport coordinates; default the centre) fixed.
     func setZoom(_ value: Double, around anchor: CGPoint? = nil) {
         let point = anchor ?? CGPoint(x: viewport.width / 2, y: viewport.height / 2)
+        fitPolicy.userAdjusted()
         apply(CanvasViewport(zoom: zoom, offset: offset).zoomed(to: value, around: point))
     }
 
@@ -137,6 +145,7 @@ final class ProfileMapModel: ObservableObject {
 
     /// Moves the map by `delta` screen points (two-finger scroll, Space+drag, middle mouse).
     func panBy(_ delta: CGSize) {
+        fitPolicy.userAdjusted()
         apply(CanvasViewport(zoom: zoom, offset: offset).panned(by: delta))
     }
 
@@ -145,6 +154,7 @@ final class ProfileMapModel: ObservableObject {
         // Fit the monitors' bounds (not the whole canvas, which is at least viewport-sized and top-left anchored), centred.
         let content = layout.monitors.dropFirst().reduce(layout.monitors.first?.frame ?? CGRect(origin: .zero, size: layout.canvasSize)) { $0.union($1.frame) }
         apply(CanvasViewport.fitting(content.insetBy(dx: -16, dy: -16), in: viewport, padding: 0, maxZoom: 1), clamp: false)
+        fitPolicy.fitted()
         DebugLog.log("studio", "map fit")
     }
 
@@ -161,6 +171,7 @@ final class ProfileMapModel: ObservableObject {
             rect = layout.monitors.first { $0.id == uuid }?.contentRect
         }
         guard let rect else { return }
+        fitPolicy.userAdjusted()
         apply(CanvasViewport.fitting(rect, in: viewport, padding: 48), clamp: false)
         DebugLog.log("studio", "map zoom to selection \(Int((zoom * 100).rounded()))%")
     }

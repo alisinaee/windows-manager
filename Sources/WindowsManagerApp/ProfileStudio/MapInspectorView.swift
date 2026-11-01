@@ -1,9 +1,9 @@
 import SwiftUI
 import WMCore
 
-/// Right-hand inspector of the Profile Studio (View mode): details of the selected window, or of the Space the
-/// focused monitor shows. Read only. With "Show what is missing now" on it also gives the live status, the
-/// reason, and the planned steps for the selected window.
+/// The Selection page of the Details inspector (both modes): details of the selected window, or of the Space the
+/// focused monitor shows. Read only. With Compare on it also gives the live status, the reason, and the planned
+/// steps for the selected window. Plain content: the inspector container supplies the scrolling and the title.
 struct MapInspectorView: View {
     @ObservedObject var map: ProfileMapModel
     /// The plan behind the live status, when Compare is on and done.
@@ -11,25 +11,29 @@ struct MapInspectorView: View {
     var isCompareOn: Bool
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                if let id = map.selectedWindowID, let window = map.window(id) {
-                    windowDetails(window)
-                } else if let profile = map.profile, let space = focusedSpace(profile) {
-                    spaceDetails(space, profile)
-                } else {
-                    Text("Select a window or a Desktop on the map to see its details.")
-                        .font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                }
+        VStack(alignment: .leading, spacing: Spacing.l) {
+            if let id = map.selectedWindowID, let window = map.window(id) {
+                windowDetails(window)
+            } else if let profile = map.profile, let space = focusedSpace(profile) {
+                spaceDetails(space, profile)
+            } else {
+                ContentUnavailableView("Nothing Selected", systemImage: "rectangle.dashed",
+                                       description: Text("Select a window or a Desktop on the map to see its details."))
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .background(Palette.canvas)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Inspector")
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Title for the inspector header: the selected window, else the shown Desktop.
+    static func title(for map: ProfileMapModel) -> String {
+        if let id = map.selectedWindowID, let window = map.window(id) {
+            return RestoreStepText.quoted(window.app.name, window.title)
+        }
+        if let profile = map.profile, let uuid = map.focusedDisplayUUID ?? profile.displays.first?.uuid,
+           let space = map.shownSpace(onDisplay: uuid) {
+            return map.spaceName(space)
+        }
+        return "Selection"
     }
 
     private func focusedSpace(_ profile: Profile) -> ProfileSpaceIndex.Space? {
@@ -42,19 +46,6 @@ struct MapInspectorView: View {
     @ViewBuilder private func windowDetails(_ window: WindowSnapshot) -> some View {
         let profile = map.profile
         let tile = map.layout.windows.first { $0.windowID == window.id }
-        HStack(spacing: 10) {
-            Image(nsImage: AppIconCache.icon(for: window.app))
-                .resizable().frame(width: 40, height: 40).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(window.app.name).font(.headline)
-                if let title = window.title, !title.isEmpty {
-                    Text(title).font(.callout).foregroundStyle(.secondary).lineLimit(3)
-                } else {
-                    Text("No title saved").font(.callout).foregroundStyle(.secondary)
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
 
         if let stack = map.selectedStack { stackSection(stack, selected: window.id) }
 
@@ -62,57 +53,57 @@ struct MapInspectorView: View {
         let status = live?.windows[window.id]
         let parked = live?.parked.contains(window.id) == true
         if status != nil || parked { statusBlock(status, parked: parked) }
-        else if isCompareOn { Text("Comparing with your Mac…").font(.callout).foregroundStyle(.secondary) }
+        else if isCompareOn { Text("Comparing with your Mac…").foregroundStyle(.secondary) }
 
         let steps = (plan?.steps ?? []).filter { $0.target?.snapshotID == window.id && !isRaise($0) }
         if !steps.isEmpty || launchStep(for: window) != nil {
-            section("Planned steps") {
+            InspectorSection(title: "Planned steps") {
                 if let launch = launchStep(for: window) {
-                    Text(RestoreStepText.text(launch)).font(.callout)
+                    Text(RestoreStepText.text(launch))
                 }
                 ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
-                    Text(RestoreStepText.text(step)).font(.callout).fixedSize(horizontal: false, vertical: true)
+                    Text(RestoreStepText.text(step)).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
 
-        section("Where") {
-            row("Monitor", profile?.displays.first { $0.uuid == window.displayUUID }?.name ?? "Unknown monitor")
-            row("Desktop", placementText(window.placement, tile: tile))
-            if let zone = window.zoneName { row("Zone", zone) }
+        InspectorSection(title: "Where") {
+            LabeledContent("Monitor", value: profile?.displays.first { $0.uuid == window.displayUUID }?.name ?? "Unknown monitor")
+            LabeledContent("Desktop", value: placementText(window.placement, tile: tile))
+            if let zone = window.zoneName { LabeledContent("Zone", value: zone) }
         }
 
-        section("Size and position") {
-            row("Relative", percentText(window.relativeFrame))
-            row("Points", "\(RestoreStepText.size(window.frame)) at \(Int(window.frame.minX.rounded())), \(Int(window.frame.minY.rounded()))")
-            if let phrase = ProfileMapModel.positionPhrase(for: window, tile: tile) { row("Looks like", phrase) }
+        InspectorSection(title: "Size and position") {
+            LabeledContent("Relative", value: percentText(window.relativeFrame))
+            LabeledContent("Points", value: "\(RestoreStepText.size(window.frame)) at \(Int(window.frame.minX.rounded())), \(Int(window.frame.minY.rounded()))")
+            if let phrase = ProfileMapModel.positionPhrase(for: window, tile: tile) { LabeledContent("Looks like", value: phrase) }
         }
 
-        section("State") {
-            row("Full screen", window.isFullScreen ? "Yes" : "No")
-            row("Minimized", window.isMinimized ? "Yes" : "No")
-            row("Restored", window.restore ? "Yes" : "No, left out of a restore")
-            row("Stacking", window.zIndex == 0 ? "Front" : "Number \(window.zIndex + 1) from the front")
-            row("Title match", titleMatchText(window.titleMatch))
-            if let doc = window.documentPath, !doc.isEmpty { row("Document", doc) }
-            if window.origin == .planned { row("Origin", "Planned in the Builder") }
+        InspectorSection(title: "State") {
+            LabeledContent("Full screen", value: window.isFullScreen ? "Yes" : "No")
+            LabeledContent("Minimized", value: window.isMinimized ? "Yes" : "No")
+            LabeledContent("Restored", value: window.restore ? "Yes" : "No, left out of a restore")
+            LabeledContent("Stacking", value: window.zIndex == 0 ? "Front" : "Number \(window.zIndex + 1) from the front")
+            LabeledContent("Title match", value: titleMatchText(window.titleMatch))
+            if let doc = window.documentPath, !doc.isEmpty { LabeledContent("Document", value: doc) }
+            if window.origin == .planned { LabeledContent("Origin", value: "Planned in the Builder") }
         }
 
         if let profile, let launch = launchOrderText(window.app, profile) {
-            section("Launch order") { Text(launch).font(.callout).fixedSize(horizontal: false, vertical: true) }
+            InspectorSection(title: "Launch order") { Text(launch).fixedSize(horizontal: false, vertical: true) }
         }
     }
 
     /// Every window of the selected stack; a click brings that window to the front of the stack.
     private func stackSection(_ stack: TileStacking.Stack, selected: UUID) -> some View {
-        section("Overlapping windows (\(stack.count))") {
+        InspectorSection(title: "Overlapping windows (\(stack.count))") {
             ForEach(Array(map.orderedMembers(of: stack).enumerated()), id: \.element) { at, id in
                 if let member = map.window(id) {
                     let isSelected = id == selected
                     Button { map.selectWindow(id) } label: {
                         HStack(spacing: 6) {
                             Image(nsImage: AppIconCache.icon(for: member.app)).resizable().frame(width: 16, height: 16)
-                            Text(RestoreStepText.quoted(member.app.name, member.title)).font(.callout).lineLimit(2)
+                            Text(RestoreStepText.quoted(member.app.name, member.title)).lineLimit(2)
                             Spacer(minLength: 0)
                             if isSelected { Image(systemName: "checkmark").foregroundStyle(Palette.accent) }
                         }
@@ -147,14 +138,13 @@ struct MapInspectorView: View {
         } else if case .notFound(let why) = status, !why.isEmpty {
             reason = why
         }
-        return VStack(alignment: .leading, spacing: 4) {
-            Label(text, systemImage: symbol).font(.headline).foregroundStyle(color)
-            if let reason { Text(reason).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+        return VStack(alignment: .leading, spacing: Spacing.xs) {
+            Label(text, systemImage: symbol).font(.wmSection).foregroundStyle(color)
+            if let reason { Text(reason).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
-        .padding(10)
+        .padding(Spacing.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08)))
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: Radius.medium))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Status: \(text)" + (reason.map { ". \($0)" } ?? ""))
     }
@@ -175,33 +165,51 @@ struct MapInspectorView: View {
     // MARK: Space
 
     @ViewBuilder private func spaceDetails(_ space: ProfileSpaceIndex.Space, _ profile: Profile) -> some View {
-        Text(map.spaceName(space)).font(.headline)
         let display = profile.displays.first { $0.uuid == space.displayUUID }?.name ?? "Unknown monitor"
-        section("Space") {
-            row("Monitor", display)
-            row("Position", "\(space.position + 1) in Mission Control order")
-            row("Kind", kindText(space))
-            row("Windows", "\(space.windowIDs.count)")
+        InspectorSection {
+            LabeledContent("Monitor", value: display)
+            LabeledContent("Order", value: orderText(space))
+            LabeledContent("Kind", value: kindText(space))
+            LabeledContent("Windows", value: "\(space.windowIDs.count)")
         }
         if let number = space.desktopNumber,
            case .desktopMissing(let available, let willBeAdded, _)? = map.status?.spaces[SpaceKey(displayUUID: space.displayUUID, desktopNumber: number)] {
-            VStack(alignment: .leading, spacing: 4) {
-                Label("Desktop missing", systemImage: "circle.dashed").font(.headline)
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Label("Desktop missing", systemImage: "circle.dashed").font(.wmSection)
                 Text(willBeAdded ? "This monitor has \(available) Desktop\(available == 1 ? "" : "s"); this one will be added."
                                  : "This monitor has \(available) Desktop\(available == 1 ? "" : "s"). The windows stay where they are.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
         }
         let names = space.windowIDs.compactMap { map.window($0) }
         if !names.isEmpty {
-            section("Windows here") {
+            InspectorSection(title: "Windows here") {
                 ForEach(names) { window in
-                    Text(RestoreStepText.quoted(window.app.name, window.title)).font(.callout).lineLimit(2)
+                    Button { map.selectWindow(window.id) } label: {
+                        Label {
+                            Text(RestoreStepText.quoted(window.app.name, window.title)).lineLimit(2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } icon: {
+                            Image(nsImage: AppIconCache.icon(for: window.app)).resizable().frame(width: 16, height: 16)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Select this window on the map")
+                    .accessibilityLabel("Select \(RestoreStepText.quoted(window.app.name, window.title))")
                 }
             }
         }
-        Text("Select a window on the map to see its details.").font(.callout).foregroundStyle(.secondary)
+        Text("Select a window on the map to see its details.").font(.wmCaption).foregroundStyle(.secondary)
+    }
+
+    /// "1st Desktop" for a Desktop, "2nd Space" for any other Space.
+    private func orderText(_ space: ProfileSpaceIndex.Space) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .ordinal
+        let ordinal = formatter.string(from: NSNumber(value: space.position + 1)) ?? "\(space.position + 1)"
+        return "\(ordinal) \(space.kind == .desktop ? "Desktop" : "Space")"
     }
 
     private func kindText(_ space: ProfileSpaceIndex.Space) -> String {
@@ -249,24 +257,5 @@ struct MapInspectorView: View {
             return "Not launched: turned off in the launch order. Its windows are placed if the app is already open."
         }
         return nil
-    }
-
-    // MARK: Layout helpers
-
-    private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.caption.bold()).foregroundStyle(.secondary).textCase(.uppercase)
-                .accessibilityAddTraits(.isHeader)
-            content()
-        }
-    }
-
-    private func row(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(label).font(.callout).foregroundStyle(.secondary).frame(width: 84, alignment: .leading)
-            Text(value).font(.callout).fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-        }
-        .accessibilityElement(children: .combine)
     }
 }

@@ -11,6 +11,8 @@ struct SpaceStripView: View {
     let spaceName: (ProfileSpaceIndex.Space) -> String
     let onSelect: (String) -> Void
     var metrics = MapMetrics()
+    /// View mode: the chip's context menu. Edit mode draws its own over the chips.
+    var menu: ((ProfileSpaceIndex.Space) -> AnyView)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -19,6 +21,7 @@ struct SpaceStripView: View {
                 SpaceThumbnailView(space: space, rect: thumb.rect, isSelected: thumb.isSelected,
                                    windows: windows, missing: missingStatus(for: space),
                                    name: spaceName(space), metrics: metrics, onSelect: { onSelect(thumb.id) })
+                    .contextMenu { if let menu { menu(space) } }
                     .offset(x: thumb.rect.minX, y: thumb.rect.minY)
             }
         }

@@ -89,33 +89,6 @@ final class CaptureChoiceModel: ObservableObject {
     }
 }
 
-/// The New profile chevron: the other starting points, and "Review capture" while a capture is behind the draft.
-struct NewProfileMenu: View {
-    @ObservedObject var model: ProfileStudioModel
-    @ObservedObject var capture: CaptureChoiceModel
-
-    private var canReview: Bool { model.mode == .edit && capture.stage == .ready }
-
-    var body: some View {
-        Menu {
-            // Enabled in Edit mode too: a press there shows the same notice as the New profile button.
-            Button("From Current Workspace") { model.beginNewProfile() }.help("Start a profile from the windows open now")
-            Button("Blank on These Monitors") { model.beginBlankProfile() }.help("Start an empty profile on these monitors")
-            Button("Copy of a Profile…") { model.requestCopyPicker() }.help("Start from a copy of a saved profile")
-            if canReview {
-                Button("Review Capture…") { model.isReviewCapturePresented = true }.help("Untick the captured windows to leave out")
-            }
-        } label: {
-            Image(systemName: "chevron.down").font(.caption).foregroundStyle(.secondary)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("More ways to start: blank, a copy of a profile, or review the captured windows")
-        .accessibilityLabel("More ways to start a profile")
-    }
-}
-
 /// The review count when the panel opened (`@State` is not used in the app target).
 @MainActor
 private final class ReviewStart: ObservableObject {

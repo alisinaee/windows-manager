@@ -4,7 +4,7 @@ import WMCore
 
 /// Deterministic hooks for UX capture (P6.103). Used only by `UXTestRoute`, which runs only with WM_UX_TEST=1.
 extension ProfileStudioModel {
-    /// Wanted initial inspector tab for the next Edit session. Read by `inspectorTab` (and by the view's local state).
+    /// Wanted initial inspector tab for the next Edit session. Seeds `inspectorTab`.
     @MainActor static var uxInspectorTab: StudioInspectorTab?
 
     /// The model of the open Studio window, found through its hosting controller.
@@ -36,6 +36,7 @@ extension ProfileStudioModel {
         // Deterministic: expanded unless asked otherwise (a narrow window still collapses by itself).
         inspectorTab = Self.uxInspectorTab ?? .inspector
         isNewProfileConfirmPresented = false
+        AppState.current?.uxSetFakeProgress(for: nil)
         if let sidebar { setSidebar(shown: sidebar == .expanded) } else if !self.sidebar.isVisible { setSidebar(shown: true) }
         try? await Task.sleep(for: .milliseconds(400))
         var found = true
@@ -88,6 +89,9 @@ extension ProfileStudioModel {
             try? await Task.sleep(for: .milliseconds(300))
             isShortcutEditorPresented = selectedID != nil
         case .restore: isPreviewPresented = true
+        case .running:
+            let app = AppState.current
+            app?.uxSetFakeProgress(for: app?.savedProfiles.first { $0.id == selectedID })
         case .newprofile: beginNewProfile()   // in Edit with unsaved changes: shows the confirmation
         case nil: break
         }

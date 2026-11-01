@@ -39,7 +39,7 @@ struct StudioCommands: Commands {
     @ObservedObject var app: AppState
 
     private var front: Bool { studio.isFront }
-    private var canNew: Bool { front && NewProfileGate.refusal(isEditing: studio.mode == .edit, hasUnsavedChanges: studio.hasUnsavedChanges) == nil }
+    private var canNew: Bool { front && !sheetOpen }
     private var canRun: Bool { front && studio.mode == .view && studio.selectedRow != nil && app.canAct }
     private var canZoom: Bool { front && studio.activeMap != nil }
     private var inView: Bool { front && studio.mode == .view && studio.selectedRow != nil }

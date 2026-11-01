@@ -8,11 +8,6 @@ struct StudioSidebar: View {
     var body: some View {
         let selection = Binding<UUID?>(get: { model.selectedID }, set: { model.requestSelect($0) })
         VStack(spacing: 0) {
-            if let notice = model.newProfileNotice {
-                Banner(tone: .warning, title: notice, onDismiss: { model.newProfileNotice = nil })
-                    .padding(.horizontal, Spacing.s).padding(.top, Spacing.xs)
-                    .accessibilityIdentifier("newProfileNotice")
-            }
             List(selection: selection) {
                 ForEach(model.rows) { row in
                     ProfileStudioRowView(row: row, isSelected: model.selectedID == row.id)

@@ -4,8 +4,6 @@ import WMCore
 /// Profile Studio shell: unified window toolbar, a NavigationSplitView (profile sidebar | map) and a Details inspector.
 struct ProfileStudioView: View {
     @ObservedObject var model: ProfileStudioModel
-    /// The inspector page lives here, above the View / Edit switch, so it survives switching modes.
-    @State private var inspectorTab = ProfileStudioModel.uxInspectorTab ?? .inspector
     @State private var isAccessibilityBannerDismissed = false
 
     var body: some View {
@@ -60,7 +58,7 @@ struct ProfileStudioView: View {
             StudioSidebar(model: model)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 300)
         } detail: {
-            StudioDetail(model: model, inspectorTab: $inspectorTab,
+            StudioDetail(model: model, inspectorTab: $model.inspectorTab,
                          isAccessibilityBannerDismissed: $isAccessibilityBannerDismissed)
         }
         .toolbar { StudioToolbar(model: model) }
@@ -91,6 +89,13 @@ struct ProfileStudioView: View {
             Button("Keep Editing", role: .cancel) {}
         } message: {
             Text("Leaving Edit mode throws away what you changed since the last save.")
+        }
+        .confirmationDialog("You have unsaved changes", isPresented: $model.isNewProfileConfirmPresented, titleVisibility: .visible) {
+            Button("Save…") { model.confirmNewProfile(save: true) }
+            Button("Discard Changes", role: .destructive) { model.confirmNewProfile(save: false) }
+            Button("Cancel", role: .cancel) { model.cancelNewProfile() }
+        } message: {
+            Text("Starting a new profile leaves Edit mode and throws away what you changed since the last save.")
         }
         .confirmationDialog("Delete this profile?", item: $model.deleteTarget, titleVisibility: .visible) { row in
             Button("Delete \u{201C}\(row.name)\u{201D}", role: .destructive) { model.deleteTarget = row; model.confirmDelete() }

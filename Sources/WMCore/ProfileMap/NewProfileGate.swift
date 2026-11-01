@@ -1,13 +1,15 @@
 import Foundation
 
-/// Whether a "New profile" press can start something now (P6.131). A press that cannot start must say why:
-/// a disabled or silently ignored button reads as "the add profile button is not working".
+/// What a "New profile" press does (P1-8). It always starts something; the only question is whether to ask first.
 public enum NewProfileGate {
-    /// The message shown next to the button when a press is refused, or nil when it can start.
-    public static func refusal(isEditing: Bool, hasUnsavedChanges: Bool) -> String? {
-        guard isEditing else { return nil }
-        return hasUnsavedChanges
-            ? "A profile is being edited with unsaved changes. Save or Cancel it first, then add a new one."
-            : "A profile is open in Edit mode. Click Cancel to leave it, then add a new one."
+    public enum Action: Equatable, Sendable {
+        /// Start the draft now (View mode, or Edit with nothing to lose: Edit is left silently).
+        case start
+        /// Edit has unsaved changes: ask Save / Discard / Cancel before starting.
+        case confirm
+    }
+
+    public static func action(isEditing: Bool, hasUnsavedChanges: Bool) -> Action {
+        isEditing && hasUnsavedChanges ? .confirm : .start
     }
 }

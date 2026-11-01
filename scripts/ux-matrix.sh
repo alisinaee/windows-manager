@@ -16,10 +16,11 @@ inspector-options|many|section=studio&profile=Work&mode=edit&inspectorTab=option
 inspector-launch|many|section=studio&profile=Work&mode=edit&inspectorTab=launch|needs view hook
 save-sheet-conflict|many|section=studio&profile=Work&mode=edit&sheet=save&saveName=Writing|name of an existing profile
 capture-sheet|many|section=studio&profile=Work&mode=edit&sheet=capture
-new-profile-refused|many|section=studio&profile=Work&mode=edit&sheet=newprofile|New profile pressed in Edit: notice under the button
+new-profile-confirm|many|section=studio&profile=Work&mode=edit&saveName=Work%20(edited)&sheet=newprofile|New profile pressed in Edit with unsaved changes: Save/Discard/Cancel dialog
 sidebar-collapsed|many|section=studio&profile=Work&mode=view&sidebar=collapsed|system collapse hides the sidebar completely (no rail), toggle Cmd+Opt+S
 shortcut-recorder|many|section=studio&profile=Work&mode=view&sheet=shortcut|popover: capture with UX_REGION=1
 restore-preview|many|section=studio&profile=Work&mode=view&sheet=restore
+restore-running|many|section=studio&profile=Work&mode=view&sheet=running|fake run progress (UX mode only): Run control and progress UI
 studio-edit-resize|many|section=studio&profile=Work&mode=edit&size=900x560|Edit mode at a small size (tile map and inspector squeeze)
 sidebar-many|many-profiles|section=studio&mode=view&sidebar=expanded|32 profiles: sidebar scroll, row density
 studio-narrow|many|section=studio&profile=Work&mode=view&size=600x450

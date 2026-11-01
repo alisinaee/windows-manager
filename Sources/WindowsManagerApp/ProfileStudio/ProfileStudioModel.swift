@@ -286,10 +286,6 @@ final class ProfileStudioModel: ObservableObject {
         return b
     }
 
-    /// Retired: a press in Edit mode no longer shows a notice. It starts the draft, or asks first
-    /// (`isNewProfileConfirmPresented`). Kept so existing views compile; it is never set.
-    @Published var newProfileNotice: String?
-
     /// Where a new draft starts from.
     enum NewProfileStart {
         case workspace
@@ -304,14 +300,14 @@ final class ProfileStudioModel: ObservableObject {
     /// The one way into a new draft. Edit without changes is left silently; Edit with changes asks first. Either way it
     /// happens in this window: nothing is closed, reopened or relaunched.
     func requestNewProfile(_ start: NewProfileStart) {
-        if mode == .edit {
-            if hasUnsavedChanges {
-                pendingNewProfile = start
-                isNewProfileConfirmPresented = true
-                DebugLog.log("studio", "new profile: asking about unsaved changes")
-                return
-            }
-            leaveEdit()
+        switch NewProfileGate.action(isEditing: mode == .edit, hasUnsavedChanges: hasUnsavedChanges) {
+        case .confirm:
+            pendingNewProfile = start
+            isNewProfileConfirmPresented = true
+            DebugLog.log("studio", "new profile: asking about unsaved changes")
+            return
+        case .start:
+            if mode == .edit { leaveEdit() }
         }
         performNewProfile(start)
     }

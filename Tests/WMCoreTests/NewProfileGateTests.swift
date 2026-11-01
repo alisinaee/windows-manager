@@ -2,16 +2,16 @@ import Testing
 @testable import WMCore
 
 @Suite struct NewProfileGateTests {
-    @Test func viewModeCanStart() {
-        #expect(NewProfileGate.refusal(isEditing: false, hasUnsavedChanges: false) == nil)
-        #expect(NewProfileGate.refusal(isEditing: false, hasUnsavedChanges: true) == nil)
+    @Test func viewModeStarts() {
+        #expect(NewProfileGate.action(isEditing: false, hasUnsavedChanges: false) == .start)
+        #expect(NewProfileGate.action(isEditing: false, hasUnsavedChanges: true) == .start)
     }
 
-    @Test func editModeSaysWhy() throws {
-        let clean = try #require(NewProfileGate.refusal(isEditing: true, hasUnsavedChanges: false))
-        let dirty = try #require(NewProfileGate.refusal(isEditing: true, hasUnsavedChanges: true))
-        #expect(clean.contains("Cancel"))
-        #expect(dirty.contains("unsaved"))
-        #expect(clean != dirty)
+    @Test func cleanEditStartsSilently() {
+        #expect(NewProfileGate.action(isEditing: true, hasUnsavedChanges: false) == .start)
+    }
+
+    @Test func dirtyEditAsksFirst() {
+        #expect(NewProfileGate.action(isEditing: true, hasUnsavedChanges: true) == .confirm)
     }
 }

@@ -245,6 +245,15 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// UX capture only (`UXTestRoute`): shows a fake run in progress, or clears it. Never starts the engine.
+    func uxSetFakeProgress(for summary: ProfileSummary?) {
+        guard UXOpenRoute.isEnabled() else { return }
+        guard let summary else { runProgress = nil; return }
+        var progress = RunProgress(profileID: summary.id, profileName: summary.name, text: "Move Safari")
+        progress.done = 3; progress.total = 12
+        runProgress = progress
+    }
+
     /// Stops the run in flight; the engine skips the remaining steps and reports them as cancelled.
     func cancelRun() { runTask?.cancel() }
 

@@ -120,6 +120,8 @@ struct ProfileMapCanvas: View {
             }
         }
         .focusable()
+        // The system ring framed the whole canvas (and ran under the floating inspector); the selected tile already shows focus.
+        .focusEffectDisabled()
         .focused($focused)
         .onChange(of: model.selectedWindowID) { _, _ in hintDismissed = true }
         .onChange(of: model.zoom) { _, _ in hintDismissed = true }

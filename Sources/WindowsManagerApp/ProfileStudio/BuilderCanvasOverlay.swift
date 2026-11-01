@@ -664,6 +664,7 @@ struct BuilderCanvasOverlay: View {
             background
             ForEach(layout.monitors) { monitor in zoneOverlay(monitor) }
             ForEach(layout.monitors) { monitor in gridOverlay(monitor) }
+            ForEach(layout.monitors) { monitor in monitorHitArea(monitor) }
             ForEach(layout.windows.sorted { $0.zIndex > $1.zIndex }) { tile in tileHitArea(tile) }
             if let tile = selectedTile { handles(for: tile) }
             if let preview = controller.drag {
@@ -675,9 +676,30 @@ struct BuilderCanvasOverlay: View {
         .frame(width: local.toScreen(layout.canvasSize).width, height: local.toScreen(layout.canvasSize).height,
                alignment: .topLeading)
         .coordinateSpace(name: Self.space)
+        .contentShape(Rectangle())
+        .dropDestination(for: LibraryDragPayload.self) { items, location in
+            controller.handleDrop(items, at: local.toCanvas(location))
+        } isTargeted: { controller.isDropTargeted = $0 }
     }
 
     // MARK: Layers
+
+    /// A click on a monitor's frame or title focuses it (the tools pill follows); right-click gives the monitor menu.
+    private func monitorHitArea(_ monitor: ProfileMapLayout.Monitor) -> some View {
+        let rect = local.toScreen(monitor.frame)
+        return Color.clear
+            .contentShape(Rectangle())
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
+            .onTapGesture(count: 2) { requestFit() }
+            .onTapGesture {
+                controller.select(nil)
+                controller.focusMonitor(monitor.id)
+                requestFocus()
+            }
+            .contextMenu { MonitorMenu(map: map, monitorID: monitor.id, controller: controller) }
+            .accessibilityHidden(true)
+    }
 
     private var background: some View {
         Color.clear
@@ -687,9 +709,7 @@ struct BuilderCanvasOverlay: View {
                 controller.select(nil)
                 requestFocus()
             }
-            .dropDestination(for: LibraryDragPayload.self) { items, location in
-                controller.handleDrop(items, at: local.toCanvas(location))
-            } isTargeted: { controller.isDropTargeted = $0 }
+            .contextMenu { CanvasBackgroundMenu(map: map, controller: controller) }
             .overlay {
                 if controller.isDropTargeted {
                     ForEach(map.layout.monitors) { monitor in
@@ -782,6 +802,7 @@ struct BuilderCanvasOverlay: View {
                 requestFocus()
             }
             .onHover { map.setHover(tile.id, inside: $0) }
+            .contextMenu { WindowTileMenu(map: map, windowID: tile.windowID, controller: controller) }
             .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.space))
                 .onChanged { value in
                     requestFocus()
@@ -892,6 +913,9 @@ struct BuilderCanvasOverlay: View {
     }
 
     @ViewBuilder private func spaceMenu(_ space: ProfileSpaceIndex.Space) -> some View {
+        Button("Select") { controller.selectSpace(space) }
+        DesktopRestoreMenu(map: map, space: space)
+        Divider()
         Button("Move left") { controller.move(space, by: -1) }.disabled(!controller.canMove(space, by: -1))
             .help("Move this Desktop one place left")
         Button("Move right") { controller.move(space, by: 1) }.disabled(!controller.canMove(space, by: 1))
@@ -1055,7 +1079,6 @@ struct BuilderToolsBar: View {
     @ObservedObject var controller: BuilderCanvasController
     @ObservedObject private var map: ProfileMapModel
     @ObservedObject private var builder: ProfileBuilderModel
-    @State private var chosenMonitorID: String?
     @State private var showsAutoLayout = false
 
     /// Re-reads the real windows; lives here so Edit mode has one tools row instead of two.
@@ -1069,10 +1092,9 @@ struct BuilderToolsBar: View {
     }
 
     private var monitor: ProfileMapLayout.Monitor? {
+        // Single source of truth: the map's focused monitor (canvas clicks and this menu both set it).
         let monitors = map.layout.monitors
-        if let id = chosenMonitorID, let m = monitors.first(where: { $0.id == id }) { return m }
-        if let id = map.focusedDisplayUUID, let m = monitors.first(where: { $0.id == id }) { return m }
-        return monitors.first
+        return map.activeDisplayUUID.flatMap { id in monitors.first { $0.id == id } }
     }
 
     var body: some View {
@@ -1088,7 +1110,6 @@ struct BuilderToolsBar: View {
                 .glassEffect(.regular, in: Capsule())
             }
             .padding(Spacing.s)
-            .onChange(of: map.focusedDisplayUUID) { _, _ in chosenMonitorID = nil }
             .sheet(isPresented: Binding(get: { controller.zoneEditorMonitor == monitor.id },
                                         set: { if !$0 { controller.zoneEditorMonitor = nil; controller.reloadLayouts() } })) {
                 VStack(spacing: 0) {
@@ -1109,13 +1130,13 @@ struct BuilderToolsBar: View {
         if map.layout.monitors.count > 1 {
             Menu {
                 ForEach(map.layout.monitors) { m in
-                    Button { chosenMonitorID = m.id } label: {
+                    Button { controller.focusMonitor(m.id) } label: {
                         if m.id == monitor.id { Label(m.name, systemImage: "checkmark") } else { Text(m.name) }
                     }
                 }
             } label: { title }
             .menuStyle(.borderlessButton).fixedSize()
-            .help("Monitor the tools apply to: \(monitor.name)")
+            .help("Choose the monitor to edit. Tools and Add Desktop act on \(monitor.name)")
             .accessibilityLabel("Monitor: \(monitor.name)")
         } else {
             title.help("Monitor: \(monitor.name)").accessibilityLabel("Monitor: \(monitor.name)")
@@ -1169,12 +1190,12 @@ struct BuilderToolsBar: View {
             divider()
             actionsMenu(monitor)
             Button { controller.builder.addDesktop(onDisplay: monitor.id) } label: {
-                Label("Add Desktop", systemImage: "plus")
+                Label("Add Desktop to \(monitor.name)", systemImage: "plus")
             }
             .buttonStyle(ToolIconStyle(isOn: false))
             .disabled(desktopCount >= ProfileDraftEditor.maxDesktopsPerDisplay)
-            .help("Add Desktop: add a Desktop to \(monitor.name)")
-            .accessibilityLabel("Add Desktop")
+            .help("Add Desktop to \(monitor.name)")
+            .accessibilityLabel("Add Desktop to \(monitor.name)")
         }
         .fixedSize()
         .accessibilityElement(children: .contain)

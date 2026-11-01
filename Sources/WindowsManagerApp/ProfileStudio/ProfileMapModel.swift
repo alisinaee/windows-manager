@@ -19,6 +19,10 @@ final class ProfileMapModel: ObservableObject {
     @Published private(set) var selectedWindowID: UUID?
     /// The monitor that keyboard Space navigation starts from.
     @Published private(set) var focusedDisplayUUID: String?
+    /// The map legend popover (canvas ellipsis menu and the canvas context menu both open it).
+    @Published var showsLegend = false
+    /// Opens the restore preview for a scope (Studio wires this to `previewScope` + `isPreviewPresented`). Nil = unavailable.
+    var onRestoreScope: ((RestoreScope) -> Void)?
     /// View scale of the whole map (1 = fitted). `layout` is always the zoom-1 canvas (edits, snapping and hit tests
     /// work in it); `displayLayout` is the same geometry multiplied by the zoom, so the vector map is redrawn sharp.
     @Published private(set) var zoom: Double = 1
@@ -254,6 +258,34 @@ final class ProfileMapModel: ObservableObject {
 
     func setHover(_ tileID: String, inside: Bool) {
         if inside { hoveredTileID = tileID } else if hoveredTileID == tileID { hoveredTileID = nil }
+    }
+
+    /// The monitor the tools and menus act on: the focused one when it still exists, else the first.
+    var activeDisplayUUID: String? { MonitorFocus.resolve(focused: focusedDisplayUUID, ids: layout.monitors.map(\.id)) }
+
+    func monitorName(_ uuid: String) -> String { layout.monitors.first { $0.id == uuid }?.name ?? "this monitor" }
+
+    /// Makes `uuid` the focused monitor. A selected window on another monitor is deselected.
+    func focusDisplay(_ uuid: String) {
+        guard layout.monitors.contains(where: { $0.id == uuid }) else { return }
+        focusedDisplayUUID = uuid
+        if let id = selectedWindowID, layout.windows.first(where: { $0.windowID == id })?.displayUUID != uuid {
+            selectedWindowID = nil
+            fannedStackID = nil
+        }
+    }
+
+    /// Fits one monitor in the view.
+    func zoomToDisplay(_ uuid: String) {
+        guard let monitor = layout.monitors.first(where: { $0.id == uuid }) else { return }
+        apply(CanvasViewport.fitting(monitor.frame, in: viewport, padding: 32), clamp: false)
+    }
+
+    /// Restore scope of one monitor, and of the Desktop a Space chip stands for (nil for a full-screen Space).
+    static func restoreScope(display uuid: String) -> RestoreScope { RestoreScope(displays: [uuid]) }
+    static func restoreScope(of space: ProfileSpaceIndex.Space) -> RestoreScope? {
+        guard space.kind == .desktop, let n = space.desktopNumber else { return nil }
+        return RestoreScope(desktops: [SpaceRef(displayUUID: space.displayUUID, desktopNumber: n)])
     }
 
     func selectSpace(_ id: String) {

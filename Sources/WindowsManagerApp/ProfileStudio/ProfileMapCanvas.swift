@@ -57,7 +57,6 @@ struct ProfileMapCanvas: View {
     var keyOverride: ((KeyPress) -> Bool)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
-    @State private var showsLegend = false
     @State private var hintDismissed = false
 
     /// Spring for structural changes (tiles, stacks, Desktops); nil under Reduce Motion.
@@ -182,11 +181,11 @@ struct ProfileMapCanvas: View {
                     Button("Actual size (100%)") { model.actualSize() }
                     Button("Zoom to selection") { model.zoomToSelection() }
                     Divider()
-                    Button("Legend…") { showsLegend.toggle() }
+                    Button("Legend…") { model.showsLegend.toggle() }
                 } label: { Image(systemName: "ellipsis") }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .accessibilityLabel("More map options").help("Fit, actual size, zoom to selection, legend")
-                    .popover(isPresented: $showsLegend, arrowEdge: .top) {
+                    .popover(isPresented: $model.showsLegend, arrowEdge: .top) {
                         MapLegendView(showsStatus: model.status != nil, showsStageStrip: model.usesStageManager)
                     }
             }
@@ -216,6 +215,7 @@ struct ProfileMapCanvas: View {
                 Color.clear.contentShape(Rectangle())
                     .onTapGesture(count: 2) { model.fit() }
                     .onTapGesture { model.selectWindow(nil) }
+                    .contextMenu { if canvasOverlay == nil { CanvasBackgroundMenu(map: model) } }
                 ForEach(layout.monitors) { monitor in
                     monitorView(monitor)
                 }
@@ -249,6 +249,9 @@ struct ProfileMapCanvas: View {
                                   lineWidth: focusedHere ? 1.5 : 1))
                 .frame(width: monitor.frame.width, height: monitor.frame.height)
                 .offset(x: monitor.frame.minX, y: monitor.frame.minY)
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .onTapGesture { if canvasOverlay == nil { model.focusDisplay(monitor.id); focused = true } }
+                .contextMenu { if canvasOverlay == nil { MonitorMenu(map: model, monitorID: monitor.id) } }
             RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.canvas.opacity(0.6))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
                 .frame(width: monitor.contentRect.width, height: monitor.contentRect.height)
@@ -262,6 +265,7 @@ struct ProfileMapCanvas: View {
             ForEach(tiles.filter { !hidden.contains($0.id) }.sorted { $0.zIndex > $1.zIndex }) { tile in
                 if let window = windowsByID[tile.windowID] {
                     tileView(window, tile: tile, monitor: monitor, shown: shown, among: tiles)
+                        .contextMenu { if canvasOverlay == nil { WindowTileMenu(map: model, windowID: tile.windowID) } }
                         .offset(x: tile.rect.minX, y: tile.rect.minY)
                 }
             }
@@ -294,7 +298,8 @@ struct ProfileMapCanvas: View {
             SpaceStripView(thumbnails: thumbs, index: model.index, windows: windowsByID,
                            spaceStatus: model.status?.spaces ?? [:],
                            spaceName: { model.spaceName($0) },
-                           onSelect: { model.selectSpace($0); focused = true }, metrics: metrics)
+                           onSelect: { model.selectSpace($0); focused = true }, metrics: metrics,
+                           menu: canvasOverlay == nil ? { space in AnyView(DesktopRestoreMenu(map: model, space: space)) } : nil)
         }
         .frame(width: layout.canvasSize.width, height: layout.canvasSize.height, alignment: .topLeading)
         .accessibilityElement(children: .contain)

@@ -1168,6 +1168,7 @@ struct BuilderToolsBar: View {
             .accessibilityValue(state(controller.allowOverlap))
             divider()
             actionsMenu(monitor)
+            divider()
             Button { controller.builder.addDesktop(onDisplay: monitor.id) } label: {
                 Label("Add Desktop", systemImage: "plus")
             }

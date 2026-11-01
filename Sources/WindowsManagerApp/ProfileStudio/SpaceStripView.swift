@@ -92,7 +92,8 @@ struct SpaceThumbnailView: View {
                 ForEach(space.windowIDs, id: \.self) { id in
                     if let window = windows[id] {
                         let r = window.relativeFrame
-                        Rectangle().fill(AppTint.color(for: window.app).opacity(0.25))
+                        // Outlines, not a fill: a partial fill read as a progress bar (P1-15).
+                        Rectangle().strokeBorder(AppTint.color(for: window.app).opacity(0.55), lineWidth: 1)
                             .frame(width: max(r.width * geo.size.width, 1), height: max(r.height * geo.size.height, 1))
                             .offset(x: r.minX * geo.size.width, y: r.minY * geo.size.height)
                     }
@@ -105,7 +106,7 @@ struct SpaceThumbnailView: View {
 
     private var helpText: String {
         let count = space.windowIDs.count
-        return "\(name), \(count) window\(count == 1 ? "" : "s")" + (missing == nil ? "" : ", Desktop missing now")
+        return "\(name) on this monitor: \(count) window\(count == 1 ? "" : "s")" + (missing == nil ? "" : ", Desktop missing now")
     }
 
     private var accessibilityText: String {

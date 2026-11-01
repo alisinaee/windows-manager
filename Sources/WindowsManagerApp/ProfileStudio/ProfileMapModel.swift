@@ -288,6 +288,8 @@ final class ProfileMapModel: ObservableObject {
         }
         if let fannedStackID, let id, stack(withID: fannedStackID)?.members.contains(id) != true { self.fannedStackID = nil }
         if id == nil { fannedStackID = nil }
+        // Selecting a window of a stacked pile fans the pile out, so the layout it hides stays visible (P1-16).
+        if collapsesStacks, id != nil, let stack = selectedStack, stack.count > 1 { fannedStackID = stack.id }
     }
 
     /// The Stage Manager strip groups of a monitor: its strip windows of the Space it shows, one group per stage, in

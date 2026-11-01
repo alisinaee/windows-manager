@@ -24,7 +24,8 @@ struct ProfileStudioView: View {
                 splitView
             }
         }
-        .frame(minWidth: ProfileStudioWindowController.minSize.width, minHeight: ProfileStudioWindowController.minSize.height)
+        // No .frame(minWidth:) here: the window's contentMinSize already sets the floor. A SwiftUI min size on the root
+        // is re-reported by every split-view child (sidebar, detail, inspector) and, with the inspector open, loops.
         .navigationTitle(model.windowTitle)
         .navigationSubtitle(windowSubtitle)
         .tint(Palette.accent)

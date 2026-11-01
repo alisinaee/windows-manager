@@ -11,8 +11,6 @@ struct StudioMapHost: View {
 
     private var mapPane: some View {
         VStack(spacing: 0) {
-            StudioScopeBar(model: model, map: map)
-            Divider()
             if let error = model.compareError {
                 Banner(tone: .danger, title: "Compare problem", message: error).padding(Spacing.s)
             }

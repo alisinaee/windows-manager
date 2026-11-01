@@ -8,7 +8,7 @@ struct StudioActionLabelStyle: LabelStyle {
         if iconOnly {
             configuration.icon
         } else {
-            HStack(spacing: 4) { configuration.icon; configuration.title }
+            HStack(spacing: Spacing.xs) { configuration.icon; configuration.title }
         }
     }
 }

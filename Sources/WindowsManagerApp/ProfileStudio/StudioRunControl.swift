@@ -6,6 +6,7 @@ import WMCore
 /// The chip opens the recorder popover; it re-reads the stored shortcut when the popover closes.
 struct StudioRunControl: View {
     @ObservedObject var app: AppState
+    @ObservedObject var model: ProfileStudioModel
     let profileID: UUID
     let profileName: String
     var iconOnly: Bool
@@ -53,12 +54,15 @@ struct StudioRunControl: View {
                 showEditor = true
             }
             .disabled(!isSaved)
-        } label: { Label("Run", systemImage: "play.fill") }
+            restoreOnlyMenu
+        } label: {
+            HStack(spacing: Spacing.xs) { Image(systemName: "play.fill"); if !iconOnly { Text("Run") } }
+                .padding(.horizontal, Spacing.xs)
+        }
         primaryAction: {
             DebugLog.log("studio", "run clicked: \(profileName)")
             app.run(id: profileID)
         }
-        .labelStyle(StudioActionLabelStyle(iconOnly: iconOnly))
         .menuStyle(.button)
         .buttonStyle(.glassProminent).tint(Palette.accentStrong)
         .tint(Palette.accentStrong)
@@ -72,6 +76,33 @@ struct StudioRunControl: View {
         .onAppear(perform: reload)
         .onChange(of: profileID) { _, _ in reload() }
         .onChange(of: showEditor) { _, _ in reload() }
+    }
+
+    /// "Restore Only…": preview and apply one monitor or one Desktop of the profile.
+    @ViewBuilder private var restoreOnlyMenu: some View {
+        if let profile = try? app.store.load(profileID), !profile.displays.isEmpty {
+            Divider()
+            Menu("Restore Only…", systemImage: "rectangle.on.rectangle") {
+                ForEach(profile.displays, id: \.uuid) { display in
+                    Menu(display.name, systemImage: "display") {
+                        Button("Whole Monitor") { preview(RestoreScope(displays: [display.uuid])) }
+                        let desktops = profile.spaces.filter { $0.displayUUID == display.uuid && $0.kind == .desktop }
+                        ForEach(desktops.compactMap(\.desktopNumber), id: \.self) { n in
+                            Button("Desktop \(n)") {
+                                preview(RestoreScope(desktops: [SpaceRef(displayUUID: display.uuid, desktopNumber: n)]))
+                            }
+                        }
+                    }
+                }
+            }
+            .help("Preview and apply only one monitor or one Desktop of this profile")
+        }
+    }
+
+    private func preview(_ scope: RestoreScope) {
+        DebugLog.log("studio", "restore only opened: \(profileName)")
+        model.previewScope = scope
+        model.isPreviewPresented = true
     }
 
     private func reload() { shortcut = KeyboardShortcuts.getShortcut(for: .profile(profileID)) }

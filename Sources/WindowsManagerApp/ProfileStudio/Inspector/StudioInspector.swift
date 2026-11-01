@@ -20,7 +20,7 @@ struct StudioInspector<Content: View, Footer: View>: View {
         }
         .id(tab)
         .safeAreaBar(edge: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: Spacing.s) {
+            VStack(alignment: .center, spacing: Spacing.s) {
                 Picker("Inspector page", selection: $tab) {
                     ForEach(StudioInspectorTab.allCases) { Text($0.rawValue).tag($0) }
                 }
@@ -29,11 +29,11 @@ struct StudioInspector<Content: View, Footer: View>: View {
                 .controlSize(.large)
                 .accessibilityLabel("Inspector page")
                 .help("Switch between the selection, the profile options and the launch order")
-                Text(title).font(.wmSection).lineLimit(1).truncationMode(.middle)
+                Text(title).font(.wmSection).lineLimit(1).frame(maxWidth: .infinity, alignment: .center).truncationMode(.middle)
                     .accessibilityAddTraits(.isHeader)
             }
             .padding(Spacing.m)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
         .safeAreaBar(edge: .bottom, spacing: 0) { footer(tab) }
         .accessibilityElement(children: .contain)

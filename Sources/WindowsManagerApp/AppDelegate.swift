@@ -57,6 +57,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !isDuplicate else { return }
+        // Help tooltips after 1 s app-wide (AppKit's key; the default is far longer).
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 1000])
         UXTestRoute.installWindowGuard()
         AppControlServer.shared.start()
         AppInfo.logger.notice("Windows Manager \(AppInfo.version) (\(AppInfo.build)) started, pid \(ProcessInfo.processInfo.processIdentifier)")

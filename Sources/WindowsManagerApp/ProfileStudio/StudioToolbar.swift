@@ -59,7 +59,7 @@ struct StudioToolbar: ToolbarContent {
         ToolbarItem(placement: .confirmationAction) {
             // Dim until there is something to save (a brand-new profile can always be saved).
             Button("Save") { model.saveThen(nil) }
-                .buttonStyle(.borderedProminent).tint(Palette.accentStrong)
+                .buttonStyle(.glassProminent).tint(Palette.accentStrong)
                 .disabled(builder.blocksSaving)
                 .help(builder.blocksSaving ? "Fix the problems marked in red first" : "Save the profile (Cmd+S)")
                 .accessibilityLabel("Save profile")
@@ -90,7 +90,7 @@ struct StudioToolbar: ToolbarContent {
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
             if let app = AppState.current {
-                StudioRunControl(app: app, profileID: row.id, profileName: row.name, iconOnly: false,
+                StudioRunControl(app: app, model: model, profileID: row.id, profileName: row.name, iconOnly: false,
                                  showEditor: $model.isShortcutEditorPresented)
             }
         }

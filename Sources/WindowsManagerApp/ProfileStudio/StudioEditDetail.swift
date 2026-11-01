@@ -48,13 +48,19 @@ struct StudioEditDetail: View {
     /// Icon and name stay here: a text field has no toolbar home. Everything else is in the window toolbar.
     private var headerRow: some View {
         let title = builder.nameText.isEmpty ? "Untitled profile" : builder.nameText
-        return HStack(spacing: Spacing.s) {
-            ProfileIconPicker(current: (builder.profile?.icon ?? "").isEmpty ? Profile.defaultIcon : builder.profile!.icon) { builder.setIcon($0) }
-            TextField("Profile name", text: Binding(get: { builder.nameText }, set: { builder.setName($0) }))
-                .textFieldStyle(.roundedBorder).font(.wmTitle).lineLimit(1)
-                .frame(maxWidth: 320, alignment: .leading)
-                .help(builder.isNewProfile ? "New profile (not saved yet). Edit the name here." : "Editing a saved profile. Edit the name here.")
-                .accessibilityLabel("Profile name, \(title)")
+        return HStack(alignment: .bottom, spacing: Spacing.s) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Icon").font(.wmCaption).foregroundStyle(.secondary)
+                ProfileIconPicker(current: (builder.profile?.icon ?? "").isEmpty ? Profile.defaultIcon : builder.profile!.icon) { builder.setIcon($0) }
+            }
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Label("Profile name", systemImage: "pencil").font(.wmCaption).foregroundStyle(.secondary)
+                TextField("Profile name", text: Binding(get: { builder.nameText }, set: { builder.setName($0) }))
+                    .textFieldStyle(.roundedBorder).font(.wmTitle).lineLimit(1)
+                    .frame(maxWidth: 320, alignment: .leading)
+                    .help(builder.isNewProfile ? "New profile (not saved yet). Type to rename it." : "Editing a saved profile. Type to rename it.")
+                    .accessibilityLabel("Profile name, \(title)")
+            }
             if builder.isDirty {
                 Circle().fill(Palette.warn).frame(width: Spacing.s, height: Spacing.s)
                     .transition(.scale.combined(with: .opacity))

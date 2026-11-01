@@ -30,9 +30,13 @@ struct ProfileIconPicker: View {
 
     var body: some View {
         Button { local.isOpen = true } label: {
-            Label("Change Icon", systemImage: current).labelStyle(.iconOnly)
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: current)
+                Image(systemName: "pencil").font(.caption2).foregroundStyle(.secondary)
+            }
         }
-        .help("Change icon: choose the icon shown for this profile in the sidebar")
+        .buttonStyle(.bordered)
+        .help("Icon: click to change. Choose the icon shown for this profile in the sidebar")
         .accessibilityLabel("Profile icon: \(current). Change icon")
         .popover(isPresented: $local.isOpen, arrowEdge: .trailing) {
             ScrollView {

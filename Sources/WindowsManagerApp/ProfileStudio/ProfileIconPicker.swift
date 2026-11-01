@@ -26,20 +26,17 @@ struct ProfileIconPicker: View {
     let onPick: (String) -> Void
 
     @StateObject private var local = ProfileIconPickState()
-    private let columns = Array(repeating: GridItem(.fixed(44), spacing: 6), count: 6)
+    private let columns = Array(repeating: GridItem(.fixed(44), spacing: Spacing.s), count: 6)
 
     var body: some View {
         Button { local.isOpen = true } label: {
-            HStack(spacing: 8) {
-                Image(systemName: current).frame(width: 22).accessibilityHidden(true)
-                Text("Change").font(.callout)
-            }
+            Label("Change Icon", systemImage: current).labelStyle(.iconOnly)
         }
-        .help("Choose the icon shown for this profile in the sidebar")
-        .accessibilityLabel("Profile icon: \(current). Change")
+        .help("Change icon: choose the icon shown for this profile in the sidebar")
+        .accessibilityLabel("Profile icon: \(current). Change icon")
         .popover(isPresented: $local.isOpen, arrowEdge: .trailing) {
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 6) {
+                LazyVGrid(columns: columns, spacing: Spacing.s) {
                     ForEach(ProfileIconChoices.symbols, id: \.self) { symbol in
                         Button {
                             onPick(symbol)
@@ -49,14 +46,14 @@ struct ProfileIconPicker: View {
                                 .font(.title3)
                                 .frame(width: 44, height: 40)
                                 .background(symbol == current ? Color.accentColor.opacity(0.2) : Color.clear,
-                                            in: RoundedRectangle(cornerRadius: 6))
+                                            in: RoundedRectangle(cornerRadius: Radius.small + 2))
                         }
                         .buttonStyle(.plain)
                         .help(symbol)
                         .accessibilityLabel(symbol)
                     }
                 }
-                .padding(12)
+                .padding(Spacing.m)
             }
             .frame(width: 320, height: 300)
         }

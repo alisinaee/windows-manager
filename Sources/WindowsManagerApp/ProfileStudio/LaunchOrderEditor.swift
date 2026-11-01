@@ -1,71 +1,62 @@
-import AppKit
 import SwiftUI
 import WMCore
 
-/// Row selection of the launch order list. A class because this target cannot use the @State macro.
-@MainActor
-final class LaunchOrderSelection: ObservableObject {
-    @Published var itemID: String?
-}
-
-/// The Builder's Launch order step (plan B2 step 5). The list shows the plan's items followed by apps of the
+/// The Launch page of the Details inspector (plan B2 step 5). Shows the plan's items followed by apps of the
 /// profile the plan does not list (they launch last, in profile order); the first edit writes all of them into
 /// the plan so the order on screen is the order that runs. All edits go through `LaunchSequence` helpers.
-///
-/// Host: `LaunchOrderEditor(builder: builder)` (UI7 puts it in the Inspector tab "Launch order" or a wide sheet).
+/// In View mode (`builder` nil) the same rows show the saved plan and cannot be changed. Plain content: the
+/// inspector container supplies the scrolling, and `LaunchFooter` is its pinned bottom bar.
 struct LaunchOrderEditor: View {
-    @ObservedObject var builder: ProfileBuilderModel
-    @StateObject private var selection = LaunchOrderSelection()
+    let profile: Profile
+    let builder: ProfileBuilderModel?
+
+    @State private var selectedID: String?
+
+    private var plan: LaunchPlan { LaunchPlan.effective(for: profile) }
 
     var body: some View {
-        if let profile = builder.profile {
-            let plan = effectivePlan(profile)
-            VStack(spacing: 0) {
-                header(plan)
-                Divider()
-                if plan.items.isEmpty {
-                    emptyState
-                } else {
-                    orderBar(plan)
-                    Divider()
-                    list(plan, profile)
+        let plan = plan
+        VStack(alignment: .leading, spacing: Spacing.m) {
+            if plan.items.isEmpty {
+                ContentUnavailableView("No Apps Yet", systemImage: "app.dashed",
+                                       description: Text("Place apps on the map, or add an app that only needs to launch."))
+            } else {
+                modePicker(plan)
+                ForEach(Array(plan.items.enumerated()), id: \.element.id) { index, item in
+                    LaunchOrderRow(index: index, count: plan.items.count, item: item, mode: plan.mode,
+                                   issues: issues(for: item.id, plan: plan), isSelected: selectedID == item.id,
+                                   isEditable: builder != nil,
+                                   onSelect: { selectedID = item.id },
+                                   commit: commit,
+                                   move: { move(index, by: $0) },
+                                   drop: { id in moveItem(id: id, to: index, plan) })
                 }
-                Divider()
-                footer(plan)
+                Text("Apps not in the list launch last, in profile order.")
+                    .font(.wmCaption).foregroundStyle(.secondary)
             }
-        } else {
-            Text("No profile is open.").foregroundStyle(.secondary).padding()
         }
+        .background { orderShortcuts(plan) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Launch order")
     }
 
     // MARK: Plan access
 
-    /// The plan with unlisted apps appended. No plan at all means "parallel", as the engine reads it.
-    private func effectivePlan(_ profile: Profile) -> LaunchPlan {
-        var plan = profile.launchPlan ?? LaunchPlan(mode: .parallel)
-        for app in profile.launchApps {
-            let item = LaunchItem(app: app)
-            if !plan.items.contains(where: { $0.id == item.id }) { plan.items.append(item) }
-        }
-        return plan
-    }
-
     private func commit(_ change: (LaunchPlan) -> LaunchPlan) {
-        guard let profile = builder.profile else { return }
-        builder.setLaunchPlan(change(effectivePlan(profile)))
+        builder?.setLaunchPlan(change(plan))
     }
 
-    private func issues(for id: String, plan: LaunchPlan, profile: Profile) -> [LaunchIssue] {
-        var result = builder.launchIssues.filter { $0.itemID == id }
+    private func issues(for id: String, plan: LaunchPlan) -> [LaunchIssue] {
+        var result = (builder?.launchIssues ?? []).filter { $0.itemID == id }
         for issue in LaunchSequence.validate(plan: plan, profile: profile)
         where issue.itemID == id && !result.contains(issue) { result.append(issue) }
         return result
     }
 
-    // MARK: Header and footer
+    // MARK: Mode
 
-    private func header(_ plan: LaunchPlan) -> some View {
-        HStack(spacing: 8) {
+    private func modePicker(_ plan: LaunchPlan) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             Picker("Mode", selection: Binding(
                 get: { plan.mode },
                 set: { mode in commit { var p = $0; p.mode = mode; return p } })) {
@@ -74,217 +65,33 @@ struct LaunchOrderEditor: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .disabled(builder == nil)
             .accessibilityLabel("Launch mode")
             .help("Launch apps one after another, or all at once")
-        }
-        .padding(8)
-    }
-
-    /// Reorder controls sit right above the list they move, apart from the Sequential / At once picker.
-    private func orderBar(_ plan: LaunchPlan) -> some View {
-        HStack(spacing: 8) {
-            Text("Order").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Text("Select an app, then move it").font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            Button { moveSelected(by: -1, plan) } label: { Image(systemName: "arrow.up") }
-                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
-                .help(canMove(-1, plan) ? "Move the selected app up (Command-Option-Up)" : "Select an app in the list to move it")
-                .accessibilityLabel("Move selected app up")
-                .disabled(!canMove(-1, plan))
-            Button { moveSelected(by: 1, plan) } label: { Image(systemName: "arrow.down") }
-                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
-                .help(canMove(1, plan) ? "Move the selected app down (Command-Option-Down)" : "Select an app in the list to move it")
-                .accessibilityLabel("Move selected app down")
-                .disabled(!canMove(1, plan))
-        }
-        .padding(.horizontal, 8).padding(.vertical, 4)
-    }
-
-    private func footer(_ plan: LaunchPlan) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                addMenu(plan)
-                Spacer()
-                Label("Longest wait: \(durationText(LaunchSequence.worstCaseDuration(plan: plan)))", systemImage: "clock")
-                    .font(.callout)
-            }
             Text(plan.mode == .sequential
-                 ? "Sequential: one app after another, each waiting for its window or readiness, then its delay. Slower, but steadier."
-                 : "At once: every app starts together and delays are ignored. Faster, but a busy Mac may place windows less reliably.")
-                .font(.caption).foregroundStyle(.secondary)
+                 ? "One app after another, each waiting for its window, then its delay. Slower, but steadier."
+                 : "Every app starts together and delays are ignored. Faster, but less steady on a busy Mac.")
+                .font(.wmCaption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Apps not in the list launch last, in profile order.")
-                .font(.caption).foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 8)
-        .padding(.bottom, 14)
-    }
-
-    private func addMenu(_ plan: LaunchPlan) -> some View {
-        let candidates = builder.library.filter { entry in
-            !plan.items.contains { $0.id == entry.bundleID.lowercased() }
-        }
-        let background = candidates.filter(\.isBackgroundOnly)
-        let others = candidates.filter { !$0.isBackgroundOnly }
-        return Menu {
-            if candidates.isEmpty {
-                Text("No more apps")
-            }
-            if !background.isEmpty {
-                Section("Apps without windows") { ForEach(background, id: \.bundleID) { addButton($0) } }
-            }
-            if !others.isEmpty {
-                Section("Other apps") { ForEach(others, id: \.bundleID) { addButton($0) } }
-            }
-        } label: {
-            Label("Add launch-only app", systemImage: "plus")
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .help("Launch an app without placing a window for it")
-    }
-
-    private func addButton(_ entry: LibraryEntry) -> some View {
-        Button(entry.name) {
-            let item = LaunchItem(app: builder.appRef(for: entry), wait: .appReady, withoutWindows: true)
-            commit { var p = $0; if !p.items.contains(where: { $0.id == item.id }) { p.items.append(item) }; return p }
-        }
-        .help("Add \(entry.name) as a launch-only app")
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "app.dashed").font(.largeTitle).foregroundStyle(.secondary)
-            Text("No apps yet").font(.headline)
-            Text("Place apps on the map, or add an app that only needs to launch.")
-                .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            addMenu(LaunchPlan())
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
-        .accessibilityElement(children: .contain)
-    }
-
-    // MARK: List
-
-    private func list(_ plan: LaunchPlan, _ profile: Profile) -> some View {
-        List(selection: $selection.itemID) {
-            ForEach(Array(plan.items.enumerated()), id: \.element.id) { index, item in
-                row(index: index, item: item, plan: plan, profile: profile)
-                    .tag(item.id)
-            }
-            .onMove { source, destination in
-                guard let from = source.first else { return }
-                commit { LaunchSequence.moved($0, from: from, to: from < destination ? destination - 1 : destination) }
-            }
-        }
-        .listStyle(.inset)
-    }
-
-    private func row(index: Int, item: LaunchItem, plan: LaunchPlan, profile: Profile) -> some View {
-        let itemIssues = issues(for: item.id, plan: plan, profile: profile)
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Toggle("Launch \(item.app.name)", isOn: Binding(
-                    get: { item.enabled },
-                    set: { _ in commit { LaunchSequence.toggled($0, id: item.id) } }))
-                    .labelsHidden()
-                    .toggleStyle(.checkbox)
-                    .help("Launch \(item.app.name) when the profile runs (untick to skip it)")
-                Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    .frame(minWidth: 16, alignment: .trailing)
-                Image(nsImage: AppIconCache.icon(for: item.app)).resizable().frame(width: 20, height: 20)
-                Text(item.app.name).lineLimit(1)
-                if item.withoutWindows { Text("launch only").font(.caption).foregroundStyle(.secondary) }
-                Spacer(minLength: 4)
-                if !itemIssues.isEmpty {
-                    Image(systemName: "exclamationmark.triangle")
-                        .help(itemIssues.map(\.message).joined(separator: "\n"))
-                        .accessibilityLabel("Problem: " + itemIssues.map(\.message).joined(separator: " "))
-                }
-                Button { move(index, by: -1) } label: { Image(systemName: "chevron.up") }
-                    .buttonStyle(.borderless).disabled(index == 0)
-                    .accessibilityLabel("Move \(item.app.name) up")
-                    .help("Move \(item.app.name) up in the launch order")
-                Button { move(index, by: 1) } label: { Image(systemName: "chevron.down") }
-                    .buttonStyle(.borderless).disabled(index == plan.items.count - 1)
-                    .accessibilityLabel("Move \(item.app.name) down")
-                    .help("Move \(item.app.name) down in the launch order")
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                if item.withoutWindows {
-                    Text("Waits until the app is ready").font(.caption).foregroundStyle(.secondary)
-                } else {
-                    HStack(spacing: 6) {
-                        Text("Wait for").font(.caption).foregroundStyle(.secondary).fixedSize()
-                        Picker("Wait for", selection: Binding(
-                            get: { item.wait },
-                            set: { wait in commit { LaunchSequence.settingWait($0, id: item.id, wait) } })) {
-                            Text("First window").tag(LaunchWait.windows)
-                            Text("App ready").tag(LaunchWait.appReady)
-                        }
-                        .labelsHidden()
-                        .controlSize(.small)
-                        .fixedSize()
-                        .help("Wait for the first window, or until the app is ready")
-                    }
-                }
-                HStack(spacing: 12) {
-                    Stepper(value: Binding(
-                        get: { item.delayAfter },
-                        set: { value in commit { LaunchSequence.settingDelay($0, id: item.id, value) } }),
-                            in: LaunchItem.delayRange, step: 1) {
-                        Text("then \(secondsText(item.delayAfter))")
-                            .font(.callout.monospacedDigit()).lineLimit(1).fixedSize()
-                    }
-                    .controlSize(.small)
-                    .fixedSize()
-                    .disabled(plan.mode == .parallel)
-                    .help(plan.mode == .parallel ? "Delays are ignored when apps launch at once." : "Seconds to wait after this app before the next one")
-                    .accessibilityLabel("Delay after \(item.app.name)")
-                    Stepper(value: Binding(
-                        get: { item.timeout ?? LaunchOptions.defaultTimeout },
-                        set: { value in commit { LaunchSequence.settingTimeout($0, id: item.id, value) } }),
-                            in: LaunchItem.timeoutRange, step: 5) {
-                        Text("max \(secondsText(item.timeout ?? LaunchOptions.defaultTimeout))")
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(item.timeout == nil ? .secondary : .primary)
-                            .lineLimit(1).fixedSize()
-                    }
-                    .controlSize(.small)
-                    .fixedSize()
-                    .accessibilityLabel("Timeout for \(item.app.name)")
-                    .help(item.timeout == nil
-                          ? "Longest wait for \(item.app.name) before moving on (default)"
-                          : "Longest wait for \(item.app.name) before moving on")
-                }
-            }
-            .opacity(item.enabled ? 1 : 0.5)
-            ForEach(itemIssues, id: \.message) { issue in
-                Text(issue.message).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.vertical, 3)
-        .contextMenu {
-            if item.timeout != nil {
-                Button("Use default timeout") { commit { LaunchSequence.settingTimeout($0, id: item.id, nil) } }
-                    .help("Use the default timeout for \(item.app.name)")
-            }
-            if item.withoutWindows {
-                Button("Remove from launch order", role: .destructive) {
-                    commit { var p = $0; p.items.removeAll { $0.id == item.id }; return p }
-                }
-                .help("Remove this launch-only app from the order")
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityAction(named: "Move up") { move(index, by: -1) }
-        .accessibilityAction(named: "Move down") { move(index, by: 1) }
     }
 
     // MARK: Moving
+
+    /// Command-Option-Up / -Down move the selected row. Hidden buttons keep the shortcuts without an order bar.
+    private func orderShortcuts(_ plan: LaunchPlan) -> some View {
+        HStack {
+            Button("Move Selected App Up") { moveSelected(by: -1, plan) }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                .disabled(!canMove(-1, plan))
+            Button("Move Selected App Down") { moveSelected(by: 1, plan) }
+                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                .disabled(!canMove(1, plan))
+        }
+        .frame(width: 0, height: 0)
+        .opacity(0)
+        .accessibilityHidden(true)
+    }
 
     private func move(_ index: Int, by offset: Int) {
         let target = index + offset
@@ -294,29 +101,24 @@ struct LaunchOrderEditor: View {
         }
     }
 
+    /// A row was dropped on the row at `destination`: the dragged item takes that place.
+    private func moveItem(id: String, to destination: Int, _ plan: LaunchPlan) {
+        guard let from = plan.items.firstIndex(where: { $0.id == id }) else { return }
+        commit { LaunchSequence.moved($0, from: from, to: destination) }
+    }
+
     private func selectedIndex(_ plan: LaunchPlan) -> Int? {
-        guard let id = selection.itemID else { return nil }
+        guard let id = selectedID else { return nil }
         return plan.items.firstIndex { $0.id == id }
     }
 
     private func canMove(_ offset: Int, _ plan: LaunchPlan) -> Bool {
-        guard let index = selectedIndex(plan) else { return false }
+        guard builder != nil, let index = selectedIndex(plan) else { return false }
         return plan.items.indices.contains(index + offset)
     }
 
     private func moveSelected(by offset: Int, _ plan: LaunchPlan) {
         guard let index = selectedIndex(plan) else { return }
         move(index, by: offset)
-    }
-
-    // MARK: Text
-
-    private func secondsText(_ seconds: TimeInterval) -> String {
-        seconds == seconds.rounded() ? "\(Int(seconds)) s" : String(format: "%.1f s", seconds)
-    }
-
-    private func durationText(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds.rounded())
-        return total >= 60 ? "\(total / 60) min \(total % 60) s" : "\(total) s"
     }
 }

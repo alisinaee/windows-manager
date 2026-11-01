@@ -114,7 +114,8 @@ struct LaunchOrderRow: View {
                         .help("Move \(item.app.name) down in the launch order")
                 }
                 .buttonStyle(.borderless)
-                .opacity(isHovering || isSelected ? 1 : 0)
+                // Always visible so the order is discoverable; dimmed until the row is hovered or selected.
+                .foregroundStyle(isHovering || isSelected ? .primary : .secondary)
             }
         }
     }

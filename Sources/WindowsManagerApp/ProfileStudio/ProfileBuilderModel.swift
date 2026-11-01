@@ -345,6 +345,10 @@ final class ProfileBuilderModel: ObservableObject {
         edit(kind: "setMinimized:\(id.uuidString)") { try $0.setMinimized(minimized, forWindow: id) }
     }
 
+    func restack(_ id: UUID, toFront: Bool) {
+        edit { try $0.restack(id, toFront: toFront) }
+    }
+
     func setOptions(_ change: @escaping (inout ProfileOptions) -> Void) {
         edit(kind: "options") { try $0.setOptions(change) }
     }

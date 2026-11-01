@@ -25,6 +25,11 @@ struct WindowTileMenu: View {
             }
             .help("Whether the profile restores this window minimized")
             Divider()
+            Button("Bring to Front") { controller.builder.restack(windowID, toFront: true) }
+                .help("Restore this window in front of the others")
+            Button("Send to Back") { controller.builder.restack(windowID, toFront: false) }
+                .help("Restore this window behind the others")
+            Divider()
             Button("Remove from Profile", role: .destructive) { controller.builder.removeWindow(windowID) }
                 .help("Remove this window from the profile")
         }

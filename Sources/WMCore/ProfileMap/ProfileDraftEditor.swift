@@ -418,6 +418,18 @@ public struct ProfileDraftEditor {
         try edit { p in p.windows[try Self.windowIndex(id, in: p)].isMinimized = minimized }
     }
 
+    /// Moves the window to the front (`toFront`) or back of the stacking order and renumbers every
+    /// window's `zIndex` 0... (0 = front), keeping the others in their current order.
+    public mutating func restack(_ id: UUID, toFront: Bool) throws {
+        try edit { p in
+            let i = try Self.windowIndex(id, in: p)
+            var order = p.windows.indices.filter { $0 != i }
+                .sorted { p.windows[$0].zIndex != p.windows[$1].zIndex ? p.windows[$0].zIndex < p.windows[$1].zIndex : $0 < $1 }
+            if toFront { order.insert(i, at: 0) } else { order.append(i) }
+            for (rank, index) in order.enumerated() { p.windows[index].zIndex = rank }
+        }
+    }
+
     private static func windowIndex(_ id: UUID, in p: Profile) throws -> Int {
         guard let i = p.windows.firstIndex(where: { $0.id == id }) else { throw ProfileDraftError.unknownWindow(id) }
         return i

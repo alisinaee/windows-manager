@@ -472,6 +472,7 @@ public final class AppLauncher: @unchecked Sendable {
         var upAt: TimeInterval?   // AX answers and the app finished launching: the reopen clock starts here
         var lastReopenAt: TimeInterval?
         var lastCreateAt: TimeInterval?
+        var lastSystemCheckAt: TimeInterval?
         var createdCount = 0
         var ending = Ending.timedOut
 
@@ -497,6 +498,14 @@ public final class AppLauncher: @unchecked Sendable {
                 ? (snapshot.axReady && running.isFinishedLaunching)
                 : snapshot.frames.count >= wanted
             if enough { ending = .enough; break }
+
+            // Windows the app reopened in full screen (on their own Space) are missing from AX; the window
+            // server still counts them, so don't wait out the timeout for them. Checked at most once a second.
+            if wanted > 0, snapshot.axReady, running.isFinishedLaunching, snapshot.frames.count < wanted,
+               now - (lastSystemCheckAt ?? 0) >= 1 {
+                lastSystemCheckAt = now
+                if await offMain({ Self.normalWindowCount(pid: pid) }) >= wanted { ending = .enough; break }
+            }
 
             if wanted > 0, let upAt, snapshot.anyWindowCount == 0 {
                 if !isRegularApp {

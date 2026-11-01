@@ -42,6 +42,21 @@ private struct Fixture {
 private func place(_ p: Profile, _ id: UUID) -> SpacePlacement { p.windows.first { $0.id == id }!.placement }
 
 @Suite struct ProfileDraftEditorTests {
+    @Test func restackMovesWindowToFrontOrBackAndRenumbers() throws {
+        var f = Fixture()
+        for i in f.profile.windows.indices { f.profile.windows[i].zIndex = i }
+        var e = ProfileDraftEditor(f.profile)
+        try e.restack(f.xcodeFS.id, toFront: true)
+        let z = { (id: UUID) in e.profile.windows.first { $0.id == id }!.zIndex }
+        #expect(z(f.xcodeFS.id) == 0)
+        #expect(z(f.safari1.id) == 1)
+        #expect(z(f.notesFS.id) == 4)
+        try e.restack(f.safari1.id, toFront: false)
+        #expect(z(f.safari1.id) == 5)
+        #expect(z(f.xcodeFS.id) == 0)
+        #expect(Set(e.profile.windows.map(\.zIndex)) == Set(0...5))
+    }
+
     @Test func fixtureIsValid() {
         #expect(Fixture().profile.validate().isEmpty)
     }

@@ -56,7 +56,8 @@ struct CanvasNavigator: NSViewRepresentable {
             let location = (event.type == .keyDown || event.type == .keyUp)
                 ? (window?.mouseLocationOutsideOfEventStream ?? .zero) : event.locationInWindow
             let point = convert(location, from: nil)
-            let inside = bounds.contains(point)
+            // Over another column (the sidebar list, the inspector) the scroll belongs to that view's scroll view.
+            let inside = bounds.contains(point) && !isOverForeignScrollView(event.locationInWindow)
             switch event.type {
             case .keyDown:
                 guard event.keyCode == 49, event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
@@ -118,6 +119,18 @@ struct CanvasNavigator: NSViewRepresentable {
         private var isEditingText: Bool {
             guard let responder = window?.firstResponder else { return false }
             return responder is NSTextView || responder is NSTextField
+        }
+
+        /// True when the topmost view under the pointer sits in a scroll view that does not contain this view.
+        private func isOverForeignScrollView(_ locationInWindow: NSPoint) -> Bool {
+            guard let root = window?.contentView?.superview,
+                  var hit = root.hitTest(root.convert(locationInWindow, from: nil)) else { return false }
+            while true {
+                if hit === self { return false }
+                if let scroll = hit as? NSScrollView { return !isDescendant(of: scroll) }
+                guard let parent = hit.superview else { return false }
+                hit = parent
+            }
         }
 
         // MARK: Cursor

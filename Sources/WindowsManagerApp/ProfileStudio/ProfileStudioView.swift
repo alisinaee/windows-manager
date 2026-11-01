@@ -713,15 +713,24 @@ struct StudioEditDetail: View {
             .onChange(of: text) { _, _ in bannerDismissed = false }
     }
 
+    /// The tab bar is a top safe-area inset, so it stays pinned whichever panel is below and each panel
+    /// is laid out in the space left (a Form or a taller list scrolls inside it, never pushes the bar out).
     private var inspector: some View {
-        VStack(spacing: 0) {
-            StudioInspectorTabBar(tabs: StudioInspectorTab.allCases, selection: $local.tab)
-            Divider()
+        Group {
             switch local.tab {
             case .inspector: MapInspectorView(map: map, plan: nil, isCompareOn: false)
             case .options: ProfileOptionsPanel(builder: builder)
             case .launchOrder: LaunchOrderEditor(builder: builder)
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .clipped()
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                StudioInspectorTabBar(tabs: StudioInspectorTab.allCases, selection: $local.tab)
+                Divider()
+            }
+            .background(.bar)
         }
     }
 }

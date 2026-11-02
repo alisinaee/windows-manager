@@ -24,12 +24,18 @@ struct WindowsManagerMain: App {
         }
         .menuBarExtraStyle(.window)
 
-        Settings {
+        // A plain Window, not the Settings scene: SwiftUI keeps a Settings window at a fixed size.
+        Window("Settings", id: SettingsWindow.id) {
             SettingsView()
                 .environmentObject(appState)
         }
         .windowResizability(.contentMinSize)
-        .commands { StudioCommands(studio: ProfileStudioWindowController.shared.model, app: appState) }
+        .defaultSize(width: 900, height: 600)
+        .defaultLaunchBehavior(.suppressed)
+        .commands {
+            CommandGroup(replacing: .appSettings) { SettingsMenuItem() }
+            StudioCommands(studio: ProfileStudioWindowController.shared.model, app: appState)
+        }
     }
 }
 
@@ -102,5 +108,23 @@ struct StudioCommands: Commands {
             Button("Zoom to Selection") { studio.activeMap?.zoomToSelection() }
                 .keyboardShortcut("2", modifiers: .command).disabled(!canZoom)
         }
+    }
+}
+
+/// Opens the Settings window (a plain resizable Window scene).
+enum SettingsWindow {
+    static let id = "settings"
+}
+
+/// The app menu's "Settings…" item, ⌘,.
+private struct SettingsMenuItem: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Settings…") {
+            NSApp.activate()
+            openWindow(id: SettingsWindow.id)
+        }
+        .keyboardShortcut(",", modifiers: .command)
     }
 }

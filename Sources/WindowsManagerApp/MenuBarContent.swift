@@ -5,7 +5,7 @@ import WMCore
 /// Menu shown from the menu bar item: profiles with Run, Capture, status.
 struct MenuBarContent: View {
     @EnvironmentObject private var appState: AppState
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @ObservedObject private var workspaces = WorkspaceController.shared
     @ObservedObject private var updates = UpdateController.shared
     @StateObject private var nav = MenuNav()
@@ -51,7 +51,7 @@ struct MenuBarContent: View {
             MenuRow(title: "Settings…", symbol: "gearshape") {
                 Self.closePopup()
                 UXTestRoute.activateUnlessBackground()
-                openSettings()
+                openWindow(id: SettingsWindow.id)
             }
             MenuRow(title: "Report a Bug…", symbol: "ladybug") {
                 Self.closePopup(); BugReportWindowController.shared.show()

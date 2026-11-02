@@ -58,7 +58,7 @@ struct SettingsView: View {
             detail(SettingsPane(rawValue: selectedRaw) ?? .general)
                 .navigationTitle((SettingsPane(rawValue: selectedRaw) ?? .general).title)
         }
-        .frame(minWidth: 720, idealWidth: 820, minHeight: 480, idealHeight: 540)
+        .frame(minWidth: 720, idealWidth: 820, maxWidth: .infinity, minHeight: 480, idealHeight: 540, maxHeight: .infinity)
         .tint(Palette.accent)
         // A toolbar hosts the sidebar toggle in the title bar row, beside the traffic lights.
         .toolbar { ToolbarItem(placement: .automatic) { Color.clear.frame(width: 0, height: 0) } }
@@ -124,16 +124,27 @@ private struct RulesWorkspacesPane: View {
 
 /// SwiftUI's Settings scene opens a window with close only; enable minimize and zoom, and use a unified title bar.
 private struct SettingsWindowConfigurator: NSViewRepresentable {
-    final class Coordinator { var configured = false }
+    /// Configures the window once the view is in it: `updateNSView` can run before the window exists and not again.
+    final class ConfiguringView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            // SwiftUI may set the style after attaching the view, so apply on the next turn of the run loop too.
+            Self.configure(window)
+            DispatchQueue.main.async { Self.configure(window) }
+        }
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> NSView { NSView() }
-
-    func updateNSView(_ view: NSView, context: Context) {
-        guard !context.coordinator.configured, let window = view.window else { return }
-        context.coordinator.configured = true
-        window.styleMask.insert([.miniaturizable, .resizable])
-        window.toolbarStyle = .unified
+        static func configure(_ window: NSWindow) {
+            window.styleMask.insert([.miniaturizable, .resizable])
+            window.toolbarStyle = .unified
+            window.contentMinSize = NSSize(width: 720, height: 480)
+            window.contentMaxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            window.standardWindowButton(.zoomButton)?.isEnabled = true
+            window.standardWindowButton(.miniaturizeButton)?.isEnabled = true
+        }
     }
+
+    func makeNSView(context: Context) -> NSView { ConfiguringView() }
+
+    func updateNSView(_ view: NSView, context: Context) {}
 }

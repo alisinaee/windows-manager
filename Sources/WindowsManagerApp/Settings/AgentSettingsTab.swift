@@ -7,6 +7,12 @@ struct AgentSettingsTab: View {
     @State private var skill = AgentInstaller.SkillStatus.notInstalled
     @State private var onPath = true
     @State private var message: String?
+    @State private var desktop = AgentInstaller.DesktopStatus.notConnected
+    @State private var code = AgentInstaller.CodeStatus.cliMissing
+    @State private var busy = false
+    @State private var connectError: String?
+    @State private var desktopNote: String?
+    @State private var codeNote: String?
 
     private var installer: AgentInstaller { AgentInstaller(wmBinary: Self.bundledWM()) }
 
@@ -57,18 +63,30 @@ struct AgentSettingsTab: View {
                 Text("Copies the wm-agent skill to ~/.claude/skills/wm-agent/SKILL.md.")
             }
             Section {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Claude Code").font(.wmCaption).foregroundStyle(.secondary)
-                    copyRow(AgentInstaller.mcpCommand)
+                connectRow(title: "Claude Code", status: codeText, connected: code == .connected,
+                           canAct: code != .cliMissing && wmPath != nil, note: codeNote) {
+                    connectCode()
+                } disconnect: { disconnectCode() }
+                connectRow(title: "Claude Desktop", status: desktopText, connected: desktop == .connected,
+                           canAct: desktop != .claudeNotInstalled && wmPath != nil, note: desktopNote) {
+                    connectDesktop()
+                } disconnect: { disconnectDesktop() }
+                if wmPath == nil {
+                    Text("Install the command line tool first").font(.wmCaption).foregroundStyle(.secondary)
                 }
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Claude Desktop (add to claude_desktop_config.json)").font(.wmCaption).foregroundStyle(.secondary)
-                    copyRow(installer.desktopConfigJSON(wmPath: configCommandPath), multiline: true)
+                if let connectError { Text(connectError).font(.wmCaption).foregroundStyle(.red) }
+                DisclosureGroup("Manual setup") {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Claude Code").font(.wmCaption).foregroundStyle(.secondary)
+                        copyRow(AgentInstaller.mcpCommand)
+                    }
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Claude Desktop (add to claude_desktop_config.json)").font(.wmCaption).foregroundStyle(.secondary)
+                        copyRow(installer.desktopConfigJSON(wmPath: configCommandPath), multiline: true)
+                    }
                 }
             } header: {
                 Text("Connect to Claude (MCP)")
-            } footer: {
-                Text("Nothing is written for you here; copy the snippet where you need it.")
             }
             if let message {
                 Section { Text(message).foregroundStyle(.red) }
@@ -76,6 +94,66 @@ struct AgentSettingsTab: View {
         }
         .formStyle(.grouped)
         .onAppear(perform: refresh)
+    }
+
+    private var wmPath: String? { installer.mcpWMPath }
+
+    private var desktopText: String {
+        switch desktop {
+        case .claudeNotInstalled: return "Claude Desktop is not installed"
+        case .notConnected: return "Not connected"
+        case .connected: return "Connected"
+        case .connectedOtherPath(let p): return "Connected to a different wm (\(p))"
+        }
+    }
+
+    private var codeText: String {
+        switch code {
+        case .cliMissing: return "The claude command line tool was not found"
+        case .notConnected: return "Not connected"
+        case .connected: return "Connected"
+        }
+    }
+
+    private func connectRow(title: String, status: String, connected: Bool, canAct: Bool, note: String?,
+                            connect: @escaping () -> Void, disconnect: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            LabeledContent(title) {
+                HStack {
+                    Text(status).foregroundStyle(.secondary)
+                    Button(connected ? "Disconnect" : "Connect") { connected ? disconnect() : connect() }
+                        .disabled(!canAct || busy)
+                }
+            }
+            if let note { Text(note).font(.wmCaption).foregroundStyle(.secondary) }
+        }
+    }
+
+    private func background(_ work: @escaping @Sendable (AgentInstaller) throws -> Void, note: @escaping (Bool) -> Void) {
+        let i = installer
+        busy = true
+        Task.detached {
+            let err: String?
+            do { try work(i); err = nil } catch { err = error.localizedDescription }
+            let d = i.desktopStatus(), c = i.codeStatus()
+            await MainActor.run {
+                connectError = err; desktop = d; code = c; busy = false
+                note(err == nil)
+            }
+        }
+    }
+
+    private func connectDesktop() {
+        background({ try $0.connectDesktop() }) { ok in desktopNote = ok ? "Restart Claude Desktop to load it." : nil }
+    }
+    private func disconnectDesktop() {
+        background({ try $0.disconnectDesktop() }) { _ in desktopNote = nil }
+    }
+    private func connectCode() {
+        background({ try $0.connectCode() }) { ok in codeNote = ok ? "Open a new Claude Code chat to use it." : nil }
+    }
+    private func disconnectCode() {
+        background({ try $0.disconnectCode() }) { _ in codeNote = nil }
     }
 
     private var configCommandPath: String {
@@ -122,5 +200,9 @@ struct AgentSettingsTab: View {
         cli = i.cliStatus()
         skill = i.skillStatus(expected: AgentSkillText.skill)
         onPath = i.isBinDirOnPath()
+        Task.detached {
+            let d = i.desktopStatus(), c = i.codeStatus()
+            await MainActor.run { desktop = d; code = c }
+        }
     }
 }

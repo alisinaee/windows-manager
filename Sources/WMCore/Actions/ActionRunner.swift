@@ -10,6 +10,9 @@ public struct StepReport: Codable, Equatable, Sendable {
     public var status: StepStatus
     public var duration: TimeInterval
     public var error: String?
+
+    /// Status text of a press that was skipped because its "skip if showing" element exists.
+    public static let alreadyShowing = "skipped (already showing)"
 }
 
 public struct ActionRunReport: Codable, Equatable, Sendable {
@@ -22,7 +25,7 @@ public struct ActionRunReport: Codable, Equatable, Sendable {
     /// True when no step failed (steps that were allowed to fail count as failed here too) and it was not cancelled.
     public var succeeded: Bool { !cancelled && !steps.contains { $0.status == .failed } }
     /// True when the action ran to the end, ignoring failures of optional steps.
-    public var completed: Bool { !cancelled && !steps.contains { $0.status == .skipped || $0.status == .cancelled } }
+    public var completed: Bool { !cancelled && !steps.contains { ($0.status == .skipped && $0.error != StepReport.alreadyShowing) || $0.status == .cancelled } }
 }
 
 /// Runs the steps of a ProfileAction in order. Never throws: problems end up in the report.
@@ -62,6 +65,12 @@ public struct ActionRunner: Sendable {
                     continue
                 }
             }
+            if case .press(_, _, let skip?) = step.unwrapped,
+               ElementSearch.find(skip, roots: ax.roots(bundleID: skip.bundleID)) != nil {
+                reports.append(StepReport(index: index, summary: step.summary, status: .skipped, duration: 0,
+                                          error: StepReport.alreadyShowing))
+                continue
+            }
             ranStep = true
             let t0 = clock.now()
             var status = StepStatus.succeeded
@@ -89,7 +98,7 @@ public struct ActionRunner: Sendable {
         switch step {
         case .launchApp(let bundleID):
             try await process.launchApp(bundleID: bundleID, timeout: step.timeout)
-        case .press(let locator, let timeout):
+        case .press(let locator, let timeout, _):
             let node = try await locate(locator, containing: nil, timeout: timeout)
             if !node.press() { throw ActionError.pressFailed(locator.describe) }
         case .menu(let bundleID, let path):

@@ -86,7 +86,7 @@ public enum RecordingAnalyzer {
 
     /// Clicks on close / minimize / zoom / full-screen buttons and on the title bar or toolbar background.
     static func isWindowChrome(_ step: ActionStep) -> Bool {
-        guard case .press(let locator, _) = step.unwrapped, let last = locator.path.last else { return false }
+        guard case .press(let locator, _, _) = step.unwrapped, let last = locator.path.last else { return false }
         if let sub = last.subrole, ActionRecorder.chromeSubroles.contains(sub) { return true }
         return last.role == "AXToolbar" && (last.title ?? "").isEmpty && last.identifier == nil
     }
@@ -94,7 +94,7 @@ public enum RecordingAnalyzer {
     static func bundleID(of step: ActionStep) -> String? {
         switch step.unwrapped {
         case .launchApp(let b): return b
-        case .press(let l, _): return l.bundleID.isEmpty ? nil : l.bundleID
+        case .press(let l, _, _): return l.bundleID.isEmpty ? nil : l.bundleID
         case .menu(let b, _): return b.isEmpty ? nil : b
         case .typeText(_, let into): return into.flatMap { $0.bundleID.isEmpty ? nil : $0.bundleID }
         case .waitFor(let l, _, _): return l.bundleID.isEmpty ? nil : l.bundleID
@@ -109,7 +109,7 @@ public enum RecordingAnalyzer {
         var what: String?
         for (i, step) in list.enumerated() {
             switch step.unwrapped {
-            case .press(let l, _):
+            case .press(let l, _, _):
                 what = "press " + label(of: l)
             case .menu(_, let path):
                 what = "choose " + (path.last ?? "menu item")

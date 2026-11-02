@@ -173,7 +173,10 @@ extension ProfileService {
         switch step {
         case .launchApp(let bundleID):
             try requireText(bundleID, "bundle id")
-        case .press(let locator, _), .waitFor(let locator, _, _):
+        case .press(let locator, _, let skip):
+            try validateLocator(locator)
+            if let skip { try validateLocator(skip) }
+        case .waitFor(let locator, _, _):
             try validateLocator(locator)
         case .menu(let bundleID, let path):
             try requireText(bundleID, "bundle id")

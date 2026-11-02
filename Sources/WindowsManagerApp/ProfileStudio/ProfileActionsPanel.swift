@@ -409,9 +409,11 @@ private struct StepEditor: View {
         switch inner {
         case .launchApp(let id):
             text("Bundle ID", id) { set(.launchApp(bundleID: $0)) }
-        case .press(let locator, let timeout):
-            locatorFields(locator) { set(.press(locator: $0, timeout: timeout)) }
-            seconds("Give up after", timeout) { set(.press(locator: locator, timeout: $0)) }
+        case .press(let locator, let timeout, let skip):
+            locatorFields(locator) { set(.press(locator: $0, timeout: timeout, skipIfShowing: skip)) }
+            matchPicker(locator) { set(.press(locator: $0, timeout: timeout, skipIfShowing: skip)) }
+            skipFields(skip) { set(.press(locator: locator, timeout: timeout, skipIfShowing: $0)) }
+            seconds("Give up after", timeout) { set(.press(locator: locator, timeout: $0, skipIfShowing: skip)) }
         case .menu(let id, let path):
             text("App bundle ID", id) { set(.menu(bundleID: $0, path: path)) }
             text("Menu path", path.joined(separator: " > ")) { value in
@@ -434,6 +436,7 @@ private struct StepEditor: View {
             text("Shortcut name", name) { set(.runShortcut(name: $0)) }
         case .waitFor(let locator, let containing, let timeout):
             locatorFields(locator) { set(.waitFor(locator: $0, containing: containing, timeout: timeout)) }
+            matchPicker(locator) { set(.waitFor(locator: $0, containing: containing, timeout: timeout)) }
             text("Containing", containing ?? "") { set(.waitFor(locator: locator, containing: $0.isEmpty ? nil : $0, timeout: timeout)) }
             seconds("Give up after", timeout) { set(.waitFor(locator: locator, containing: containing, timeout: $0)) }
         case .delay(let s):
@@ -450,11 +453,11 @@ private struct StepEditor: View {
         if let last = locator.path.last {
             let noTitle = (last.title ?? "").isEmpty
             text("Element title", last.title ?? "") { value in
-                var l = locator; l.path[l.path.count - 1].title = value.isEmpty ? nil : value; commit(l)
+                var l = locator; l.path[l.path.count - 1].title = value.isEmpty ? nil : value; l.path[l.path.count - 1].volatile = nil; commit(l)
             }
             if noTitle || last.description != nil {
                 text("Element description", last.description ?? "") { value in
-                    var l = locator; l.path[l.path.count - 1].description = value.isEmpty ? nil : value; commit(l)
+                    var l = locator; l.path[l.path.count - 1].description = value.isEmpty ? nil : value; l.path[l.path.count - 1].volatile = nil; commit(l)
                 }
             }
             if noTitle || last.identifier != nil {
@@ -463,6 +466,39 @@ private struct StepEditor: View {
                 }
             }
             if locator.path.count > 1 { Text("Path: " + describe(locator)).font(.wmCaption).foregroundStyle(.secondary) }
+        }
+    }
+
+    /// Label first, or the recorded position first (for buttons whose label changes with the app's state).
+    @ViewBuilder private func matchPicker(_ locator: ElementLocator, _ commit: @escaping (ElementLocator) -> Void) -> some View {
+        LabeledContent("Match") {
+            Picker("Match", selection: Binding(
+                get: { locator.structuralFirst ? MatchPreference.position : .label },
+                set: { var l = locator; l.match = $0; commit(l) })) {
+                Text("By label").tag(MatchPreference.label)
+                Text("By position").tag(MatchPreference.position)
+            }
+            .labelsHidden().pickerStyle(.segmented)
+            .help("By position finds the element by where it sits in the window, for buttons whose label changes")
+        }
+    }
+
+    /// "Skip if showing": the press is skipped when this element is already on screen.
+    @ViewBuilder private func skipFields(_ skip: ElementLocator?, _ commit: @escaping (ElementLocator?) -> Void) -> some View {
+        let bundle = inner.locatorBundleID
+        LabeledContent("Skip if showing") {
+            Toggle("", isOn: Binding(
+                get: { skip != nil },
+                set: { commit($0 ? ElementLocator(bundleID: bundle, path: [ElementMatcher(role: "AXStaticText", title: "")]) : nil) }))
+                .labelsHidden().toggleStyle(.checkbox)
+                .help("Skip this press when the element below is already visible, for example Connected")
+        }
+        if let skip, let last = skip.path.last {
+            text("Showing role", last.role) { var l = skip; l.path[l.path.count - 1].role = $0; commit(l) }
+            text("Showing title", last.title ?? "") { var l = skip; l.path[l.path.count - 1].title = $0.isEmpty ? nil : $0; commit(l) }
+            text("Showing description", last.description ?? "") {
+                var l = skip; l.path[l.path.count - 1].description = $0.isEmpty ? nil : $0; commit(l)
+            }
         }
     }
 
@@ -510,5 +546,13 @@ private extension ActionStep {
     var supportsOptional: Bool {
         if case .delay = self { return false }
         return true
+    }
+}
+
+private extension ActionStep {
+    /// The app of the step's own locator, used to seed a new "skip if showing" element.
+    var locatorBundleID: String {
+        if case .press(let l, _, _) = unwrapped { return l.bundleID }
+        return ""
     }
 }

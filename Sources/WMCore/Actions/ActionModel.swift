@@ -57,7 +57,37 @@ public struct ProfileAction: Codable, Equatable, Sendable, Identifiable {
 public struct ElementLocator: Codable, Equatable, Sendable {
     public var bundleID: String
     public var path: [ElementMatcher]
-    public init(bundleID: String, path: [ElementMatcher]) { self.bundleID = bundleID; self.path = path }
+    /// Position of the element in the tree: role + index among same-role siblings, from below the window down.
+    /// Used when the labels no longer match (a label that changes with state).
+    public var structural: [StructuralHop]?
+    /// Which window the structural path starts in (index among the app's windows, and its title when it had one).
+    public var windowIndex: Int?
+    public var windowTitle: String?
+    /// Which search goes first. nil = labels first, unless a matcher is marked volatile.
+    public var match: MatchPreference?
+
+    public init(bundleID: String, path: [ElementMatcher], structural: [StructuralHop]? = nil,
+                windowIndex: Int? = nil, windowTitle: String? = nil, match: MatchPreference? = nil) {
+        self.bundleID = bundleID; self.path = path; self.structural = structural
+        self.windowIndex = windowIndex; self.windowTitle = windowTitle; self.match = match
+    }
+
+    /// True when the position search should run before the label search.
+    public var structuralFirst: Bool {
+        match == .position || (match == nil && path.contains { $0.volatile == true })
+    }
+}
+
+/// Which way a locator is matched first.
+public enum MatchPreference: String, Codable, Equatable, Sendable, CaseIterable {
+    case label, position
+}
+
+/// One step down the tree: the `index`-th child with this role (counting only children with that role).
+public struct StructuralHop: Codable, Equatable, Sendable {
+    public var role: String
+    public var index: Int
+    public init(role: String, index: Int) { self.role = role; self.index = index }
 }
 
 /// Describes one element in the tree. Role/subrole/description are filters; identifier and title rank the
@@ -70,11 +100,20 @@ public struct ElementMatcher: Codable, Equatable, Sendable {
     public var identifier: String?
     public var description: String?
     public var index: Int?
+    /// The recorded text looks like an icon name (an SF Symbol such as power.circle.fill) that changes with the
+    /// app's state, so the position search goes first.
+    public var volatile: Bool?
 
     public init(role: String, subrole: String? = nil, title: String? = nil, identifier: String? = nil,
-                description: String? = nil, index: Int? = nil) {
+                description: String? = nil, index: Int? = nil, volatile: Bool? = nil) {
         self.role = role; self.subrole = subrole; self.title = title
-        self.identifier = identifier; self.description = description; self.index = index
+        self.identifier = identifier; self.description = description; self.index = index; self.volatile = volatile
+    }
+
+    /// "power.circle.fill": lowercase words joined by dots, the way SF Symbol names look.
+    public static func looksLikeSymbolName(_ text: String?) -> Bool {
+        guard let text else { return false }
+        return text.range(of: #"^[a-z0-9]+(\.[a-z0-9]+)+$"#, options: .regularExpression) != nil
     }
 
     /// Rank of a node for this matcher: 3 identifier, 2 exact title, 1 title contains / no text criteria,
@@ -113,7 +152,8 @@ public struct ElementExpectation: Codable, Equatable, Sendable {
 
 public enum ActionStep: Codable, Equatable, Sendable {
     case launchApp(bundleID: String)
-    case press(locator: ElementLocator, timeout: TimeInterval = ActionDefaults.uiTimeout)
+    /// `skipIfShowing`: when this element exists the press is skipped (for example "Connected" is already on screen).
+    case press(locator: ElementLocator, timeout: TimeInterval = ActionDefaults.uiTimeout, skipIfShowing: ElementLocator? = nil)
     case menu(bundleID: String, path: [String])
     case typeText(text: String, into: ElementLocator? = nil)
     case key(combo: String)
@@ -128,7 +168,7 @@ public enum ActionStep: Codable, Equatable, Sendable {
     /// How long the step may take before it fails.
     public var timeout: TimeInterval {
         switch self {
-        case .press(_, let t), .shell(_, _, let t), .waitFor(_, _, let t): return t
+        case .press(_, let t, _), .shell(_, _, let t), .waitFor(_, _, let t): return t
         case .launchApp: return ActionDefaults.launchTimeout
         case .menu, .key, .typeText: return ActionDefaults.uiTimeout
         case .openURL, .runShortcut: return ActionDefaults.shellTimeout
@@ -152,7 +192,7 @@ public enum ActionStep: Codable, Equatable, Sendable {
     public var summary: String {
         switch self {
         case .launchApp(let b): return "launch \(b)"
-        case .press(let l, _): return "press \(l.describe)"
+        case .press(let l, _, _): return "press \(l.describe)"
         case .menu(let b, let p): return "menu \(b): \(p.joined(separator: " > "))"
         case .typeText(let t, _): return "type \(t.count) characters"
         case .key(let k): return "key \(k)"
@@ -198,7 +238,8 @@ extension ActionStep {
         case "launchApp":
             self = .launchApp(bundleID: try p.decode(String.self, forKey: StepKey("bundleID")))
         case "press":
-            self = .press(locator: try value(ElementLocator.self, "locator"), timeout: try timeout(ActionDefaults.uiTimeout))
+            self = .press(locator: try value(ElementLocator.self, "locator"), timeout: try timeout(ActionDefaults.uiTimeout),
+                          skipIfShowing: try optionalValue(ElementLocator.self, "skipIfShowing"))
         case "menu":
             self = .menu(bundleID: try p.decode(String.self, forKey: StepKey("bundleID")),
                          path: try p.decode([String].self, forKey: StepKey("path")))

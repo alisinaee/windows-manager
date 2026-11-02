@@ -44,7 +44,7 @@ private final class FakeInspector: RecorderInspector, @unchecked Sendable {
 
 /// Steps with the press timeout stripped to make comparisons short.
 private func pressLocators(_ steps: [ActionStep]) -> [ElementLocator] {
-    steps.compactMap { if case .press(let l, _) = $0 { return l }; return nil }
+    steps.compactMap { if case .press(let l, _, _) = $0 { return l }; return nil }
 }
 
 @Suite final class ActionRecorderTests {
@@ -84,7 +84,10 @@ private func pressLocators(_ steps: [ActionStep]) -> [ElementLocator] {
         #expect(steps[0] == .launchApp(bundleID: "com.example.app"))
         #expect(pressLocators(steps) == [ElementLocator(bundleID: "com.example.app", path: [
             ElementMatcher(role: "AXToolbar", identifier: "main-toolbar"),
-            ElementMatcher(role: "AXButton", identifier: "saveBtn")])])
+            ElementMatcher(role: "AXButton", identifier: "saveBtn")],
+            structural: [StructuralHop(role: "AXGroup", index: 0), StructuralHop(role: "AXToolbar", index: 0),
+                         StructuralHop(role: "AXButton", index: 0)],
+            windowIndex: 0, windowTitle: "Doc")])
     }
 
     @Test func descriptionUsedAndIndexOnlyWhenAmbiguous() {

@@ -6,6 +6,38 @@ public enum ElementSearch {
     public static func find(_ locator: ElementLocator, roots: [any AXNode],
                             maxDepth: Int = ActionDefaults.maxDepth,
                             maxNodes: Int = ActionDefaults.maxNodes) -> (any AXNode)? {
+        if locator.structuralFirst {
+            return findStructural(locator, roots: roots) ?? findSemantic(locator, roots: roots, maxDepth: maxDepth, maxNodes: maxNodes)
+        }
+        return findSemantic(locator, roots: roots, maxDepth: maxDepth, maxNodes: maxNodes)
+            ?? findStructural(locator, roots: roots)
+    }
+
+    /// Follows the recorded position: the window, then role + index among same-role siblings at each level.
+    /// The node found must have the role of the locator's last matcher.
+    static func findStructural(_ locator: ElementLocator, roots: [any AXNode]) -> (any AXNode)? {
+        guard let hops = locator.structural, !hops.isEmpty else { return nil }
+        let windows = roots.filter { $0.role == "AXWindow" }
+        let candidates = windows.isEmpty ? roots : windows
+        guard !candidates.isEmpty else { return nil }
+        var node: any AXNode
+        if let title = locator.windowTitle, !title.isEmpty, let byTitle = candidates.first(where: { $0.title == title }) {
+            node = byTitle
+        } else if let i = locator.windowIndex, candidates.indices.contains(i) {
+            node = candidates[i]
+        } else if let first = candidates.first {
+            node = first
+        } else { return nil }
+        for hop in hops {
+            let same = node.children().filter { $0.role == hop.role }
+            guard hop.index >= 0, hop.index < same.count else { return nil }
+            node = same[hop.index]
+        }
+        if let want = locator.path.last?.role, !want.isEmpty, node.role != want { return nil }
+        return node
+    }
+
+    static func findSemantic(_ locator: ElementLocator, roots: [any AXNode], maxDepth: Int, maxNodes: Int) -> (any AXNode)? {
         var scope = roots
         var found: (any AXNode)?
         var budget = maxNodes

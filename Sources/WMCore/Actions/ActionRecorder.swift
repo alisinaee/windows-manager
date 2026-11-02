@@ -291,6 +291,9 @@ public final class ActionRecorder: @unchecked Sendable {
             let chrome = i == 0 ? node.subrole.flatMap { chromeSubroles.contains($0) ? $0 : nil } : nil
             var m = ElementMatcher(role: role, subrole: chrome, title: identifier == nil ? title : nil,
                                    identifier: identifier, description: desc)
+            if identifier == nil, ElementMatcher.looksLikeSymbolName(title) || ElementMatcher.looksLikeSymbolName(desc) {
+                m.volatile = true
+            }
             if let parent = i + 1 < chain.count ? chain[i + 1] : nil {
                 let same = parent.children().filter { sib in
                     m.rank(role: sib.role, subrole: sib.subrole, title: sib.title, identifier: sib.identifier,
@@ -304,7 +307,33 @@ public final class ActionRecorder: @unchecked Sendable {
         }
         _ = target
         guard !matchers.isEmpty else { return nil }
-        return ElementLocator(bundleID: bundleID, path: matchers.reversed())
+        var locator = ElementLocator(bundleID: bundleID, path: matchers.reversed())
+        applyStructure(to: &locator, chain: chain)
+        return locator
+    }
+
+    /// Records where the element sits: the window (index among the app's windows, title) and, below it,
+    /// role + index among same-role siblings at every level.
+    private static func applyStructure(to locator: inout ElementLocator, chain: [any RecorderNode]) {
+        guard let windowPos = chain.firstIndex(where: { $0.role == "AXWindow" }) else { return }
+        let window = chain[windowPos]
+        var hops: [StructuralHop] = []
+        for i in stride(from: windowPos - 1, through: 0, by: -1) {
+            let node = chain[i]
+            let parent = chain[i + 1]
+            let role = node.role ?? ""
+            let same = parent.children().filter { $0.role == role }
+            guard let idx = same.firstIndex(where: { sib in (sib as? any RecorderNode).map { node.isSame(as: $0) } ?? false })
+            else { return }
+            hops.append(StructuralHop(role: role, index: idx))
+        }
+        guard !hops.isEmpty else { return }
+        locator.structural = hops
+        locator.windowTitle = nonEmpty(window.title)
+        if windowPos + 1 < chain.count {
+            let windows = chain[windowPos + 1].children().filter { $0.role == "AXWindow" }
+            locator.windowIndex = windows.firstIndex(where: { sib in (sib as? any RecorderNode).map { window.isSame(as: $0) } ?? false })
+        }
     }
 
     private static func nonEmpty(_ s: String?) -> String? {

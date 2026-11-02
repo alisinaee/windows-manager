@@ -281,6 +281,77 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
         #expect(r.cancelled)
     }
 
+    private func vpnWindow(toggleDesc: String, status: String?) -> FakeNode {
+        var kids = [FakeNode("AXButton", desc: toggleDesc)]
+        if let status { kids.append(FakeNode("AXButton", desc: status)) }
+        return FakeNode("AXWindow", title: "Streisand", [FakeNode("AXGroup", kids)])
+    }
+
+    @Test func structuralPathFindsButtonWhoseLabelChanged() async {
+        let ax = FakeAX()
+        ax.roots = [vpnWindow(toggleDesc: "pause.circle.fill", status: "Connected")]
+        let locator = ElementLocator(bundleID: "app.x",
+                                     path: [ElementMatcher(role: "AXButton", description: "power.circle.fill", volatile: true)],
+                                     structural: [StructuralHop(role: "AXGroup", index: 0), StructuralHop(role: "AXButton", index: 0)],
+                                     windowIndex: 0, windowTitle: "Streisand")
+        #expect(ElementMatcher.looksLikeSymbolName("power.circle.fill"))
+        #expect(!ElementMatcher.looksLikeSymbolName("Connected"))
+        let report = await runner(ax).run(ProfileAction(name: "t", steps: [.press(locator: locator, timeout: 0)]))
+        #expect(report.succeeded)
+        let group = ax.roots[0].kids[0]
+        #expect(group.kids[0].pressCount == 1)
+        // Without structure the same label no longer matches.
+        var plain = locator; plain.structural = nil; plain.path[0].volatile = nil
+        #expect(ElementSearch.find(plain, roots: ax.roots) == nil)
+        // A structural hit with the wrong role is rejected.
+        var wrong = locator; wrong.path[0].role = "AXCheckBox"; wrong.path[0].description = "nope"
+        #expect(ElementSearch.find(wrong, roots: ax.roots) == nil)
+    }
+
+    @Test func positionPreferenceGoesStructuralFirst() {
+        let window = vpnWindow(toggleDesc: "power.circle.fill", status: "Connected")
+        let group = window.kids[0]
+        // Semantic would find the second button; the position says the first.
+        let locator = ElementLocator(bundleID: "app.x", path: [ElementMatcher(role: "AXButton", description: "Connected")],
+                                     structural: [StructuralHop(role: "AXGroup", index: 0), StructuralHop(role: "AXButton", index: 0)],
+                                     match: .position)
+        #expect(ElementSearch.find(locator, roots: [window]) === group.kids[0])
+        var label = locator; label.match = .label
+        #expect(ElementSearch.find(label, roots: [window]) === group.kids[1])
+    }
+
+    @Test func skipIfShowingSkipsThePress() async {
+        let ax = FakeAX()
+        ax.roots = [vpnWindow(toggleDesc: "pause.circle.fill", status: "Connected")]
+        let toggle = ElementLocator(bundleID: "app.x", path: [ElementMatcher(role: "AXButton", description: "pause.circle.fill")])
+        let showing = ElementLocator(bundleID: "app.x", path: [ElementMatcher(role: "AXButton", description: "Connected")])
+        let report = await runner(ax).run(ProfileAction(name: "t", steps: [.press(locator: toggle, timeout: 0, skipIfShowing: showing)]))
+        #expect(report.steps[0].status == .skipped)
+        #expect(report.steps[0].error == "skipped (already showing)")
+        #expect(report.succeeded && report.completed)
+        #expect(ax.roots[0].kids[0].kids[0].pressCount == 0)
+
+        ax.roots = [vpnWindow(toggleDesc: "power.circle.fill", status: nil)]
+        let toggle2 = ElementLocator(bundleID: "app.x", path: [ElementMatcher(role: "AXButton", description: "power.circle.fill")])
+        let again = await runner(ax).run(ProfileAction(name: "t", steps: [.press(locator: toggle2, timeout: 0, skipIfShowing: showing)]))
+        #expect(again.steps[0].status == .succeeded)
+        #expect(ax.roots[0].kids[0].kids[0].pressCount == 1)
+    }
+
+    @Test func oldJSONDecodesWithoutNewKeys() throws {
+        let json = #"{"press":{"locator":{"bundleID":"a.b","path":[{"role":"AXButton","title":"Go"}]},"timeout":5}}"#
+        let step = try JSONDecoder().decode(ActionStep.self, from: Data(json.utf8))
+        guard case .press(let l, _, let skip) = step else { Issue.record("not a press"); return }
+        #expect(l.structural == nil && l.windowIndex == nil && l.match == nil && l.path[0].volatile == nil && skip == nil)
+        let text = String(decoding: try JSONEncoder().encode(step), as: UTF8.self)
+        #expect(!text.contains("structural") && !text.contains("skipIfShowing") && !text.contains("volatile"))
+        let full = ActionStep.press(locator: ElementLocator(bundleID: "a.b", path: [ElementMatcher(role: "AXButton", volatile: true)],
+                                                           structural: [StructuralHop(role: "AXButton", index: 1)], windowIndex: 0,
+                                                           windowTitle: "W", match: .position),
+                                    skipIfShowing: ElementLocator(bundleID: "a.b", path: [ElementMatcher(role: "AXStaticText", title: "Connected")]))
+        #expect(try JSONDecoder().decode(ActionStep.self, from: try JSONEncoder().encode(full)) == full)
+    }
+
     @Test func legacyUnderscoreKeysStillDecode() throws {
         let element = #""bundleID":"com.effect.streisand","path":[{"role":"AXButton","description":"Connected"}]"#
         let legacy = Data(#"{"press":{"_0":{\#(element)},"timeout":5}}"#.utf8)

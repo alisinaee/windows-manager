@@ -60,6 +60,9 @@ struct SettingsView: View {
         }
         .frame(minWidth: 720, idealWidth: 820, minHeight: 480, idealHeight: 540)
         .tint(Palette.accent)
+        // A toolbar hosts the sidebar toggle in the title bar row, beside the traffic lights.
+        .toolbar { ToolbarItem(placement: .automatic) { Color.clear.frame(width: 0, height: 0) } }
+        .background(SettingsWindowConfigurator())
     }
 
     @ViewBuilder
@@ -116,5 +119,21 @@ private struct RulesWorkspacesPane: View {
             case .workspaces: WorkspacesSettingsTab()
             }
         }
+    }
+}
+
+/// SwiftUI's Settings scene opens a window with close only; enable minimize and zoom, and use a unified title bar.
+private struct SettingsWindowConfigurator: NSViewRepresentable {
+    final class Coordinator { var configured = false }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        guard !context.coordinator.configured, let window = view.window else { return }
+        context.coordinator.configured = true
+        window.styleMask.insert([.miniaturizable, .resizable])
+        window.toolbarStyle = .unified
     }
 }

@@ -28,6 +28,7 @@ struct WindowsManagerMain: App {
             SettingsView()
                 .environmentObject(appState)
         }
+        .windowResizability(.contentMinSize)
         .commands { StudioCommands(studio: ProfileStudioWindowController.shared.model, app: appState) }
     }
 }

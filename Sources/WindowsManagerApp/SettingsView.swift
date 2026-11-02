@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The Settings window: a System-Settings-style sidebar. Each pane lives in Settings/.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, profiles, shortcuts, spacesMonitors, rules, about
+    case general, profiles, shortcuts, spacesMonitors, rules, agents, about
 
     var id: String { rawValue }
 
@@ -13,6 +13,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .shortcuts: return "Shortcuts"
         case .spacesMonitors: return "Spaces & Monitors"
         case .rules: return "Rules & Workspaces"
+        case .agents: return "AI Agents"
         case .about: return "About"
         }
     }
@@ -24,6 +25,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .shortcuts: return "keyboard"
         case .spacesMonitors: return "display.2"
         case .rules: return "list.bullet.rectangle"
+        case .agents: return "sparkles"
         case .about: return "info.circle"
         }
     }
@@ -68,6 +70,7 @@ struct SettingsView: View {
         case .shortcuts: HotkeysSettingsTab()
         case .spacesMonitors: SpacesMonitorsPane()
         case .rules: RulesWorkspacesPane()
+        case .agents: AgentSettingsTab()
         case .about: AboutSettingsTab()
         }
     }

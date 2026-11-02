@@ -50,10 +50,8 @@ struct ProfileActionsPanel: View {
         .accessibilityLabel("Profile actions")
         .sheet(item: $pendingRecording) { pending in
             RecordingReviewSheet(pending: pending, onAdd: { windows, newActions in
-                let added = builder?.applyRecording(windows: windows, actions: newActions) ?? 0
-                if windows.count > added {
-                    recordNote = "\(windows.count - added) window(s) were left out: the profile has no matching monitor or Desktop."
-                }
+                _ = builder?.applyRecording(windows: windows, actions: newActions)
+                if let note = builder?.recordingSkipNote, !note.isEmpty { recordNote = note }
                 if let first = newActions.first { selectedID = first.id }
                 pendingRecording = nil
             }, onCancel: { pendingRecording = nil })

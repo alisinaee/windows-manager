@@ -14,10 +14,10 @@ func profileStoreFromEnvironment() -> ProfileStore {
     return ProfileStore()
 }
 
-private func profiles() -> ProfileService { ProfileService(store: profileStoreFromEnvironment()) }
+func profiles() -> ProfileService { ProfileService(store: profileStoreFromEnvironment()) }
 
 /// Runs a service call; every error leaves as a `CLIFailure` with the matching exit code and machine code.
-private func service<T>(_ body: () throws -> T) throws -> T {
+func service<T>(_ body: () throws -> T) throws -> T {
     do {
         return try body()
     } catch let failure as CLIFailure {
@@ -43,7 +43,7 @@ private func display(_ explicit: String?, profile ref: String) throws -> String 
                            hint: "Run: wm profile show \(ref)")
 }
 
-private func profileResult(_ p: Profile, _ text: String) throws -> CLIResult {
+func profileResult(_ p: Profile, _ text: String) throws -> CLIResult {
     CLIResult(data: try JSONValue.from(p), text: text)
 }
 

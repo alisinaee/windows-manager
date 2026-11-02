@@ -7,7 +7,7 @@ For AI agents operating the Windows Manager `wm` CLI on the user's Mac. Start he
 ## 1. Safety rules
 
 - Dry-run first. `wm plan <profile>` and `wm run <profile> --dry-run` change nothing. Show the result and ask before any real run.
-- Never run `wm run`, `wm capture` or `wm verify` without the user's explicit consent in this conversation. They move or read real windows.
+- Never run `wm run`, `wm capture`, `wm verify` or `wm profile action test` without the user's explicit consent in this conversation. They move or read real windows, or click and type in real apps.
 - Commands with `"mutates": true` in `wm schema --json` change profiles, settings, layouts or rules. Confirm before changing the user's data. For experiments, copy first: `wm profile copy <profile> --name <new>`.
 - `wm profile delete` needs `--yes`. Ask the user before passing it.
 - Do not edit profile JSON files by hand. Use `wm profile ...` commands, or `wm profile import` for a file the user gives you.
@@ -66,6 +66,27 @@ For AI agents operating the Windows Manager `wm` CLI on the user's Mac. Start he
 - `wm debug list --json` lists the live debug scenarios.
 - `wm debug results --json` reads the last headless debug run (`debug-run.json`). Read it and summarize it for the user. Do not start debug runs unless the user asks.
 
+### 4.5 Profile actions (UI steps before or after a restore)
+
+An action is a list of recorded UI steps. A profile runs its `before` actions before the restore and its `after` actions after it. Disabled actions are skipped at restore time. Element titles must match the app's accessibility tree, so ask the user for them.
+
+1. `wm profile action list Work --json` lists the actions in run order.
+2. Write the steps as a JSON array to a file, or pipe them with `--steps-json -`. This example opens Streisand, presses "Connect" and waits for "Connected":
+
+```json
+[
+  {"launchApp": {"bundleID": "com.effect.streisand"}},
+  {"press": {"_0": {"bundleID": "com.effect.streisand", "path": [{"role": "AXButton", "title": "Connect"}]}, "timeout": 5}},
+  {"waitFor": {"_0": {"bundleID": "com.effect.streisand", "path": [{"role": "AXStaticText", "title": "Connected"}]}, "containing": "Connected", "timeout": 15}}
+]
+```
+
+3. `wm profile action add Work --name "Connect VPN" --phase before --steps-json steps.json --json` adds it. `--phase` takes `before` or `after`. `wm profile action show Work "Connect VPN" --json` shows the steps with their ids.
+4. Edit with `set-steps Work <action> --steps-json <file>`, `rename`, `enable` or `disable`, and `move Work <action> <position>` (1-based). `delete Work <action> --yes` needs the user's agreement first.
+5. `wm profile action test Work "Connect VPN" --yes` runs the action now and reports each step. It clicks, types and runs shell commands in real apps. Ask the user first, and never use it for a dry run.
+
+Other steps use the same Codable form, named after their kind: `menu`, `typeText`, `key`, `shell`, `openURL`, `runShortcut`, `waitFor`, `delay`. Unlabeled values sit under `"_0"`. A bad step makes `add` or `set-steps` fail with exit 2 and the step number, and the profile is left unchanged. Over MCP, pass a file path: `-` reads standard input, which MCP leaves empty.
+
 ## 5. Envelope and exit codes
 
 Success: `{"ok":true,"data":...}`. Failure: `{"ok":false,"error":{"code","message","hint"}}`. Use `--json` for every call you parse. Long runs print NDJSON events such as `{"event":"progress",...}` before the envelope.
@@ -103,5 +124,5 @@ Success: `{"ok":true,"data":...}`. Failure: `{"ok":false,"error":{"code","messag
 
 ## 9. MCP
 
-`wm mcp` runs a Model Context Protocol server over stdio. Each `wm` command is a tool (for example `profile_window_frame`), plus `agent_guide`. Tools that touch windows (run, capture, verify) need `confirm: true`, set only after the user agrees. Add it to Claude with: `claude mcp add windows-manager -- wm mcp`
+`wm mcp` runs a Model Context Protocol server over stdio. Each `wm` command is a tool (for example `profile_window_frame`), plus `agent_guide`. Tools that touch windows (run, capture, verify, profile_action_test) need `confirm: true`, set only after the user agrees. Add it to Claude with: `claude mcp add windows-manager -- wm mcp`
 """#

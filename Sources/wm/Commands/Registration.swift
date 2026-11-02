@@ -4,6 +4,7 @@ import WMCore
 /// A command file only needs: `func registerXCommands(_ r: Registry) { r.register(Command(["x","y"], summary: "...") { args, ctx in ... }) }`
 func registerAllCommands(_ r: Registry) {
     registerProfileCommands(r)
+    registerProfileActionCommands(r)
     // registerRunCommands(r)
     registerDoctorCommands(r)
     registerSettingsCommands(r)

@@ -14,6 +14,8 @@ struct ProfileActionsPanel: View {
     @State private var reports: [UUID: ActionRunReport] = [:]
     @StateObject private var recording = RecordingController()
     @State private var recordNote: String?
+    @State private var pendingRecording: PendingRecording?
+    @State private var analyzing = false
 
     private var actions: [ProfileAction] { profile.actions }
     private var isEditable: Bool { builder != nil }
@@ -33,8 +35,8 @@ struct ProfileActionsPanel: View {
                         addActionButton
                         if !actions.contains(where: { $0.id == selectedID }) {
                             Button { startRecording(into: nil) } label: { Label("Record…", systemImage: "record.circle") }
-                                .disabled(recording.isRecording)
-                                .help("Record clicks and typing in other apps into a new action")
+                                .disabled(recording.isRecording || analyzing)
+                                .help("Record clicks and typing in other apps; you review what was found before it is added")
                         }
                     }
                 }
@@ -46,6 +48,16 @@ struct ProfileActionsPanel: View {
             if let error = builder?.lastError { InspectorNote(text: error) }
         }
         .accessibilityLabel("Profile actions")
+        .sheet(item: $pendingRecording) { pending in
+            RecordingReviewSheet(pending: pending, onAdd: { windows, newActions in
+                let added = builder?.applyRecording(windows: windows, actions: newActions) ?? 0
+                if windows.count > added {
+                    recordNote = "\(windows.count - added) window(s) were left out: the profile has no matching monitor or Desktop."
+                }
+                if let first = newActions.first { selectedID = first.id }
+                pendingRecording = nil
+            }, onCancel: { pendingRecording = nil })
+        }
     }
 
     // MARK: Actions
@@ -97,6 +109,8 @@ struct ProfileActionsPanel: View {
                     .labelsHidden().fixedSize().disabled(!isEditable)
                     .help("Run this action before or after the windows are restored")
                 }
+                seconds("Wait before action", action.delayBefore) { v in update(action.id) { $0.delayBefore = v } }
+                seconds("Pause between steps", action.stepGap) { v in update(action.id) { $0.stepGap = v } }
             } else {
                 Text(action.phase == .beforeRestore ? "Before restoring windows" : "After restoring windows")
                     .font(.wmCaption).foregroundStyle(.secondary)
@@ -124,6 +138,19 @@ struct ProfileActionsPanel: View {
                 .disabled(index == count - 1).accessibilityLabel("Move \(name) down").help("Move \(name) down")
         }
         .buttonStyle(.borderless)
+    }
+
+    private func seconds(_ label: String, _ value: TimeInterval, _ commit: @escaping (TimeInterval) -> Void) -> some View {
+        LabeledContent(label) {
+            HStack(spacing: Spacing.xs) {
+                TextField(label, value: Binding(get: { value }, set: { commit(max(0, $0)) }),
+                          format: .number.precision(.fractionLength(0...1)))
+                    .labelsHidden().multilineTextAlignment(.trailing).frame(width: 56).textFieldStyle(.roundedBorder)
+                Text("s").foregroundStyle(.secondary)
+            }
+        }
+        .disabled(!isEditable)
+        .help(label == "Wait before action" ? "Seconds to wait before the first step" : "Seconds to pause between steps")
     }
 
     private func update(_ id: UUID, _ change: (inout ProfileAction) -> Void) {
@@ -161,7 +188,8 @@ struct ProfileActionsPanel: View {
                                let t = index + delta
                                if a.steps.indices.contains(t) { a.steps.swapAt(index, t) }
                            } },
-                           remove: { update(action.id) { $0.steps.remove(at: index) } })
+                           remove: { update(action.id) { $0.steps.remove(at: index) } },
+                           addDelayAfter: { update(action.id) { $0.steps.insert(.delay(seconds: 1), at: index + 1) } })
             }
             HStack(spacing: Spacing.s) {
                 if isEditable {
@@ -186,31 +214,61 @@ struct ProfileActionsPanel: View {
         }
     }
 
-    /// Records into the selected action; `nil` appends to a new "Recorded <date>" action instead.
+    /// Records into the selected action; `nil` records a new set: after Stop the recording is analyzed and reviewed.
     private func startRecording(into id: UUID?) {
         recordNote = nil
-        let started = recording.start { steps, skipped in finishRecording(steps, skipped: skipped, into: id) }
+        let started = recording.start { steps, skipped in
+            if let id { finishRecording(steps.map(\.step), skipped: skipped, into: id) }
+            else { analyze(steps, skipped: skipped) }
+        }
         if !started { RecordingPermission.showStartFailedAlert() }
     }
 
-    private func finishRecording(_ steps: [ActionStep], skipped: Bool, into id: UUID?) {
+    private func finishRecording(_ steps: [ActionStep], skipped: Bool, into id: UUID) {
         var list = actions
         if steps.isEmpty {
             recordNote = "Nothing was recorded."
-        } else if let id, let i = list.firstIndex(where: { $0.id == id }) {
+        } else if let i = list.firstIndex(where: { $0.id == id }) {
             list[i].steps.append(contentsOf: steps)
-            builder?.setActions(list)
-        } else {
-            let name = "Recorded " + Date.now.formatted(date: .abbreviated, time: .shortened)
-            var action = ProfileAction(name: name)
-            action.steps = steps
-            list.append(action)
-            selectedID = action.id
             builder?.setActions(list)
         }
         if skipped {
             let extra = "Text typed into a password field was left out of the recording."
             recordNote = recordNote.map { $0 + " " + extra } ?? extra
+        }
+    }
+
+    /// Reads the windows that exist now, keeps those of the apps the user opened, and opens the review.
+    private func analyze(_ steps: [TimedStep], skipped: Bool) {
+        guard !steps.isEmpty else {
+            recordNote = "Nothing was recorded."
+            if skipped { recordNote = (recordNote ?? "") + " Text typed into a password field was left out of the recording." }
+            return
+        }
+        analyzing = true
+        Task {
+            let touched = Set(steps.compactMap { step -> String? in
+                if case .launchApp(let b) = step.step { return b } else { return nil }
+            })
+            var windows: [WindowSnapshot] = []
+            var names: [String: String] = [:]
+            var displayNames: [String: String] = [:]
+            var haveWindows: Set<String> = []
+            if !touched.isEmpty, let scan = await CaptureSession.runTimed(limit: CaptureTimeout.defaultLimit, { CaptureSession.scanWorkspace() }) {
+                let captured = await Task.detached { ProfileCapture.makeProfile(name: "Recording", from: scan).0 }.value
+                displayNames = Dictionary(captured.displays.map { ($0.uuid, $0.name) }, uniquingKeysWith: { a, _ in a })
+                for w in captured.windows {
+                    guard let b = w.app.bundleID, !w.isMinimized else { continue }
+                    names[b] = w.app.name
+                    haveWindows.insert(b)
+                    if touched.contains(b) { windows.append(w) }
+                }
+            }
+            let analysis = RecordingAnalyzer.analyze(steps, windowBundleIDs: haveWindows, appNames: names)
+            windows = windows.filter { analysis.layoutBundleIDs.contains($0.app.bundleID ?? "") }
+            analyzing = false
+            pendingRecording = PendingRecording(analysis: analysis, windows: windows, displayNames: displayNames,
+                                                skippedSecureInput: skipped)
         }
     }
 
@@ -291,6 +349,7 @@ private struct StepEditor: View {
     let change: (ActionStep) -> Void
     let move: (Int) -> Void
     let remove: () -> Void
+    let addDelayAfter: () -> Void
 
     private var inner: ActionStep { step.unwrapped }
     private var isOptional: Bool { step.continueOnFailure }
@@ -307,6 +366,8 @@ private struct StepEditor: View {
                         .disabled(index == 0).help("Move step \(index + 1) up")
                     Button { move(1) } label: { Label("Move Down", systemImage: "chevron.down").labelStyle(.iconOnly) }
                         .disabled(index == count - 1).help("Move step \(index + 1) down")
+                    Button(action: addDelayAfter) { Label("Add delay after", systemImage: "clock.badge.plus").labelStyle(.iconOnly) }
+                        .help("Insert a 1 second wait after step \(index + 1)")
                     Button(role: .destructive, action: remove) { Label("Delete Step", systemImage: "trash").labelStyle(.iconOnly) }
                         .help("Delete step \(index + 1)")
                 }

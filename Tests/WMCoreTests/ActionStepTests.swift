@@ -164,7 +164,7 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
         let action = ProfileAction(name: "a", steps: [
             .launchApp(bundleID: "app.x"), .press(locator: loc(button("Connect"))), .key(combo: "cmd+t"), .typeText(text: "hello"),
             .shell(command: "echo hi"), .openURL(url: "https://x.y"), .runShortcut(name: "S"), .delay(seconds: 2),
-        ])
+        ], stepGap: 0)
         let r = await runner(ax, p).run(action)
         #expect(r.succeeded && r.completed)
         #expect(r.steps.map(\.status) == Array(repeating: .succeeded, count: 8))
@@ -300,5 +300,31 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
         #expect(text == .typeText(text: "hi"))
         let wrapped = try JSONDecoder().decode(ActionStep.self, from: Data(#"{"optional":{"_0":{"key":{"_0":"esc"}}}}"#.utf8))
         #expect(wrapped == .optional(step: .key(combo: "esc")))
+    }
+
+    @Test func delaysDecodeFromOldFilesAndRoundTrip() throws {
+        let old = Data(#"{"id":"11111111-1111-1111-1111-111111111111","name":"a","phase":"afterRestore","steps":[],"enabled":true}"#.utf8)
+        let decoded = try JSONDecoder().decode(ProfileAction.self, from: old)
+        #expect(decoded.delayBefore == 0 && decoded.stepGap == 0.3)
+        let encodedDefault = try JSONEncoder().encode(decoded)
+        #expect(!String(decoding: encodedDefault, as: UTF8.self).contains("stepGap"))
+        var custom = decoded
+        custom.delayBefore = 2; custom.stepGap = 1
+        #expect(try JSONDecoder().decode(ProfileAction.self, from: JSONEncoder().encode(custom)) == custom)
+    }
+
+    @Test func runnerWaitsBeforeAndBetweenSteps() async {
+        let clock = FakeClock()
+        var slept: [TimeInterval] = []
+        clock.onSleep = { slept.append(clock.t) }
+        var action = ProfileAction(name: "a", steps: [.key(combo: "a"), .key(combo: "b"), .key(combo: "c")],
+                                   delayBefore: 2, stepGap: 0.5)
+        let r = await runner(FakeAX(), FakeProcess(), clock).run(action)
+        #expect(r.succeeded)
+        #expect(slept == [2, 2.5, 3])
+        action.delayBefore = 0; action.stepGap = 0
+        clock.t = 0; slept = []
+        _ = await runner(FakeAX(), FakeProcess(), clock).run(action)
+        #expect(slept.isEmpty)
     }
 }

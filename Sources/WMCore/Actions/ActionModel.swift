@@ -12,10 +12,44 @@ public struct ProfileAction: Codable, Equatable, Sendable, Identifiable {
     public var phase: ActionPhase
     public var steps: [ActionStep]
     public var enabled: Bool
+    /// Seconds to wait before the first step starts (lets the restore settle). 0 = start at once.
+    public var delayBefore: TimeInterval
+    /// Seconds to pause between steps so the UI can follow.
+    public var stepGap: TimeInterval
+
+    public static let defaultStepGap: TimeInterval = 0.3
 
     public init(id: UUID = UUID(), name: String, phase: ActionPhase = .afterRestore,
-                steps: [ActionStep] = [], enabled: Bool = true) {
+                steps: [ActionStep] = [], enabled: Bool = true,
+                delayBefore: TimeInterval = 0, stepGap: TimeInterval = ProfileAction.defaultStepGap) {
         self.id = id; self.name = name; self.phase = phase; self.steps = steps; self.enabled = enabled
+        self.delayBefore = delayBefore; self.stepGap = stepGap
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, phase, steps, enabled, delayBefore, stepGap }
+
+    /// Files written before P9.8 have no delay keys: they load with no wait before and the default gap.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        phase = try c.decode(ActionPhase.self, forKey: .phase)
+        steps = try c.decode([ActionStep].self, forKey: .steps)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        delayBefore = max(0, try c.decodeIfPresent(TimeInterval.self, forKey: .delayBefore) ?? 0)
+        stepGap = max(0, try c.decodeIfPresent(TimeInterval.self, forKey: .stepGap) ?? Self.defaultStepGap)
+    }
+
+    /// Delay values are written only when they differ from the defaults, so old actions re-encode unchanged.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(phase, forKey: .phase)
+        try c.encode(steps, forKey: .steps)
+        try c.encode(enabled, forKey: .enabled)
+        if delayBefore != 0 { try c.encode(delayBefore, forKey: .delayBefore) }
+        if stepGap != Self.defaultStepGap { try c.encode(stepGap, forKey: .stepGap) }
     }
 }
 

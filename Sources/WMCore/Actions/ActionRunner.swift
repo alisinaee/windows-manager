@@ -40,6 +40,10 @@ public struct ActionRunner: Sendable {
         var reports: [StepReport] = []
         var cancelled = false
         var stopped = !action.enabled
+        if !stopped, action.delayBefore > 0 {
+            do { try await clock.sleep(action.delayBefore) } catch { cancelled = true }
+        }
+        var ranStep = false
         for (index, step) in action.steps.enumerated() {
             if stopped || cancelled {
                 reports.append(StepReport(index: index, summary: step.summary,
@@ -51,6 +55,14 @@ public struct ActionRunner: Sendable {
                 reports.append(StepReport(index: index, summary: step.summary, status: .cancelled, duration: 0, error: nil))
                 continue
             }
+            if ranStep, action.stepGap > 0 {
+                do { try await clock.sleep(action.stepGap) } catch {
+                    cancelled = true
+                    reports.append(StepReport(index: index, summary: step.summary, status: .cancelled, duration: 0, error: nil))
+                    continue
+                }
+            }
+            ranStep = true
             let t0 = clock.now()
             var status = StepStatus.succeeded
             var message: String?

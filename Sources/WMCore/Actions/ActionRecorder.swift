@@ -103,7 +103,7 @@ public final class ActionRecorder: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         var all = entries
         if !pendingText.isEmpty { all.append(Entry(step: .typeText(text: pendingText, into: pendingLocator), time: pendingTime)) }
-        return Self.cleanup(all)
+        return Self.cleanupTimed(all).map(\.step)
     }
 
     /// Starts listening. Returns false when the event source could not start.
@@ -121,12 +121,16 @@ public final class ActionRecorder: @unchecked Sendable {
 
     /// Stops listening and returns the recorded steps.
     @discardableResult
-    public func stop() -> [ActionStep] {
+    public func stop() -> [ActionStep] { stopTimed().map(\.step) }
+
+    /// Stops listening and returns the recorded steps with the time each one happened.
+    @discardableResult
+    public func stopTimed() -> [TimedStep] {
         source.stop()
         lock.lock(); defer { lock.unlock() }
         recording = false
         flushText()
-        return Self.cleanup(entries)
+        return Self.cleanupTimed(entries)
     }
 
     // MARK: Event handling
@@ -283,8 +287,10 @@ public final class ActionRecorder: @unchecked Sendable {
             let title = nonEmpty(node.title)
             let desc = (identifier == nil && title == nil) ? nonEmpty(node.descriptionText) : nil
             if i > 0, identifier == nil, title == nil, desc == nil { continue }
-            var m = ElementMatcher(role: role, title: identifier == nil ? title : nil, identifier: identifier,
-                                   description: desc)
+            // Window chrome buttons keep their subrole so the analyzer can tell them from app buttons.
+            let chrome = i == 0 ? node.subrole.flatMap { chromeSubroles.contains($0) ? $0 : nil } : nil
+            var m = ElementMatcher(role: role, subrole: chrome, title: identifier == nil ? title : nil,
+                                   identifier: identifier, description: desc)
             if let parent = i + 1 < chain.count ? chain[i + 1] : nil {
                 let same = parent.children().filter { sib in
                     m.rank(role: sib.role, subrole: sib.subrole, title: sib.title, identifier: sib.identifier,
@@ -307,13 +313,25 @@ public final class ActionRecorder: @unchecked Sendable {
     }
 
     /// Drops a press on the same locator that follows another within `duplicateWindow` seconds.
-    private static func cleanup(_ list: [Entry]) -> [ActionStep] {
+    private static func cleanupTimed(_ list: [Entry]) -> [TimedStep] {
         var out: [Entry] = []
         for e in list {
             if case .press(let l) = e.step, let last = out.last, case .press(let l2) = last.step, l == l2,
                e.time - last.time <= duplicateWindow { continue }
             out.append(e)
         }
-        return out.map(\.step)
+        return out.map { TimedStep(step: $0.step, time: $0.time) }
     }
+
+    /// Subroles of the close / minimize / zoom / full-screen buttons of a window.
+    public static let chromeSubroles: Set<String> = [
+        "AXCloseButton", "AXMinimizeButton", "AXZoomButton", "AXFullScreenButton",
+    ]
+}
+
+/// A recorded step and when it happened (seconds on the event clock).
+public struct TimedStep: Equatable, Sendable {
+    public var step: ActionStep
+    public var time: TimeInterval
+    public init(step: ActionStep, time: TimeInterval) { self.step = step; self.time = time }
 }

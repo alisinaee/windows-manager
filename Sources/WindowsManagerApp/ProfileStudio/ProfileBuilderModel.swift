@@ -353,6 +353,25 @@ final class ProfileBuilderModel: ObservableObject {
         edit(kind: "options") { try $0.setOptions(change) }
     }
 
+    /// Adds the windows and actions picked in the recording review as one undoable step. Windows whose monitor or
+    /// Desktop the draft does not have are skipped; returns how many were added.
+    @discardableResult
+    func applyRecording(windows: [WindowSnapshot], actions: [ProfileAction]) -> Int {
+        guard let draft = profile else { return 0 }
+        let usable = windows.filter { w in
+            guard case .desktop(let n) = w.placement else { return false }
+            return draft.spaces.contains { $0.displayUUID == w.displayUUID && $0.kind == .desktop && $0.desktopNumber == n }
+        }
+        edit(kind: "recording") { editor in
+            for w in usable {
+                guard case .desktop(let n) = w.placement else { continue }
+                try editor.addPlannedWindow(app: w.app, onDisplay: w.displayUUID, desktop: n, frame: w.frame)
+            }
+            if !actions.isEmpty { try editor.setActions(editor.profile.actions + actions) }
+        }
+        return usable.count
+    }
+
     func setActions(_ actions: [ProfileAction]) {
         edit(kind: "actions") { try $0.setActions(actions) }
     }

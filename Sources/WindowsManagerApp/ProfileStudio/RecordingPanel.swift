@@ -10,12 +10,12 @@ final class RecordingController: ObservableObject {
     private let recorder = ActionRecorder(source: EventTapSource(), inspector: SystemRecorderInspector())
     private var panel: NSPanel?
     private var timer: Timer?
-    private var onFinish: (([ActionStep], Bool) -> Void)?
+    private var onFinish: (([TimedStep], Bool) -> Void)?
 
     var isRecording: Bool { recorder.isRecording }
 
     /// Starts recording. Returns false (and shows nothing) when the event tap could not start.
-    func start(onFinish: @escaping ([ActionStep], Bool) -> Void) -> Bool {
+    func start(onFinish: @escaping ([TimedStep], Bool) -> Void) -> Bool {
         guard !recorder.isRecording, recorder.start() else { return recorder.isRecording }
         self.onFinish = onFinish
         stepCount = 0
@@ -29,7 +29,7 @@ final class RecordingController: ObservableObject {
     func stop() {
         guard recorder.isRecording else { return }
         timer?.invalidate(); timer = nil
-        let steps = recorder.stop()
+        let steps = recorder.stopTimed()
         let skipped = recorder.skippedSecureInput
         panel?.orderOut(nil); panel = nil
         let done = onFinish; onFinish = nil

@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 // The versioned JSON store for profiles (phase P2.4).
 // One file per profile: <folder>/<id>.json, pretty printed with sorted keys and ISO-8601 dates.
@@ -42,10 +43,17 @@ public struct ProfileFileProblem: Hashable, Sendable {
 public struct ProfileListing: Sendable {
     public var summaries: [ProfileSummary]
     public var problems: [ProfileFileProblem]
+    /// iCloud placeholders (`.name.icloud`): files not downloaded yet, ignored.
+    public var placeholders: [URL]
+    /// Sync conflict copies (`<id> 2.json`), ignored.
+    public var conflicts: [URL]
 
-    public init(summaries: [ProfileSummary] = [], problems: [ProfileFileProblem] = []) {
+    public init(summaries: [ProfileSummary] = [], problems: [ProfileFileProblem] = [],
+                placeholders: [URL] = [], conflicts: [URL] = []) {
         self.summaries = summaries
         self.problems = problems
+        self.placeholders = placeholders
+        self.conflicts = conflicts
     }
 }
 
@@ -84,16 +92,30 @@ public final class ProfileStore: @unchecked Sendable {
     /// `~/Library/Application Support/WindowsManager/Profiles/`.
     /// `WM_PROFILES_DIR` overrides it (UX fixtures, smoke tests).
     public static var defaultFolder: URL {
-        if let dir = ProcessInfo.processInfo.environment["WM_PROFILES_DIR"], !dir.isEmpty {
-            return URL(fileURLWithPath: dir, isDirectory: true)
-        }
+        ProfilesLocation.resolve(environment: ProcessInfo.processInfo.environment,
+                                 preference: ProfilesLocation.configuredPath, fallback: appSupportFolder)
+    }
+
+    /// The built-in location, ignoring any chosen folder.
+    public static var appSupportFolder: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         return support.appendingPathComponent("WindowsManager", isDirectory: true)
             .appendingPathComponent("Profiles", isDirectory: true)
     }
 
-    public let folder: URL
+    private var currentFolder: URL
+    public var folder: URL {
+        lock.lock(); defer { lock.unlock() }
+        return currentFolder
+    }
+
+    /// Points the store at another folder. Existing files are not moved; see `ProfilesLocation.migrate`.
+    public func switchFolder(to newFolder: URL) {
+        lock.lock(); defer { lock.unlock() }
+        currentFolder = newFolder
+        storedProblems = []
+    }
     /// Where `delete` moves files.
     public var trashFolder: URL { folder.appendingPathComponent("Trash", isDirectory: true) }
 
@@ -104,7 +126,7 @@ public final class ProfileStore: @unchecked Sendable {
 
     /// The folder is created on the first write, so a store for a folder that does not exist yet lists nothing.
     public init(folder: URL? = nil, fileManager: FileManager = .default) {
-        self.folder = folder ?? Self.defaultFolder
+        self.currentFolder = folder ?? Self.defaultFolder
         self.fileManager = fileManager
     }
 
@@ -132,11 +154,13 @@ public final class ProfileStore: @unchecked Sendable {
 
         var summaries: [ProfileSummary] = []
         var problems: [ProfileFileProblem] = []
+        var placeholders: [URL] = []
+        var conflicts: [URL] = []
 
         let urls: [URL]
         do {
             urls = try fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isRegularFileKey],
-                                                       options: [.skipsHiddenFiles])
+                                                       options: [])
         } catch {
             storedProblems = []
             // A folder that does not exist yet is simply an empty store.
@@ -148,8 +172,18 @@ public final class ProfileStore: @unchecked Sendable {
             return ProfileListing()
         }
 
-        for url in urls.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
-        where url.pathExtension.lowercased() == "json" {
+        for url in urls.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let fileName = url.lastPathComponent
+            if ProfilesLocation.isICloudPlaceholder(fileName) {
+                placeholders.append(url)
+                continue
+            }
+            guard !fileName.hasPrefix("."), url.pathExtension.lowercased() == "json" else { continue }
+            if ProfilesLocation.isConflictCopy(fileName) {
+                conflicts.append(url)
+                ProfileStore.log.notice("Ignoring sync conflict copy \(fileName, privacy: .public)")
+                continue
+            }
             let isFile = (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile ?? false
             guard isFile else { continue }
             do {
@@ -170,8 +204,10 @@ public final class ProfileStore: @unchecked Sendable {
             return order == .orderedSame ? $0.id.uuidString < $1.id.uuidString : order == .orderedAscending
         }
         storedProblems = problems
-        return ProfileListing(summaries: summaries, problems: problems)
+        return ProfileListing(summaries: summaries, problems: problems, placeholders: placeholders, conflicts: conflicts)
     }
+
+    private static let log = Logger(subsystem: "dev.windowsmanager.WindowsManager", category: "ProfileStore")
 
     // MARK: CRUD
 

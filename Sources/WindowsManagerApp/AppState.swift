@@ -55,6 +55,7 @@ final class AppState: ObservableObject {
     lazy var profileService: ProfileService = ProfileService(store: store)
     @Published private(set) var isAccessibilityTrusted: Bool = AXPermission.isTrusted()
 
+    private var profileWatcher: ProfileFolderWatcher?
     private var pollTask: Task<Void, Never>?
     private var activationObserver: NSObjectProtocol?
 
@@ -82,6 +83,7 @@ final class AppState: ObservableObject {
     init() {
         AppState.current = self
         reloadProfiles()
+        watchProfilesFolder()
         // The user grants Accessibility in System Settings and comes back: re-check when we become active.
         activationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
@@ -137,6 +139,25 @@ final class AppState: ObservableObject {
     }
 
     // MARK: Profiles
+
+    /// Starts (or restarts) the watcher on the profiles folder so edits from another Mac show up.
+    func watchProfilesFolder() {
+        if profileWatcher == nil {
+            profileWatcher = ProfileFolderWatcher { [weak self] in self?.reloadProfiles() }
+        }
+        profileWatcher?.start(folder: store.folder)
+    }
+
+    /// Moves to another profiles folder (nil = default). Copies profiles over without overwriting, keeps the old files.
+    func setProfilesFolder(_ folder: URL?) throws {
+        let target = folder ?? ProfileStore.appSupportFolder
+        let old = store.folder
+        try ProfilesLocation.migrate(from: old, to: target)
+        ProfilesLocation.setConfiguredPath(folder?.path)
+        store.switchFolder(to: target)
+        watchProfilesFolder()
+        reloadProfiles()
+    }
 
     func reloadProfiles() {
         savedProfiles = store.list().sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }

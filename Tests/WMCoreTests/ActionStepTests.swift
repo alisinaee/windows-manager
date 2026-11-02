@@ -112,10 +112,27 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
         let root = FakeNode("AXWindow", [contains, FakeNode("AXGroup", [exact]), exact2])
         #expect(ElementSearch.find(loc(button("Connect")), roots: [root]) === exact2)
         var m = button("Connect"); m.index = 1
-        #expect(ElementSearch.find(loc(m), roots: [root]) === exact)
+        #expect(ElementSearch.find(loc(m), roots: [root]) == nil) // only one Connect among each parent's children
         m.index = 5
         #expect(ElementSearch.find(loc(m), roots: [root]) == nil)
         #expect(ElementSearch.find(loc(button("conn")), roots: [root]) === contains)
+    }
+
+    @Test func indexCountsAmongSiblings() {
+        // Subtree-wide counting would make "OK #1" the second button in document order (a1b), not b0 in group B.
+        let a0 = FakeNode("AXButton", title: "OK"), a1 = FakeNode("AXButton", title: "OK")
+        let b0 = FakeNode("AXButton", title: "OK"), b1 = FakeNode("AXButton", title: "OK")
+        let root = FakeNode("AXWindow", [FakeNode("AXGroup", [a0]), FakeNode("AXGroup", [b0, b1]), FakeNode("AXGroup", [a1])])
+        var m = button("OK"); m.index = 1
+        #expect(ElementSearch.find(loc(m), roots: [root]) === b1)
+        m.index = 0
+        #expect(ElementSearch.find(loc(m), roots: [root]) === a0)
+        m.index = 2
+        #expect(ElementSearch.find(loc(m), roots: [root]) == nil)
+        // Nested path: the index applies at its own level, below the node the previous matcher chose.
+        let sheet = FakeNode("AXSheet", [FakeNode("AXGroup", [FakeNode("AXButton", title: "OK")]), b1])
+        m.index = 1
+        #expect(ElementSearch.find(loc(ElementMatcher(role: "AXSheet"), m), roots: [FakeNode("AXWindow", [sheet])]) == nil)
     }
 
     @Test func searchNestedPathAndLimits() {

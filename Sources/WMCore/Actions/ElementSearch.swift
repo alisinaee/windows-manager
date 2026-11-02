@@ -17,30 +17,42 @@ public enum ElementSearch {
         return found
     }
 
-    /// Breadth-first over `scope` and below; returns the `index`-th node of the best rank.
+    /// Breadth-first over `scope` and below. `index` counts among matches that share a parent (the siblings of
+    /// one container; `scope` itself is one group), the same way the recorder counts. Returns the `index`-th
+    /// match of the best rank within the first parent group that has that many.
     static func best(_ matcher: ElementMatcher, in scope: [any AXNode], maxDepth: Int,
                      budget: inout Int) -> (any AXNode)? {
-        var byRank: [Int: [any AXNode]] = [:]
+        // rank -> parent groups in discovery order -> matches in order.
+        var byRank: [Int: [Int: [any AXNode]]] = [:]
+        var groupOrder: [Int: [Int]] = [:]
         let wanted = max(0, matcher.index ?? 0)
-        var level = scope
+        var nextGroup = 1
+        var level: [(node: any AXNode, group: Int)] = scope.map { ($0, 0) }
         var depth = 0
         while !level.isEmpty, depth < maxDepth, budget > 0 {
-            var next: [any AXNode] = []
-            for node in level {
+            var next: [(node: any AXNode, group: Int)] = []
+            for (node, group) in level {
                 if budget <= 0 { break }
                 budget -= 1
                 if let rank = matcher.rank(role: node.role, subrole: node.subrole, title: node.title,
                                            identifier: node.identifier, description: node.descriptionText) {
-                    byRank[rank, default: []].append(node)
-                    if rank == matcher.topRank, byRank[rank]!.count > wanted { return byRank[rank]![wanted] }
+                    if byRank[rank]?[group] == nil { groupOrder[rank, default: []].append(group) }
+                    byRank[rank, default: [:]][group, default: []].append(node)
+                    if wanted == 0, rank == matcher.topRank { return node }
                 }
-                next.append(contentsOf: node.children())
+                let kids = node.children()
+                if !kids.isEmpty {
+                    let id = nextGroup; nextGroup += 1
+                    next.append(contentsOf: kids.map { ($0, id) })
+                }
             }
             level = next
             depth += 1
         }
         for rank in stride(from: 3, through: 1, by: -1) {
-            if let list = byRank[rank], !list.isEmpty { return wanted < list.count ? list[wanted] : nil }
+            for group in groupOrder[rank] ?? [] {
+                if let list = byRank[rank]?[group], wanted < list.count { return list[wanted] }
+            }
         }
         return nil
     }

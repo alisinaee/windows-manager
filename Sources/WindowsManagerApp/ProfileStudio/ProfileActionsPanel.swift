@@ -12,6 +12,8 @@ struct ProfileActionsPanel: View {
     @State private var selectedID: UUID?
     @State private var running: UUID?
     @State private var reports: [UUID: ActionRunReport] = [:]
+    @StateObject private var recording = RecordingController()
+    @State private var recordNote: String?
 
     private var actions: [ProfileAction] { profile.actions }
     private var isEditable: Bool { builder != nil }
@@ -26,11 +28,21 @@ struct ProfileActionsPanel: View {
                 ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
                     actionRow(index: index, action: action)
                 }
-                if isEditable { addActionButton }
+                if isEditable {
+                    HStack(spacing: Spacing.s) {
+                        addActionButton
+                        if !actions.contains(where: { $0.id == selectedID }) {
+                            Button { startRecording(into: nil) } label: { Label("Record…", systemImage: "record.circle") }
+                                .disabled(recording.isRecording)
+                                .help("Record clicks and typing in other apps into a new action")
+                        }
+                    }
+                }
             }
             if let action = actions.first(where: { $0.id == selectedID }) {
                 stepsSection(action)
             }
+            if let recordNote { InspectorNote(text: recordNote) }
             if let error = builder?.lastError { InspectorNote(text: error) }
         }
         .accessibilityLabel("Profile actions")
@@ -159,10 +171,9 @@ struct ProfileActionsPanel: View {
                         }
                     } label: { Label("Add Step", systemImage: "plus") }
                         .fixedSize().help("Add a step to this action")
-                    Button { } label: { Label("Record…", systemImage: "record.circle") }
-                        // TODO(P9.x): enable when the recorder (Sources/WMCore/Actions/ActionRecorder*.swift) lands.
-                        .disabled(true)
-                        .help("Recording steps from the screen is coming soon")
+                    Button { startRecording(into: action.id) } label: { Label("Record…", systemImage: "record.circle") }
+                        .disabled(recording.isRecording)
+                        .help("Record clicks and typing in other apps as steps of this action")
                 }
                 Spacer(minLength: Spacing.xs)
                 Button { testRun(action) } label: {
@@ -172,6 +183,34 @@ struct ProfileActionsPanel: View {
                 .help("Run this action now and show what each step did")
             }
             if let report = reports[action.id] { reportView(report) }
+        }
+    }
+
+    /// Records into the selected action; `nil` appends to a new "Recorded <date>" action instead.
+    private func startRecording(into id: UUID?) {
+        recordNote = nil
+        let started = recording.start { steps, skipped in finishRecording(steps, skipped: skipped, into: id) }
+        if !started { RecordingPermission.showStartFailedAlert() }
+    }
+
+    private func finishRecording(_ steps: [ActionStep], skipped: Bool, into id: UUID?) {
+        var list = actions
+        if steps.isEmpty {
+            recordNote = "Nothing was recorded."
+        } else if let id, let i = list.firstIndex(where: { $0.id == id }) {
+            list[i].steps.append(contentsOf: steps)
+            builder?.setActions(list)
+        } else {
+            let name = "Recorded " + Date.now.formatted(date: .abbreviated, time: .shortened)
+            var action = ProfileAction(name: name)
+            action.steps = steps
+            list.append(action)
+            selectedID = action.id
+            builder?.setActions(list)
+        }
+        if skipped {
+            let extra = "Text typed into a password field was left out of the recording."
+            recordNote = recordNote.map { $0 + " " + extra } ?? extra
         }
     }
 

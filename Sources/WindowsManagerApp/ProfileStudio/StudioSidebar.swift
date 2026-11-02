@@ -6,9 +6,14 @@ struct StudioSidebar: View {
     @ObservedObject var model: ProfileStudioModel
 
     var body: some View {
-        let selection = Binding<UUID?>(get: { model.selectedID }, set: { model.requestSelect($0) })
+        let selection = Binding<UUID?>(get: { model.highlightedID }, set: { model.requestSelect($0) })
         VStack(spacing: 0) {
             List(selection: selection) {
+                if let badge = model.draftBadge {
+                    ProfileStudioDraftRowView(name: model.draftRowName, badge: badge)
+                        .tag(model.draftRowID)
+                        .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4))
+                }
                 ForEach(model.rows) { row in
                     ProfileStudioRowView(row: row, isSelected: model.selectedID == row.id)
                         .tag(row.id)
@@ -20,7 +25,7 @@ struct StudioSidebar: View {
             .accessibilityLabel("Profiles")
             .onDeleteCommand { if let row = model.selectedRow { model.requestDelete(row) } }
             .overlay {
-                if model.rows.isEmpty {
+                if model.rows.isEmpty && model.draftBadge == nil {
                     ContentUnavailableView {
                         Label("No Profiles", systemImage: "rectangle.3.group")
                     } actions: {

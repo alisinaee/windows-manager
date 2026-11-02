@@ -38,3 +38,36 @@ public struct StudioSidebarState: Equatable, Sendable {
         if !narrow { userForcedOpen = false }
     }
 }
+
+/// Badge of the unsaved row at the top of the sidebar (P9.15).
+public enum StudioDraftBadge: String, Equatable, Sendable {
+    case draft = "Draft"
+    case recovered = "Recovered"
+}
+
+/// The sidebar list: the saved profiles, with an unsaved new draft first. Pure value logic.
+public enum StudioSidebarRows {
+    public struct Entry: Equatable, Sendable {
+        public let id: UUID
+        public let badge: StudioDraftBadge?
+        public var isDraft: Bool { badge != nil }
+    }
+
+    /// Draft row (when `draft` is set) followed by the saved ids in order.
+    public static func entries(saved: [UUID], draftID: UUID, badge: StudioDraftBadge?) -> [Entry] {
+        let rows = saved.map { Entry(id: $0, badge: nil) }
+        guard let badge else { return rows }
+        return [Entry(id: draftID, badge: badge)] + rows
+    }
+
+    /// The highlighted row: the draft while one is open, otherwise the selected profile.
+    public static func highlighted(selected: UUID?, draftID: UUID, badge: StudioDraftBadge?) -> UUID? {
+        badge == nil ? selected : draftID
+    }
+
+    /// What is selected after the draft goes away: the previous profile when it still exists, else the first one.
+    public static func selectionAfterDraft(previous: UUID?, saved: [UUID]) -> UUID? {
+        if let previous, saved.contains(previous) { return previous }
+        return saved.first
+    }
+}

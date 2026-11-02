@@ -87,6 +87,18 @@ final class ProfileStudioModel: ObservableObject {
 
     /// The Builder session of Edit mode; nil in View mode.
     @Published private(set) var builder: ProfileBuilderModel? { didSet { titleChanged(); bindBuilder() } }
+    /// Badge of the unsaved new-profile row at the top of the sidebar; nil when no new draft is open (P9.15).
+    @Published private(set) var draftBadge: StudioDraftBadge?
+    /// Stable sidebar id of that row (the draft's real profile id only exists once the capture is done).
+    let draftRowID = UUID()
+    /// The row to highlight in the sidebar.
+    var highlightedID: UUID? { StudioSidebarRows.highlighted(selected: selectedID, draftID: draftRowID, badge: draftBadge) }
+    /// Name shown on the draft row.
+    var draftRowName: String {
+        let t = builder?.nameText.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "New Profile" : t
+    }
+
     /// Mirrors of the draft's history state so the app menu (and the toolbar) can observe them.
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
@@ -289,7 +301,7 @@ final class ProfileStudioModel: ObservableObject {
             setCompare(false)
             Task { await b.start(from: .editExisting(draft.profile.id)); b.restoreRecovered() }
         } else {
-            let b = enterNewDraft()
+            let b = enterNewDraft(recovered: true)
             Task { await b.start(recoveredNew: draft) }
         }
     }
@@ -340,8 +352,9 @@ final class ProfileStudioModel: ObservableObject {
     }
 
     /// A new draft session in Edit mode; the caller starts it.
-    private func enterNewDraft() -> ProfileBuilderModel {
+    private func enterNewDraft(recovered: Bool = false) -> ProfileBuilderModel {
         onEnterEdit?()
+        draftBadge = recovered ? .recovered : .draft
         let b = ProfileBuilderModel()
         builder = b
         mode = .edit
@@ -430,7 +443,7 @@ final class ProfileStudioModel: ObservableObject {
 
     /// Sidebar selection. In Edit mode with unsaved changes it asks (Save / Discard / Cancel) before switching.
     func requestSelect(_ id: UUID?) {
-        guard let id, id != selectedID else { return }
+        guard let id, id != selectedID, id != draftRowID else { return }
         if mode == .edit {
             if hasUnsavedChanges {
                 pendingSwitchID = id
@@ -471,6 +484,7 @@ final class ProfileStudioModel: ObservableObject {
     func didSave(_ profile: Profile) {
         DebugLog.log("studio", "save profile: \(profile.name)")
         isSaveSheetPresented = false
+        draftBadge = nil   // the draft row becomes a normal profile row
         reload()
         selectedID = profile.id
         let next = afterSave
@@ -484,6 +498,10 @@ final class ProfileStudioModel: ObservableObject {
         isNewProfileConfirmPresented = false
         builder?.discard()
         builder = nil
+        if draftBadge != nil {
+            draftBadge = nil
+            if selectedRow == nil { selectedID = StudioSidebarRows.selectionAfterDraft(previous: selectedID, saved: rows.map(\.id)) }
+        }
         capture.reset()
         isReviewCapturePresented = false
         isSaveSheetPresented = false

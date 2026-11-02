@@ -65,11 +65,16 @@ public struct ElementLocator: Codable, Equatable, Sendable {
     public var windowTitle: String?
     /// Which search goes first. nil = labels first, unless a matcher is marked volatile.
     public var match: MatchPreference?
+    /// How a press reaches the element. nil = try the accessibility actions first, then fall back to a click.
+    /// `.pointer` goes straight to a click at the element's center (containers that cannot be pressed).
+    public var clickMode: ClickMode?
 
     public init(bundleID: String, path: [ElementMatcher], structural: [StructuralHop]? = nil,
-                windowIndex: Int? = nil, windowTitle: String? = nil, match: MatchPreference? = nil) {
+                windowIndex: Int? = nil, windowTitle: String? = nil, match: MatchPreference? = nil,
+                clickMode: ClickMode? = nil) {
         self.bundleID = bundleID; self.path = path; self.structural = structural
         self.windowIndex = windowIndex; self.windowTitle = windowTitle; self.match = match
+        self.clickMode = clickMode
     }
 
     /// True when the position search should run before the label search.
@@ -81,6 +86,11 @@ public struct ElementLocator: Codable, Equatable, Sendable {
 /// Which way a locator is matched first.
 public enum MatchPreference: String, Codable, Equatable, Sendable, CaseIterable {
     case label, position
+}
+
+/// How a press is delivered.
+public enum ClickMode: String, Codable, Equatable, Sendable, CaseIterable {
+    case accessibility, pointer
 }
 
 /// One step down the tree: the `index`-th child with this role (counting only children with that role).
@@ -162,6 +172,8 @@ public enum ActionStep: Codable, Equatable, Sendable {
     case runShortcut(name: String)
     case waitFor(locator: ElementLocator, containing: String? = nil, timeout: TimeInterval = ActionDefaults.uiTimeout)
     case delay(seconds: TimeInterval)
+    /// Types a command into Terminal or iTerm2 through AppleScript (`app` is the bundle id).
+    case terminalCommand(command: String, app: String = TerminalApp.terminal, newWindow: Bool = false)
     /// Wraps a step so that its failure does not stop the action.
     indirect case optional(step: ActionStep)
 
@@ -169,7 +181,7 @@ public enum ActionStep: Codable, Equatable, Sendable {
     public var timeout: TimeInterval {
         switch self {
         case .press(_, let t, _), .shell(_, _, let t), .waitFor(_, _, let t): return t
-        case .launchApp: return ActionDefaults.launchTimeout
+        case .launchApp, .terminalCommand: return ActionDefaults.launchTimeout
         case .menu, .key, .typeText: return ActionDefaults.uiTimeout
         case .openURL, .runShortcut: return ActionDefaults.shellTimeout
         case .delay(let s): return s + 1
@@ -201,6 +213,7 @@ public enum ActionStep: Codable, Equatable, Sendable {
         case .runShortcut(let n): return "shortcut \(n)"
         case .waitFor(let l, _, _): return "wait for \(l.describe)"
         case .delay(let s): return "delay \(s)s"
+        case .terminalCommand(let c, let app, _): return "\(TerminalApp.displayName(app)) command \(c)"
         case .optional(let inner): return "optional " + inner.summary
         }
     }
@@ -261,11 +274,30 @@ extension ActionStep {
                             timeout: try timeout(ActionDefaults.uiTimeout))
         case "delay":
             self = .delay(seconds: try p.decode(TimeInterval.self, forKey: StepKey("seconds")))
+        case "terminalCommand":
+            self = .terminalCommand(command: try p.decode(String.self, forKey: StepKey("command")),
+                                    app: try optionalValue(String.self, "app") ?? TerminalApp.terminal,
+                                    newWindow: try optionalValue(Bool.self, "newWindow") ?? false)
         case "optional":
             self = .optional(step: try value(ActionStep.self, "step"))
         default:
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
                                                     debugDescription: "Unknown step kind \(kind.stringValue)"))
+        }
+    }
+}
+
+/// The terminal apps a `.terminalCommand` can drive.
+public enum TerminalApp {
+    public static let terminal = "com.apple.Terminal"
+    public static let iTerm = "com.googlecode.iterm2"
+    public static let all = [terminal, iTerm]
+    public static func isTerminal(_ bundleID: String?) -> Bool { bundleID.map(all.contains) ?? false }
+    public static func displayName(_ bundleID: String) -> String {
+        switch bundleID {
+        case terminal: return "Terminal"
+        case iTerm: return "iTerm2"
+        default: return bundleID
         }
     }
 }

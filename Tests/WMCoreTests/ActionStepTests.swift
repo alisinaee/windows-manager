@@ -18,9 +18,20 @@ private final class FakeNode: AXNode, @unchecked Sendable {
         self.role = role; self.title = title; self.identifier = id; self.descriptionText = desc
         self.value = value; self.subrole = subrole; self.kids = kids
     }
+    var confirmResult = false
+    var pickResult = false
+    var center: CGPoint?
+    var focusable = false
+    var order: [String] = []
     func children() -> [any AXNode] { kids }
-    func press() -> Bool { pressCount += 1; return pressResult }
+    func press() -> Bool { pressCount += 1; order.append("press"); return pressResult }
     func focus() -> Bool { focusCount += 1; return true }
+    func performAction(_ name: String) -> Bool {
+        order.append(name)
+        return name == "AXConfirm" ? confirmResult : (name == "AXPick" ? pickResult : false)
+    }
+    func setFocusedIfSettable() -> Bool { order.append("focus"); return focusable }
+    var frameCenter: CGPoint? { center }
 }
 
 private final class FakeAX: AXProvider, @unchecked Sendable {
@@ -34,6 +45,23 @@ private final class FakeAX: AXProvider, @unchecked Sendable {
     func menuBar(bundleID: String) -> (any AXNode)? { menu }
     func sendKey(_ combo: KeyCombo) throws { keys.append(combo) }
     func typeText(_ text: String) throws { typed.append(text) }
+    var activated: [String] = []
+    var clicks: [CGPoint] = []
+    var clickFails = false
+    func activate(bundleID: String) { activated.append(bundleID) }
+    func click(at point: CGPoint) throws {
+        if clickFails { throw ActionError.failed("no") }
+        clicks.append(point)
+    }
+}
+
+private final class FakeScripts: ScriptRunner, @unchecked Sendable {
+    var sources: [String] = []
+    var error: ScriptError?
+    func run(_ source: String) async throws {
+        sources.append(source)
+        if let error { throw error }
+    }
 }
 
 private final class FakeProcess: ProcessRunner, @unchecked Sendable {
@@ -397,5 +425,96 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
         clock.t = 0; slept = []
         _ = await runner(FakeAX(), FakeProcess(), clock).run(action)
         #expect(slept.isEmpty)
+    }
+
+    // MARK: P9.12
+
+    @Test func oldTerminalFreeJSONStillDecodes() throws {
+        let json = #"{"press":{"locator":{"bundleID":"a","path":[{"role":"AXButton","title":"Go"}]}}}"#
+        let step = try JSONDecoder().decode(ActionStep.self, from: Data(json.utf8))
+        guard case .press(let l, _, _) = step else { Issue.record("not a press"); return }
+        #expect(l.clickMode == nil)
+        let cmd = try JSONDecoder().decode(ActionStep.self, from: Data(#"{"terminalCommand":{"command":"ls"}}"#.utf8))
+        #expect(cmd == .terminalCommand(command: "ls", app: TerminalApp.terminal, newWindow: false))
+        let step2 = ActionStep.terminalCommand(command: "ls", app: TerminalApp.iTerm, newWindow: true)
+        #expect(try JSONDecoder().decode(ActionStep.self, from: JSONEncoder().encode(step2)) == step2)
+        let click = ActionStep.press(locator: ElementLocator(bundleID: "a", path: [button("x")], clickMode: .pointer))
+        #expect(try JSONDecoder().decode(ActionStep.self, from: JSONEncoder().encode(click)) == click)
+    }
+
+    @Test func appleScriptEscaping() {
+        #expect(TerminalScript.escape(#"echo "a\b""#) == #"echo \"a\\b\""#)
+        #expect(TerminalScript.escape("a\nb") == "a\\nb")
+        let src = TerminalScript.source(command: #"say "hi""#, app: TerminalApp.terminal, newWindow: false)
+        #expect(src?.contains(#"do script "say \"hi\"" in front window"#) == true)
+        let fresh = TerminalScript.source(command: "ls", app: TerminalApp.terminal, newWindow: true)
+        #expect(fresh?.contains("in front window") == false)
+        let iterm = TerminalScript.source(command: "ls", app: TerminalApp.iTerm, newWindow: false)
+        #expect(iterm?.contains(#"write text "ls""#) == true)
+        #expect(TerminalScript.source(command: "ls", app: "x.y", newWindow: false) == nil)
+    }
+
+    @Test func terminalCommandRunsThroughScriptRunner() async {
+        let scripts = FakeScripts()
+        let r = ActionRunner(ax: FakeAX(), process: FakeProcess(), clock: FakeClock(), scripts: scripts)
+        let report = await r.run(ProfileAction(name: "t", steps: [.terminalCommand(command: "fortiChromeMain")]))
+        #expect(report.succeeded)
+        #expect(scripts.sources.count == 1)
+        #expect(scripts.sources[0].contains(#"do script "fortiChromeMain""#))
+    }
+
+    @Test func terminalAutomationDeniedGivesClearMessage() async {
+        let scripts = FakeScripts()
+        scripts.error = ScriptError(number: ScriptError.automationDenied, message: "not allowed")
+        let r = ActionRunner(ax: FakeAX(), process: FakeProcess(), clock: FakeClock(), scripts: scripts)
+        let report = await r.run(ProfileAction(name: "t", steps: [.terminalCommand(command: "ls", app: TerminalApp.iTerm)]))
+        #expect(report.steps[0].status == .failed)
+        #expect(report.steps[0].error == "Allow Windows Manager to control iTerm2 in System Settings > Privacy & Security > Automation")
+    }
+
+    private func pressRun(_ node: FakeNode, mode: ClickMode? = nil) async -> (ActionRunReport, FakeAX) {
+        let ax = FakeAX()
+        ax.roots = [FakeNode("AXWindow", [node])]
+        let l = ElementLocator(bundleID: "app.x", path: [ElementMatcher(role: node.role ?? "")], clickMode: mode)
+        let r = await runner(ax).run(ProfileAction(name: "p", steps: [.press(locator: l)]))
+        return (r, ax)
+    }
+
+    @Test func pressFallbackOrder() async {
+        let n = FakeNode("AXScrollArea")
+        n.pressResult = false; n.pickResult = true
+        var (r, ax) = await pressRun(n)
+        #expect(n.order == ["press", "AXConfirm", "AXPick"])
+        #expect(r.steps[0].summary.hasSuffix("(via AXPick)"))
+        #expect(ax.clicks.isEmpty)
+
+        let m = FakeNode("AXScrollArea")
+        m.pressResult = false; m.center = CGPoint(x: 10, y: 20); m.focusable = true
+        (r, ax) = await pressRun(m)
+        #expect(m.order == ["press", "AXConfirm", "AXPick", "focus"])
+        #expect(ax.activated == ["app.x"])
+        #expect(ax.clicks == [CGPoint(x: 10, y: 20)])
+        #expect(r.steps[0].summary.hasSuffix("(via click)"))
+
+        let plain = FakeNode("AXButton")
+        (r, _) = await pressRun(plain)
+        #expect(plain.order == ["press"])
+        #expect(r.steps[0].summary == "press app.x / AXButton")
+    }
+
+    @Test func pointerModeClicksStraightAway() async {
+        let n = FakeNode("AXGroup")
+        n.center = CGPoint(x: 5, y: 6)
+        let (r, ax) = await pressRun(n, mode: .pointer)
+        #expect(n.order == ["focus"])
+        #expect(ax.clicks == [CGPoint(x: 5, y: 6)])
+        #expect(r.succeeded)
+    }
+
+    @Test func pressFailsWhenNothingWorks() async {
+        let n = FakeNode("AXGroup")
+        n.pressResult = false
+        let (r, _) = await pressRun(n)
+        #expect(r.steps[0].status == .failed)
     }
 }

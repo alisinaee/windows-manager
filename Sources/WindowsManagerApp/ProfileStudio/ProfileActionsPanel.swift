@@ -302,7 +302,7 @@ struct ProfileActionsPanel: View {
 
 /// The kinds of step the "Add Step" menu offers, each with a sensible empty step.
 enum StepKind: String, CaseIterable, Identifiable {
-    case launchApp, press, menu, typeText, key, shell, openURL, runShortcut, waitFor, delay
+    case launchApp, press, menu, typeText, key, shell, terminalCommand, openURL, runShortcut, waitFor, delay
     var id: String { rawValue }
 
     var title: String {
@@ -313,6 +313,7 @@ enum StepKind: String, CaseIterable, Identifiable {
         case .typeText: "Type Text"
         case .key: "Press Keys"
         case .shell: "Run Terminal Command"
+        case .terminalCommand: "Run in Terminal"
         case .openURL: "Open URL"
         case .runShortcut: "Run Shortcut"
         case .waitFor: "Wait for Element"
@@ -329,6 +330,7 @@ enum StepKind: String, CaseIterable, Identifiable {
         case .typeText: return .typeText(text: "")
         case .key: return .key(combo: "cmd+t")
         case .shell: return .shell(command: "")
+        case .terminalCommand: return .terminalCommand(command: "")
         case .openURL: return .openURL(url: "https://")
         case .runShortcut: return .runShortcut(name: "")
         case .waitFor: return .waitFor(locator: locator)
@@ -395,6 +397,7 @@ private struct StepEditor: View {
         case .typeText: "Type Text"
         case .key: "Press Keys"
         case .shell: "Run Terminal Command"
+        case .terminalCommand: "Run in Terminal"
         case .openURL: "Open URL"
         case .runShortcut: "Run Shortcut"
         case .waitFor: "Wait for Element"
@@ -428,6 +431,20 @@ private struct StepEditor: View {
                 get: { wait }, set: { set(.shell(command: command, waitForExit: $0, timeout: timeout)) }))
                 .toggleStyle(.checkbox).font(.wmCaption).help("Wait for the command to exit before the next step")
             seconds("Give up after", timeout) { set(.shell(command: command, waitForExit: wait, timeout: $0)) }
+        case .terminalCommand(let command, let app, let newWindow):
+            text("Command", command) { set(.terminalCommand(command: $0, app: app, newWindow: newWindow)) }
+            LabeledContent("App") {
+                Picker("App", selection: Binding(
+                    get: { app }, set: { set(.terminalCommand(command: command, app: $0, newWindow: newWindow)) })) {
+                    Text("Terminal").tag(TerminalApp.terminal)
+                    Text("iTerm2").tag(TerminalApp.iTerm)
+                }
+                .labelsHidden().pickerStyle(.segmented)
+            }
+            Toggle("New window", isOn: Binding(
+                get: { newWindow }, set: { set(.terminalCommand(command: command, app: app, newWindow: $0)) }))
+                .toggleStyle(.checkbox).font(.wmCaption)
+                .help("Open a new window instead of using the front one")
         case .openURL(let url):
             text("URL", url) { set(.openURL(url: $0)) }
         case .runShortcut(let name):

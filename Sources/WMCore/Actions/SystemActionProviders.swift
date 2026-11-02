@@ -25,6 +25,17 @@ public final class AXElementNode: AXNode, @unchecked Sendable {
         if element.set(kAXFocusedAttribute, true).isSuccess { return true }
         return element.perform(kAXPressAction).isSuccess
     }
+    public func performAction(_ name: String) -> Bool {
+        guard element.actions.contains(name) else { return false }
+        return element.perform(name).isSuccess
+    }
+    public func setFocusedIfSettable() -> Bool {
+        element.isSettable(kAXFocusedAttribute) && element.set(kAXFocusedAttribute, true).isSuccess
+    }
+    public var frameCenter: CGPoint? {
+        guard let f = element.frame, f.width > 0, f.height > 0 else { return nil }
+        return CGPoint(x: f.midX, y: f.midY)
+    }
 }
 
 public struct SystemAXProvider: AXProvider {
@@ -45,6 +56,22 @@ public struct SystemAXProvider: AXProvider {
 
     public func menuBar(bundleID: String) -> (any AXNode)? {
         app(bundleID)?.element(kAXMenuBarAttribute).map { AXElementNode($0) }
+    }
+
+    public func activate(bundleID: String) {
+        NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.activate(options: [])
+    }
+
+    public func click(at point: CGPoint) throws {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+            guard let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point,
+                                      mouseButton: .left) else {
+                throw ActionError.failed("could not create mouse event")
+            }
+            event.post(tap: .cghidEventTap)
+            usleep(30_000)
+        }
     }
 
     public func sendKey(_ combo: KeyCombo) throws {
@@ -142,5 +169,24 @@ public struct SystemProcessRunner: ProcessRunner {
         let data = await reader.value
         let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         return ShellResult(exitCode: process.terminationStatus, output: String(text.suffix(500)))
+    }
+}
+
+/// Runs AppleScript with NSAppleScript on the main thread.
+public struct SystemScriptRunner: ScriptRunner {
+    public init() {}
+
+    public func run(_ source: String) async throws {
+        let failure: ScriptError? = await MainActor.run {
+            var info: NSDictionary?
+            guard let script = NSAppleScript(source: source) else {
+                return ScriptError(number: -1, message: "could not compile the script")
+            }
+            script.executeAndReturnError(&info)
+            guard let info else { return nil }
+            return ScriptError(number: (info[NSAppleScript.errorNumber] as? Int) ?? -1,
+                               message: (info[NSAppleScript.errorMessage] as? String) ?? "script failed")
+        }
+        if let failure { throw failure }
     }
 }

@@ -37,7 +37,7 @@ private func stepsText(_ action: ProfileAction) -> String {
 private func needsAccessibility(_ step: ActionStep) -> Bool {
     switch step.unwrapped {
     case .press, .menu, .typeText, .key, .waitFor: return true
-    case .launchApp, .shell, .openURL, .runShortcut, .delay, .optional: return false
+    case .launchApp, .shell, .openURL, .runShortcut, .terminalCommand, .delay, .optional: return false
     }
 }
 

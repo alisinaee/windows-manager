@@ -33,9 +33,11 @@ public struct ActionRunner: Sendable {
     public let ax: any AXProvider
     public let process: any ProcessRunner
     public let clock: any ActionClock
+    public let scripts: any ScriptRunner
 
-    public init(ax: any AXProvider, process: any ProcessRunner, clock: any ActionClock = SystemClock()) {
-        self.ax = ax; self.process = process; self.clock = clock
+    public init(ax: any AXProvider, process: any ProcessRunner, clock: any ActionClock = SystemClock(),
+                scripts: any ScriptRunner = SystemScriptRunner()) {
+        self.ax = ax; self.process = process; self.clock = clock; self.scripts = scripts
     }
 
     public func run(_ action: ProfileAction) async -> ActionRunReport {
@@ -75,8 +77,9 @@ public struct ActionRunner: Sendable {
             let t0 = clock.now()
             var status = StepStatus.succeeded
             var message: String?
+            var note: String?
             do {
-                try await execute(step.unwrapped)
+                note = try await execute(step.unwrapped)
             } catch is CancellationError {
                 status = .cancelled; cancelled = true
             } catch {
@@ -84,8 +87,8 @@ public struct ActionRunner: Sendable {
                 message = (error as? LocalizedError)?.errorDescription ?? "\(error)"
                 if !step.continueOnFailure { stopped = true }
             }
-            reports.append(StepReport(index: index, summary: step.summary, status: status,
-                                      duration: max(0, clock.now() - t0), error: message))
+            reports.append(StepReport(index: index, summary: step.summary + (note.map { " (\($0))" } ?? ""),
+                                      status: status, duration: max(0, clock.now() - t0), error: message))
         }
         return ActionRunReport(actionID: action.id, name: action.name, steps: reports, cancelled: cancelled,
                                duration: max(0, clock.now() - started))
@@ -93,14 +96,16 @@ public struct ActionRunner: Sendable {
 
     // MARK: steps
 
-    func execute(_ step: ActionStep) async throws {
+    /// Runs one step. The result names the method when a press needed a fallback ("via click").
+    @discardableResult
+    func execute(_ step: ActionStep) async throws -> String? {
         try Task.checkCancellation()
         switch step {
         case .launchApp(let bundleID):
             try await process.launchApp(bundleID: bundleID, timeout: step.timeout)
         case .press(let locator, let timeout, _):
             let node = try await locate(locator, containing: nil, timeout: timeout)
-            if !node.press() { throw ActionError.pressFailed(locator.describe) }
+            return try await pressElement(node, locator)
         case .menu(let bundleID, let path):
             try await pressMenu(bundleID: bundleID, path: path, timeout: step.timeout)
         case .typeText(let text, let into):
@@ -124,9 +129,36 @@ public struct ActionRunner: Sendable {
             _ = try await locate(locator, containing: containing, timeout: timeout)
         case .delay(let seconds):
             try await clock.sleep(seconds)
+        case .terminalCommand(let command, let app, let newWindow):
+            guard let source = TerminalScript.source(command: command, app: app, newWindow: newWindow) else {
+                throw ActionError.failed("\(app) is not Terminal or iTerm2")
+            }
+            do { try await scripts.run(source) } catch let error as ScriptError {
+                if error.number == ScriptError.automationDenied {
+                    throw ActionError.failed(TerminalScript.automationDeniedMessage(app: app))
+                }
+                throw ActionError.failed("\(TerminalApp.displayName(app)): \(error.message)")
+            }
         case .optional(let inner):
-            try await execute(inner)
+            return try await execute(inner)
         }
+        return nil
+    }
+
+    /// AXPress, then AXConfirm and AXPick, then a real click at the element's center (after bringing the app
+    /// forward and focusing the element). `clickMode == .pointer` goes straight to the click.
+    func pressElement(_ node: any AXNode, _ locator: ElementLocator) async throws -> String? {
+        if locator.clickMode != .pointer {
+            if node.press() { return nil }
+            if node.performAction("AXConfirm") { return "via AXConfirm" }
+            if node.performAction("AXPick") { return "via AXPick" }
+        }
+        guard let center = node.frameCenter else { throw ActionError.pressFailed(locator.describe) }
+        ax.activate(bundleID: locator.bundleID)
+        try await clock.sleep(0.15)
+        _ = node.setFocusedIfSettable()
+        do { try ax.click(at: center) } catch { throw ActionError.pressFailed(locator.describe) }
+        return "via click"
     }
 
     /// Polls every 200 ms until the element (and optional text) is there or `timeout` has passed.

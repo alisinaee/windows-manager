@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// One element of an accessibility tree. Real implementation wraps AXElement; tests use a fake tree.
@@ -13,6 +14,18 @@ public protocol AXNode: AnyObject, Sendable {
     func press() -> Bool
     /// Gives the element keyboard focus (AXFocused, falling back to a press).
     func focus() -> Bool
+    /// Runs an accessibility action by name (AXConfirm, AXPick ...) when the element supports it.
+    func performAction(_ name: String) -> Bool
+    /// Sets AXFocused when that attribute is settable.
+    func setFocusedIfSettable() -> Bool
+    /// Center of the element's frame in global screen coordinates.
+    var frameCenter: CGPoint? { get }
+}
+
+public extension AXNode {
+    func performAction(_ name: String) -> Bool { false }
+    func setFocusedIfSettable() -> Bool { false }
+    var frameCenter: CGPoint? { nil }
 }
 
 public protocol AXProvider: Sendable {
@@ -23,6 +36,29 @@ public protocol AXProvider: Sendable {
     func menuBar(bundleID: String) -> (any AXNode)?
     func sendKey(_ combo: KeyCombo) throws
     func typeText(_ text: String) throws
+    /// Brings the app to the front.
+    func activate(bundleID: String)
+    /// Posts a left click (mouse down and up) at a global screen point.
+    func click(at point: CGPoint) throws
+}
+
+public extension AXProvider {
+    func activate(bundleID: String) {}
+    func click(at point: CGPoint) throws { throw ActionError.failed("clicking is not available") }
+}
+
+/// Runs AppleScript source. The real one uses NSAppleScript; tests use a fake.
+public protocol ScriptRunner: Sendable {
+    /// Throws `ScriptError` when the script fails.
+    func run(_ source: String) async throws
+}
+
+public struct ScriptError: Error, Equatable, Sendable {
+    public var number: Int
+    public var message: String
+    public init(number: Int, message: String) { self.number = number; self.message = message }
+    /// errAEEventNotPermitted: the user has not allowed this app to control the other one.
+    public static let automationDenied = -1743
 }
 
 public struct ShellResult: Equatable, Sendable {

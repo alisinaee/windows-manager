@@ -63,10 +63,17 @@ public enum RecordingAnalyzer {
         }
 
         // Group by app: a step with a known app starts a new group when it differs from the current one.
+        // A terminal command is always an action of its own.
         var groups: [(bundleID: String?, steps: [TimedStep])] = []
+        var closeGroup = false
         for e in steps {
             let app = bundleID(of: e.step)
-            if let app, groups.last?.bundleID != app { groups.append((app, [])) }
+            if case .terminalCommand = e.step.unwrapped {
+                groups.append((app, [e])); closeGroup = true
+                continue
+            }
+            if closeGroup { groups.append((app, [])); closeGroup = false }
+            else if let app, groups.last?.bundleID != app { groups.append((app, [])) }
             else if groups.isEmpty { groups.append((nil, [])) }
             groups[groups.count - 1].steps.append(e)
         }
@@ -96,6 +103,7 @@ public enum RecordingAnalyzer {
         case .launchApp(let b): return b
         case .press(let l, _, _): return l.bundleID.isEmpty ? nil : l.bundleID
         case .menu(let b, _): return b.isEmpty ? nil : b
+        case .terminalCommand(_, let app, _): return app
         case .typeText(_, let into): return into.flatMap { $0.bundleID.isEmpty ? nil : $0.bundleID }
         case .waitFor(let l, _, _): return l.bundleID.isEmpty ? nil : l.bundleID
         default: return nil
@@ -104,6 +112,10 @@ public enum RecordingAnalyzer {
 
     /// "Streisand: press Connected" from the first meaningful step.
     static func name(for steps: [TimedStep], bundleID: String?, appNames: [String: String]) -> String {
+        if let first = steps.first?.step.unwrapped, case .terminalCommand(let command, let termApp, _) = first {
+            let shown = command.count > 60 ? String(command.prefix(60)) + "..." : command
+            return "\(appNames[termApp] ?? TerminalApp.displayName(termApp)): \(shown)"
+        }
         let app = bundleID.map { appNames[$0] ?? String($0.split(separator: ".").last ?? Substring($0)) }
         let list = steps.map(\.step)
         var what: String?
@@ -122,6 +134,7 @@ public enum RecordingAnalyzer {
             case .openURL: what = "open link"
             case .runShortcut(let n): what = "run " + n
             case .waitFor(let l, _, _): what = "wait for " + label(of: l)
+            case .terminalCommand(let c, _, _): what = "run " + c
             case .launchApp, .delay, .optional: continue
             }
             break

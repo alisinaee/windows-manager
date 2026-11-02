@@ -31,6 +31,9 @@ public final class SystemRecorderNode: RecorderNode, @unchecked Sendable {
     public func children() -> [any AXNode] { base.children() }
     public func press() -> Bool { base.press() }
     public func focus() -> Bool { base.focus() }
+    public func performAction(_ name: String) -> Bool { base.performAction(name) }
+    public func setFocusedIfSettable() -> Bool { base.setFocusedIfSettable() }
+    public var frameCenter: CGPoint? { base.frameCenter }
     public var pid: pid_t { element.pid ?? 0 }
     public func parent() -> (any RecorderNode)? { element.element(kAXParentAttribute).map { SystemRecorderNode($0) } }
     public func isSame(as other: any RecorderNode) -> Bool {
@@ -75,6 +78,8 @@ public final class ActionRecorder: @unchecked Sendable {
     private struct Entry {
         var step: ActionStep
         var time: TimeInterval
+        /// The app the step was aimed at, when known.
+        var app: String?
     }
 
     private let source: any RecorderEventSource
@@ -85,9 +90,11 @@ public final class ActionRecorder: @unchecked Sendable {
     private var pendingText = ""
     private var pendingLocator: ElementLocator?
     private var pendingTime: TimeInterval = 0
+    private var pendingApp: String?
     private var launched: Set<String> = []
     private var recording = false
     private var secureSkipped = false
+    private var currentKeyApp: String?
 
     public init(source: any RecorderEventSource = EventTapSource(),
                 inspector: any RecorderInspector = SystemRecorderInspector(),
@@ -102,7 +109,7 @@ public final class ActionRecorder: @unchecked Sendable {
     public var steps: [ActionStep] {
         lock.lock(); defer { lock.unlock() }
         var all = entries
-        if !pendingText.isEmpty { all.append(Entry(step: .typeText(text: pendingText, into: pendingLocator), time: pendingTime)) }
+        if !pendingText.isEmpty { all.append(Entry(step: .typeText(text: pendingText, into: pendingLocator), time: pendingTime, app: pendingApp)) }
         return Self.cleanupTimed(all).map(\.step)
     }
 
@@ -111,7 +118,7 @@ public final class ActionRecorder: @unchecked Sendable {
     public func start() -> Bool {
         lock.lock()
         guard !recording else { lock.unlock(); return true }
-        entries = []; pendingText = ""; pendingLocator = nil; launched = []; secureSkipped = false
+        entries = []; pendingText = ""; pendingLocator = nil; pendingApp = nil; launched = []; secureSkipped = false
         recording = true
         lock.unlock()
         let ok = source.start { [weak self] event in self?.handle(event) }
@@ -162,12 +169,17 @@ public final class ActionRecorder: @unchecked Sendable {
             if let leaf = titled.last, leaf.role == "AXMenuItem",
                !leaf.children().contains(where: { $0.role == "AXMenu" }) {
                 let path = titled.compactMap { $0.title }.filter { !$0.isEmpty }
-                if path.count == titled.count { entries.append(Entry(step: .menu(bundleID: bundle, path: path), time: event.timestamp)) }
+                if path.count == titled.count {
+                    entries.append(Entry(step: .menu(bundleID: bundle, path: path), time: event.timestamp, app: bundle))
+                }
             }
             return
         }
-        guard let locator = Self.locator(bundleID: bundle, chain: chain) else { return }
-        entries.append(Entry(step: .press(locator: locator), time: event.timestamp))
+        // A click inside a terminal's text area only moves the cursor; the command it leads to is recorded instead.
+        if TerminalApp.isTerminal(bundle), node.role == "AXTextArea" { return }
+        guard var locator = Self.locator(bundleID: bundle, chain: chain) else { return }
+        if Self.isPointerOnly(node) { locator.clickMode = .pointer }
+        entries.append(Entry(step: .press(locator: locator), time: event.timestamp, app: bundle))
     }
 
     private func handleKey(_ event: RecorderEvent) {
@@ -178,6 +190,7 @@ public final class ActionRecorder: @unchecked Sendable {
             ?? event.targetPID.flatMap { inspector.bundleID(forPID: $0) }
         if let keyBundle, Self.systemUIBundleIDs.contains(keyBundle) { flushText(); return }
         let isSpecial = Self.specialKeys[event.keyCode] != nil
+        currentKeyApp = keyBundle
         if let focused, Self.isSecure(focused) {
             flushText()
             // Return/Tab/Escape carry no secret and keep the flow intact (submit the form).
@@ -190,6 +203,8 @@ public final class ActionRecorder: @unchecked Sendable {
             noteApp(bundle, time: event.timestamp)
         }
         let combo = !event.modifiers.isDisjoint(with: [.command, .control, .option])
+        if let keyBundle, TerminalApp.isTerminal(keyBundle), !combo, event.keyCode == 36 || event.keyCode == 76,
+           collapseTerminalCommand(app: keyBundle, focused: focused, time: event.timestamp) { return }
         // Backspace inside pending text edits it instead of becoming a key step.
         if event.keyCode == 51, !combo, !pendingText.isEmpty { pendingText.removeLast(); return }
         if combo || isSpecial {
@@ -204,6 +219,7 @@ public final class ActionRecorder: @unchecked Sendable {
         }
         if pendingText.isEmpty {
             pendingTime = event.timestamp
+            pendingApp = keyBundle
             pendingLocator = focused.flatMap { Self.textRoles.contains($0.role ?? "") ? Self.locator(bundleID: inspector.bundleID(forPID: $0.pid) ?? "", chain: Self.chain(from: $0)) : nil }
         }
         pendingText += event.characters
@@ -212,19 +228,83 @@ public final class ActionRecorder: @unchecked Sendable {
     private func appendKey(_ event: RecorderEvent) {
         guard let combo = Self.comboString(keyCode: event.keyCode, modifiers: event.modifiers) else { return }
         flushText()
-        entries.append(Entry(step: .key(combo: combo), time: event.timestamp))
+        entries.append(Entry(step: .key(combo: combo), time: event.timestamp, app: currentKeyApp))
+    }
+
+    /// Return in Terminal or iTerm2: the command line is read from the text area and replaces the steps recorded
+    /// in that app since the previous Return. False (nothing changed) when the line cannot be read.
+    private func collapseTerminalCommand(app: String, focused: (any RecorderNode)?, time: TimeInterval) -> Bool {
+        guard let value = focused?.value, let command = Self.terminalCommand(fromTerminalText: value) else { return false }
+        flushText()
+        var start = entries.count
+        while start > 0 {
+            let e = entries[start - 1]
+            if e.app != app { break }
+            if case .terminalCommand = e.step { break }
+            if case .key(let k) = e.step, k == "return" { break }
+            start -= 1
+        }
+        let kept = entries[start...].filter { if case .launchApp = $0.step { return true } else { return false } }
+        entries.removeSubrange(start...)
+        entries.append(contentsOf: kept)
+        entries.append(Entry(step: .terminalCommand(command: command, app: app, newWindow: false), time: time, app: app))
+        return true
+    }
+
+    /// The last non-empty line of a terminal's text, without its shell prompt; nil when it has no recognizable prompt.
+    static func terminalCommand(fromTerminalText text: String) -> String? {
+        guard let line = text.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) })
+            .last(where: { !$0.isEmpty }) else { return nil }
+        return stripPrompt(line)
+    }
+
+    /// "ali@mac ~ % ls" -> "ls"; "➜  repo git:(main) ✗ ls" -> "ls". nil when no prompt is found or nothing follows it.
+    static func stripPrompt(_ line: String) -> String? {
+        var rest: Substring?
+        if line.hasPrefix("➜") {
+            // oh-my-zsh: ➜  <dir> [git:(branch)] [✗] <command>
+            let words = line.dropFirst().split(separator: " ", omittingEmptySubsequences: true)
+            var i = 1   // words[0] is the directory
+            if i < words.count, words[i].hasPrefix("git:(") {
+                // the branch may contain no spaces; the closing parenthesis ends it
+                while i < words.count, !words[i].hasSuffix(")") { i += 1 }
+                i += 1
+            }
+            if i < words.count, words[i] == "✗" { i += 1 }
+            guard i < words.count else { return nil }
+            let command = words[i...].joined(separator: " ")
+            return command.isEmpty ? nil : command
+        }
+        // Earliest prompt terminator: later "% " or "# " are more likely part of the command.
+        var best: Range<String.Index>?
+        for marker in ["% ", "$ ", "# ", "❯ "] {
+            if let r = line.range(of: marker), best == nil || r.lowerBound < best!.lowerBound { best = r }
+        }
+        guard let best else { return nil }
+        rest = line[best.upperBound...]
+        let command = rest?.trimmingCharacters(in: .whitespaces) ?? ""
+        return command.isEmpty ? nil : command
+    }
+
+    /// Containers and decoration that cannot be pressed: a click on them is replayed as a real mouse click.
+    static let pointerOnlyRoles: Set<String> = [
+        "AXScrollArea", "AXGroup", "AXWebArea", "AXTextArea", "AXImage", "AXStaticText",
+    ]
+
+    static func isPointerOnly(_ node: any AXNode) -> Bool {
+        pointerOnlyRoles.contains(node.role ?? "")
     }
 
     private func flushText() {
         guard !pendingText.isEmpty else { return }
-        entries.append(Entry(step: .typeText(text: pendingText, into: pendingLocator), time: pendingTime))
-        pendingText = ""; pendingLocator = nil
+        entries.append(Entry(step: .typeText(text: pendingText, into: pendingLocator), time: pendingTime, app: pendingApp))
+        pendingText = ""; pendingLocator = nil; pendingApp = nil
     }
 
     private func noteApp(_ bundle: String, time: TimeInterval) {
         guard bundle != Bundle.main.bundleIdentifier, launched.insert(bundle).inserted else { return }
         flushText()
-        entries.append(Entry(step: .launchApp(bundleID: bundle), time: time))
+        entries.append(Entry(step: .launchApp(bundleID: bundle), time: time, app: bundle))
     }
 
     // MARK: Pure helpers

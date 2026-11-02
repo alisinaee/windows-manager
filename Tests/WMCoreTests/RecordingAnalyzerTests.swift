@@ -73,4 +73,16 @@ private func t(_ step: ActionStep, _ time: TimeInterval) -> TimedStep { TimedSte
         #expect(RecordingAnalyzer.pause(from: 0, to: 1) == nil)
         #expect(RecordingAnalyzer.pause(from: 0, to: 1.3) == 1.5)
     }
+
+    @Test func terminalCommandsAreOwnActionsNamedByCommand() {
+        let cmd = ActionStep.terminalCommand(command: "fortiChromeMain", app: "com.apple.Terminal", newWindow: false)
+        let rec = [
+            t(.launchApp(bundleID: "com.apple.Terminal"), 0), t(cmd, 1),
+            t(.launchApp(bundleID: "com.google.Chrome"), 2), t(press("com.google.Chrome", "Add"), 3),
+        ]
+        let a = RecordingAnalyzer.analyze(rec, windowBundleIDs: ["com.apple.Terminal"],
+                                          appNames: ["com.apple.Terminal": "Terminal", "com.google.Chrome": "Chrome"])
+        #expect(a.actions.map(\.name) == ["Terminal: fortiChromeMain", "Chrome: press Add"])
+        #expect(a.actions[0].steps.map(\.step) == [cmd])
+    }
 }

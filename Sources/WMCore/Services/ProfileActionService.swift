@@ -195,6 +195,9 @@ extension ProfileService {
             guard URL(string: url) != nil else { throw ServiceError.invalid("\"\(url)\" is not a URL.") }
         case .runShortcut(let name):
             try requireText(name, "shortcut name")
+        case .terminalCommand(let command, let app, _):
+            try requireText(command, "command")
+            guard TerminalApp.isTerminal(app) else { throw ServiceError.invalid("\(app) is not Terminal or iTerm2.") }
         case .delay:
             break
         case .optional:

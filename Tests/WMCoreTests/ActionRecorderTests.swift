@@ -36,7 +36,7 @@ private final class FakeSource: RecorderEventSource, @unchecked Sendable {
 private final class FakeInspector: RecorderInspector, @unchecked Sendable {
     var hit: FakeNode?
     var focused: FakeNode?
-    var bundles: [pid_t: String] = [100: "com.example.app", 200: "com.example.other", 999: "com.wm.self"]
+    var bundles: [pid_t: String] = [100: "com.example.app", 200: "com.example.other", 300: "com.apple.Terminal", 999: "com.wm.self"]
     func element(at point: CGPoint) -> (any RecorderNode)? { hit }
     func focusedElement() -> (any RecorderNode)? { focused }
     func bundleID(forPID pid: pid_t) -> String? { bundles[pid] }
@@ -198,5 +198,70 @@ private func pressLocators(_ steps: [ActionStep]) -> [ElementLocator] {
         source.send(RecorderEvent(kind: .keyDown, characters: "a"))
         #expect(!recorder.isRecording)
         #expect(recorder.steps.isEmpty)
+    }
+
+    // MARK: P9.12
+
+    @Test func promptStripping() {
+        #expect(ActionRecorder.stripPrompt("ali@mac ~ % fortiChromeMain") == "fortiChromeMain")
+        #expect(ActionRecorder.stripPrompt("➜  windows_manager git:(main) ✗ ls") == "ls")
+        #expect(ActionRecorder.stripPrompt("➜  windows_manager ls -la") == "ls -la")
+        #expect(ActionRecorder.stripPrompt("user@host:~$ echo 5 % 3") == "echo 5 % 3")
+        #expect(ActionRecorder.stripPrompt("user@host:~ $ echo 5 % 3") == "echo 5 % 3")
+        #expect(ActionRecorder.stripPrompt("root@h:/# make") == "make")
+        #expect(ActionRecorder.stripPrompt("~/code ❯ git status") == "git status")
+        #expect(ActionRecorder.stripPrompt("ali@mac ~ % ") == nil)
+        #expect(ActionRecorder.terminalCommand(fromTerminalText: "Last login\nali@mac ~ % ls\n\n") == "ls")
+    }
+
+    private func terminalText(_ value: String) -> (area: FakeNode, focused: FakeNode) {
+        let area = FakeNode("AXTextArea", title: "shell", pid: 300)
+        _ = FakeNode("AXWindow", title: "bash", pid: 300, kids: [FakeNode("AXScrollArea", pid: 300, kids: [area])])
+        area.value = value
+        inspector.focused = area
+        return (area, area)
+    }
+
+    private func terminalKey(_ code: UInt16, _ chars: String) {
+        t += 0.1
+        source.send(RecorderEvent(kind: .keyDown, keyCode: code, characters: chars, timestamp: t, targetPID: 300))
+    }
+
+    @Test func historyArrowsCollapseToOneTerminalCommand() {
+        let (area, _) = terminalText("Last login: today\nali@mac ~ % fortiChromeMain")
+        click(area)
+        for _ in 0..<8 { terminalKey(126, "\u{F700}") }
+        terminalKey(36, "\r")
+        #expect(recorder.stop() == [.launchApp(bundleID: "com.apple.Terminal"),
+                                    .terminalCommand(command: "fortiChromeMain", app: "com.apple.Terminal", newWindow: false)])
+    }
+
+    @Test func typedCommandsCollapseSeparately() {
+        let (area, _) = terminalText("ali@mac ~ % ls")
+        click(area)
+        terminalKey(0, "l"); terminalKey(1, "s"); terminalKey(36, "\r")
+        area.value = "ali@mac ~ % ls\nfile\nali@mac ~ % pwd"
+        terminalKey(35, "p"); terminalKey(36, "\r")
+        #expect(recorder.stop() == [.launchApp(bundleID: "com.apple.Terminal"),
+                                    .terminalCommand(command: "ls", app: "com.apple.Terminal", newWindow: false),
+                                    .terminalCommand(command: "pwd", app: "com.apple.Terminal", newWindow: false)])
+    }
+
+    @Test func unreadableTerminalCommandKeepsRawSteps() {
+        let (area, _) = terminalText("no prompt here")
+        click(area)
+        terminalKey(126, "\u{F700}")
+        terminalKey(36, "\r")
+        #expect(recorder.stop() == [.launchApp(bundleID: "com.apple.Terminal"), .key(combo: "up"), .key(combo: "return")])
+    }
+
+    @Test func nonPressableContainersRecordAsPointerClicks() {
+        let scroll = FakeNode("AXScrollArea", title: "Who's using Chrome?")
+        _ = FakeNode("AXWindow", title: "Chrome", kids: [scroll])
+        click(scroll)
+        let b = button("Go"); click(b)
+        let locs = pressLocators(recorder.stop())
+        #expect(locs[0].clickMode == .pointer)
+        #expect(locs[1].clickMode == nil)
     }
 }

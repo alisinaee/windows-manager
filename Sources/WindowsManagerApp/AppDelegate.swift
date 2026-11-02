@@ -109,6 +109,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// A menu bar app keeps running with no windows open. Without this, closing or hiding the last window (Settings is a
+    /// plain Window scene; New Profile hides windows while it captures) quits the app.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if isDuplicate { return .terminateNow }
         let proceed = MainActor.assumeIsolated { ProfileStudioWindowController.shared.shouldTerminateNow() }

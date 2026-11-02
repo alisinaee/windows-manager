@@ -18,6 +18,11 @@ struct ProfileEntity: AppEntity {
         self.id = summary.id
         self.name = summary.name
     }
+
+    init(id: UUID, name: String) {
+        self.id = id
+        self.name = name
+    }
 }
 
 struct ProfileEntityQuery: EntityStringQuery {

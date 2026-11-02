@@ -100,4 +100,8 @@ Success: `{"ok":true,"data":...}`. Failure: `{"ok":false,"error":{"code","messag
 - The Studio canvas, live hotkeys, window watchers and app updates exist only in the app. Ask the user to use the app for them.
 - The CLI cannot click through macOS dialogs or grant permissions.
 - Windows on other Spaces or in full screen may not match a profile. Expect exit 6 and explain it.
+
+## 9. MCP
+
+`wm mcp` runs a Model Context Protocol server over stdio. Each `wm` command is a tool (for example `profile_window_frame`), plus `agent_guide`. Tools that touch windows (run, capture, verify) need `confirm: true`, set only after the user agrees. Add it to Claude with: `claude mcp add windows-manager -- wm mcp`
 """#

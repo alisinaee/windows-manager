@@ -20,3 +20,4 @@ Use this skill when driving the `wm` CLI for the user.
 - Confirm before any command with `"mutates": true` changes the user's profiles, settings, layouts or rules. Copy a profile first for experiments.
 - Use `--json` and read the `ok` field of the envelope.
 - Do not edit profile files by hand, and do not change macOS permissions. Ask the user to do those.
+- MCP: `wm mcp` serves every command as an MCP tool over stdio (`claude mcp add windows-manager -- wm mcp`); the same safety rules apply and `confirm: true` needs user consent.

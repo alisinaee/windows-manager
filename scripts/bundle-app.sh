@@ -12,11 +12,14 @@ EXECUTABLE="WindowsManagerApp"
 APP="build/$APP_NAME.app"
 
 swift build -c release --product "$EXECUTABLE"
+swift build -c release --product wm
 BIN_DIR="$(swift build -c release --show-bin-path)"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/$EXECUTABLE" "$APP/Contents/MacOS/$EXECUTABLE"
+# The wm command line tool lives next to the app executable (the Settings AI Agents tab links to it).
+cp "$BIN_DIR/wm" "$APP/Contents/MacOS/wm"
 # Sparkle (update checks) is a dynamic framework. The executable links it through @rpath, and the
 # build has no @executable_path/../Frameworks entry, so add it here for the bundled layout.
 SPARKLE="$BIN_DIR/Sparkle.framework"
@@ -46,14 +49,17 @@ plutil -lint "$APP/Contents/Info.plist" >/dev/null
 DEV_KC="$PWD/.signing/dev.keychain-db"
 if [ -n "$SIGN_IDENTITY" ]; then
     echo "Signing with identity: $SIGN_IDENTITY"
+    codesign --force -s "$SIGN_IDENTITY" "$APP/Contents/MacOS/wm"
     codesign --force --deep -s "$SIGN_IDENTITY" "$APP"
 elif [ -f "$DEV_KC" ]; then
     # Local dev certificate from scripts/make-dev-cert.sh: stable identity, so Accessibility survives rebuilds.
     echo "Signing with the local dev certificate (Windows Manager Dev)"
     security unlock-keychain -p "$(cat .signing/keychain-password)" "$DEV_KC"
+    codesign --force --keychain "$DEV_KC" -s "Windows Manager Dev" "$APP/Contents/MacOS/wm"
     codesign --force --deep --keychain "$DEV_KC" -s "Windows Manager Dev" "$APP"
 else
     echo "Signing ad-hoc (set SIGN_IDENTITY to use a certificate)"
+    codesign --force -s - "$APP/Contents/MacOS/wm"
     codesign --force --deep -s - "$APP"
     echo
     echo "NOTE: ad-hoc signed builds may lose the Accessibility grant after each rebuild,"

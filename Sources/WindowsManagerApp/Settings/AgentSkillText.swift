@@ -1,7 +1,7 @@
 /// Copy of skills/wm-agent/SKILL.md so the app can install the skill without the repo.
-/// Keep identical to that file.
+/// Keep identical to that file (Tests/WMCoreTests/AgentSkillTextSyncTests.swift checks it).
 enum AgentSkillText {
-    static let skill = """
+    static let skill = #"""
 ---
 name: wm-agent
 description: Operate the Windows Manager `wm` command line tool (capture, profiles, layouts, rules, plan, run, verify) safely on macOS. Use when the user asks you to inspect, script or change window profiles or restore workspaces with wm. Always start from `wm agent-guide` and `wm schema --json`.
@@ -24,6 +24,7 @@ Use this skill when driving the `wm` CLI for the user.
 - Confirm before any command with `"mutates": true` changes the user's profiles, settings, layouts or rules. Copy a profile first for experiments.
 - Use `--json` and read the `ok` field of the envelope.
 - Do not edit profile files by hand, and do not change macOS permissions. Ask the user to do those.
+- MCP: `wm mcp` serves every command as an MCP tool over stdio (`claude mcp add windows-manager -- wm mcp`); the same safety rules apply and `confirm: true` needs user consent.
 
-"""
+"""#
 }

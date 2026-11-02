@@ -7,9 +7,9 @@ import SwiftUI
 final class ProfileStudioWindowController: NSObject, NSWindowDelegate {
     static let shared = ProfileStudioWindowController()
 
-    /// Smallest content size. The split view's column minimums (sidebar, map, inspector; 760 at most) must always fit
+    /// Smallest content size. The split view's column minimums (sidebar 200, map 360+, inspector 280, dividers; 940 leaves room for the map toolbar pill) must always fit
     /// inside it with the divider widths, or AppKit's split view loops on its constraints (P0-5).
-    static let minSize = NSSize(width: 800, height: 560)
+    static let minSize = NSSize(width: 940, height: 560)
 
     private var window: NSWindow?
     let model = ProfileStudioModel()

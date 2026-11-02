@@ -1105,6 +1105,7 @@ struct BuilderToolsBar: View {
                     divider()
                     tools(monitor)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.xs)
                 .frame(minHeight: 36)
                 .glassEffect(.regular, in: Capsule())
@@ -1135,7 +1136,7 @@ struct BuilderToolsBar: View {
                     }
                 }
             } label: { title }
-            .menuStyle(.borderlessButton).fixedSize()
+            .menuStyle(.borderlessButton).frame(maxWidth: 160).layoutPriority(-1)
             .help("Choose the monitor to edit. Tools and Add Desktop act on \(monitor.name)")
             .accessibilityLabel("Monitor: \(monitor.name)")
         } else {

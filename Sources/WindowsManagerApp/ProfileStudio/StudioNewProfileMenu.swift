@@ -20,6 +20,7 @@ struct StudioNewProfileMenu: View {
             } label: {
                 Label("New Profile", systemImage: "plus")
                     .fontWeight(.semibold)
+                    .lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: .infinity)
             } primaryAction: {
                 model.beginNewProfile()

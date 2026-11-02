@@ -66,8 +66,18 @@ public enum ProfilesLocation {
 }
 
 /// Calls `onChange` (on the main queue) about a second after files in the folder change.
+/// The directory source catches adds, removes and renames; a light poll catches json files rewritten in place
+/// (a sync tool overwriting a profile), which do not touch the directory.
 public final class ProfileFolderWatcher {
+    private static let pollInterval: TimeInterval = 2
+
+    private struct FileStamp: Equatable {
+        let modified: Date?
+        let size: Int
+    }
+
     private var source: DispatchSourceFileSystemObject?
+    private var poll: DispatchSourceTimer?
     private var pending: DispatchWorkItem?
     private let debounce: TimeInterval
     private let onChange: () -> Void
@@ -90,6 +100,19 @@ public final class ProfileFolderWatcher {
         source.setCancelHandler { close(fd) }
         source.resume()
         self.source = source
+
+        // The baseline is taken now, so an edit made right after start() is still seen by the first tick.
+        var last = Self.snapshot(of: folder)
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        timer.setEventHandler { [weak self] in
+            let now = Self.snapshot(of: folder)
+            guard now != last else { return }
+            last = now
+            DispatchQueue.main.async { self?.schedule() }
+        }
+        timer.schedule(deadline: .now() + Self.pollInterval, repeating: Self.pollInterval)
+        timer.resume()
+        self.poll = timer
     }
 
     public func stop() {
@@ -97,6 +120,23 @@ public final class ProfileFolderWatcher {
         pending = nil
         source?.cancel()
         source = nil
+        poll?.cancel()
+        poll = nil
+    }
+
+    /// Name, mtime and size of each visible json file in `folder`.
+    private static func snapshot(of folder: URL) -> [String: FileStamp] {
+        let fileManager = FileManager.default
+        var stamps: [String: FileStamp] = [:]
+        let names = (try? fileManager.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in names where name.lowercased().hasSuffix(".json") && !name.hasPrefix(".") {
+            guard let attrs = try? fileManager.attributesOfItem(atPath: folder.appendingPathComponent(name).path) else {
+                continue
+            }
+            let size = (attrs[.size] as? NSNumber)?.intValue ?? -1
+            stamps[name] = FileStamp(modified: attrs[.modificationDate] as? Date, size: size)
+        }
+        return stamps
     }
 
     private func schedule() {

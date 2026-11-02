@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import XCTest
 @testable import WMCore
 
 struct ProfilesLocationTests {
@@ -60,5 +61,25 @@ struct ProfilesLocationTests {
         store.switchFolder(to: b)
         #expect(store.list().isEmpty)
         #expect(store.folder == b)
+    }
+}
+
+final class ProfileFolderWatcherTests: XCTestCase {
+    func testFiresWhenJsonIsRewrittenInPlace() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wm-watch-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("profile.json")
+        try Data("{\"v\":1}".utf8).write(to: file)
+
+        let changed = expectation(description: "onChange after in-place rewrite")
+        changed.assertForOverFulfill = false
+        let watcher = ProfileFolderWatcher(debounce: 0.2) { changed.fulfill() }
+        watcher.start(folder: dir)
+        defer { watcher.stop() }
+
+        // Overwrite the same inode (no rename, no new entry), so only the poll can see it.
+        try Data("{\"v\":2,\"name\":\"rewritten with more bytes\"}".utf8).write(to: file)
+        wait(for: [changed], timeout: 5)
     }
 }

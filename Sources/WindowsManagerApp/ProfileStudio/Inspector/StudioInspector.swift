@@ -12,24 +12,21 @@ struct StudioInspector<Content: View, Footer: View>: View {
     @ViewBuilder var footer: (StudioInspectorTab) -> Footer
 
     var body: some View {
-        ScrollView(.vertical) {
+        ScrollView {
             content(tab)
                 .labeledContentStyle(InspectorRowStyle())
                 .padding(Spacing.m)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity)
-        .clipped()
         .id(tab)
         .safeAreaBar(edge: .top, spacing: 0) {
             VStack(alignment: .center, spacing: Spacing.s) {
                 Picker("Inspector page", selection: $tab) {
-                    ForEach(StudioInspectorTab.allCases) { Text($0.rawValue).lineLimit(1).minimumScaleFactor(0.8).tag($0) }
+                    ForEach(StudioInspectorTab.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .controlSize(.regular)
-                .frame(maxWidth: .infinity)
+                .controlSize(.large)
                 .accessibilityLabel("Inspector page")
                 .help("Switch between the selection, the profile options and the launch order")
                 Text(title).font(.wmSection).lineLimit(1).frame(maxWidth: .infinity, alignment: .center).truncationMode(.middle)
@@ -37,7 +34,6 @@ struct StudioInspector<Content: View, Footer: View>: View {
             }
             .padding(Spacing.m)
             .frame(maxWidth: .infinity, alignment: .center)
-            .clipped()
         }
         .safeAreaBar(edge: .bottom, spacing: 0) { footer(tab) }
         .accessibilityElement(children: .contain)

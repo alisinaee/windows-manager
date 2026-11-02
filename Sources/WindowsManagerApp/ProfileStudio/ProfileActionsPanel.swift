@@ -2,16 +2,19 @@ import SwiftUI
 import WMCore
 
 /// The Actions page of the Details inspector: UI steps a profile runs before or after it restores windows.
-/// Lists the actions (name, phase, enabled, step count) and, for the selected one, its steps with fields per
-/// step kind. Every change goes through `builder.setActions`, so it is undoable; in View mode (`builder` nil)
+/// Each action is a collapsible card (`ActionCard`) whose steps are one-line rows (`ActionStepRow`) that expand to
+/// their fields. Every change goes through `builder.setActions`, so it is undoable; in View mode (`builder` nil)
 /// the list is read only, but "Test run" still works. Plain content: the inspector container scrolls.
 struct ProfileActionsPanel: View {
     let profile: Profile
     let builder: ProfileBuilderModel?
 
+    /// The expanded card (only one at a time); also where "Record…" and new steps go.
     @State private var selectedID: UUID?
+    @State private var didSeedSelection = false
     @State private var running: UUID?
     @State private var reports: [UUID: ActionRunReport] = [:]
+    @State private var expandedSteps: [UUID: Set<Int>] = [:]
     @StateObject private var recording = RecordingController()
     @State private var recordNote: String?
     @State private var pendingRecording: PendingRecording?
@@ -28,7 +31,7 @@ struct ProfileActionsPanel: View {
                         .font(.wmCaption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
-                    actionRow(index: index, action: action)
+                    card(index: index, action: action)
                 }
                 if isEditable {
                     HStack(spacing: Spacing.s) {
@@ -41,13 +44,13 @@ struct ProfileActionsPanel: View {
                     }
                 }
             }
-            if let action = actions.first(where: { $0.id == selectedID }) {
-                stepsSection(action)
-            }
             if let recordNote { InspectorNote(text: recordNote) }
             if let error = builder?.lastError { InspectorNote(text: error) }
         }
         .accessibilityLabel("Profile actions")
+        .onAppear {
+            if !didSeedSelection { didSeedSelection = true; selectedID = selectedID ?? actions.first?.id }
+        }
         .sheet(item: $pendingRecording) { pending in
             RecordingReviewSheet(pending: pending, onAdd: { windows, newActions in
                 _ = builder?.applyRecording(windows: windows, actions: newActions)
@@ -71,84 +74,15 @@ struct ProfileActionsPanel: View {
             .help("Add an action that runs before or after the restore")
     }
 
-    private func actionRow(index: Int, action: ProfileAction) -> some View {
-        let isSelected = selectedID == action.id
-        return VStack(alignment: .leading, spacing: Spacing.s) {
-            HStack(spacing: Spacing.s) {
-                Toggle("Run \(action.name)", isOn: Binding(
-                    get: { action.enabled }, set: { value in update(action.id) { $0.enabled = value } }))
-                    .labelsHidden().toggleStyle(.checkbox).disabled(!isEditable)
-                    .help("Run \(action.name) when the profile runs (untick to skip it)")
-                Button { selectedID = isSelected ? nil : action.id } label: {
-                    HStack(spacing: Spacing.s) {
-                        Text(action.name.isEmpty ? "Untitled action" : action.name).lineLimit(1)
-                        Text("\(action.steps.count) step\(action.steps.count == 1 ? "" : "s")")
-                            .font(.wmCaption).foregroundStyle(.secondary)
-                        Spacer(minLength: Spacing.xs)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Show the steps of \(action.name)")
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-                if isEditable { moveButtons(index: index, count: actions.count, name: action.name) { move(index, by: $0) } }
-            }
-            .opacity(action.enabled ? 1 : 0.5)
-            if isSelected {
-                if isEditable {
-                    TextField("Name", text: Binding(get: { action.name }, set: { value in update(action.id) { $0.name = value } }))
-                        .textFieldStyle(.roundedBorder).help("Name of this action")
-                }
-                LabeledContent("Runs") {
-                    Picker("Runs", selection: Binding(get: { action.phase }, set: { value in update(action.id) { $0.phase = value } })) {
-                        Text("Before restoring windows").tag(ActionPhase.beforeRestore)
-                        Text("After restoring windows").tag(ActionPhase.afterRestore)
-                    }
-                    .labelsHidden().fixedSize().disabled(!isEditable)
-                    .help("Run this action before or after the windows are restored")
-                }
-                seconds("Wait before action", action.delayBefore) { v in update(action.id) { $0.delayBefore = v } }
-                seconds("Pause between steps", action.stepGap) { v in update(action.id) { $0.stepGap = v } }
-            } else {
-                Text(action.phase == .beforeRestore ? "Before restoring windows" : "After restoring windows")
-                    .font(.wmCaption).foregroundStyle(.secondary)
-            }
+    private func card(index: Int, action: ProfileAction) -> some View {
+        ActionCard(action: action, isExpanded: selectedID == action.id, isEditable: isEditable,
+                   lastResult: reports[action.id].map { $0.succeeded },
+                   toggleExpanded: { selectedID = selectedID == action.id ? nil : action.id },
+                   update: { change in update(action.id, change) },
+                   canMoveUp: index > 0, canMoveDown: index < actions.count - 1,
+                   move: { move(index, by: $0) }, delete: { delete(action.id) }) {
+            stepsArea(action)
         }
-        .padding(Spacing.s)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: Radius.medium))
-        .overlay {
-            if isSelected { RoundedRectangle(cornerRadius: Radius.medium).stroke(Palette.accent, lineWidth: 1.5) }
-        }
-        .contextMenu {
-            if isEditable {
-                Button("Delete Action", role: .destructive) { delete(action.id) }
-            }
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    private func moveButtons(index: Int, count: Int, name: String, move: @escaping (Int) -> Void) -> some View {
-        HStack(spacing: 0) {
-            Button { move(-1) } label: { Label("Move Up", systemImage: "chevron.up").labelStyle(.iconOnly) }
-                .disabled(index == 0).accessibilityLabel("Move \(name) up").help("Move \(name) up")
-            Button { move(1) } label: { Label("Move Down", systemImage: "chevron.down").labelStyle(.iconOnly) }
-                .disabled(index == count - 1).accessibilityLabel("Move \(name) down").help("Move \(name) down")
-        }
-        .buttonStyle(.borderless)
-    }
-
-    private func seconds(_ label: String, _ value: TimeInterval, _ commit: @escaping (TimeInterval) -> Void) -> some View {
-        LabeledContent(label) {
-            HStack(spacing: Spacing.xs) {
-                TextField(label, value: Binding(get: { value }, set: { commit(max(0, $0)) }),
-                          format: .number.precision(.fractionLength(0...1)))
-                    .labelsHidden().multilineTextAlignment(.trailing).frame(width: 56).textFieldStyle(.roundedBorder)
-                Text("s").foregroundStyle(.secondary)
-            }
-        }
-        .disabled(!isEditable)
-        .help(label == "Wait before action" ? "Seconds to wait before the first step" : "Seconds to pause between steps")
     }
 
     private func update(_ id: UUID, _ change: (inout ProfileAction) -> Void) {
@@ -156,6 +90,13 @@ struct ProfileActionsPanel: View {
         guard let i = list.firstIndex(where: { $0.id == id }) else { return }
         change(&list[i])
         builder?.setActions(list)
+    }
+
+    /// Edits that shift step positions: the per-index expansion and test results no longer line up, so they reset.
+    private func restructure(_ id: UUID, _ change: (inout ProfileAction) -> Void) {
+        expandedSteps[id] = nil
+        reports[id] = nil
+        update(id, change)
     }
 
     private func move(_ index: Int, by delta: Int) {
@@ -168,48 +109,89 @@ struct ProfileActionsPanel: View {
 
     private func delete(_ id: UUID) {
         if selectedID == id { selectedID = nil }
+        expandedSteps[id] = nil
+        reports[id] = nil
         builder?.setActions(actions.filter { $0.id != id })
     }
 
     // MARK: Steps
 
-    private func stepsSection(_ action: ProfileAction) -> some View {
-        InspectorSection(title: "Steps of \(action.name.isEmpty ? "this action" : action.name)") {
+    private func stepsArea(_ action: ProfileAction) -> some View {
+        let open = expandedSteps[action.id] ?? []
+        let report = reports[action.id]
+        let busy = running != nil
+        return VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack {
+                Text("Steps").font(.wmCallout.weight(.semibold))
+                Spacer()
+                if action.steps.count > 1 {
+                    Button(open.count == action.steps.count ? "Collapse all" : "Expand all") {
+                        expandedSteps[action.id] = open.count == action.steps.count ? [] : Set(action.steps.indices)
+                    }
+                    .buttonStyle(.link).font(.wmCaption)
+                    .help("Show or hide the fields of every step")
+                }
+            }
             if action.steps.isEmpty {
                 Text("No steps yet.").font(.wmCaption).foregroundStyle(.secondary)
             }
             ForEach(Array(action.steps.enumerated()), id: \.offset) { index, step in
-                StepEditor(index: index, count: action.steps.count, step: step, isEditable: isEditable,
-                           report: reports[action.id]?.steps.first { $0.index == index },
-                           change: { new in update(action.id) { $0.steps[index] = new } },
-                           move: { delta in update(action.id) { a in
-                               let t = index + delta
-                               if a.steps.indices.contains(t) { a.steps.swapAt(index, t) }
-                           } },
-                           remove: { update(action.id) { $0.steps.remove(at: index) } },
-                           addDelayAfter: { update(action.id) { $0.steps.insert(.delay(seconds: 1), at: index + 1) } })
-            }
-            HStack(spacing: Spacing.s) {
-                if isEditable {
-                    Menu {
-                        ForEach(StepKind.allCases) { kind in
-                            Button(kind.title) { update(action.id) { $0.steps.append(kind.makeStep()) } }
-                        }
-                    } label: { Label("Add Step", systemImage: "plus") }
-                        .fixedSize().help("Add a step to this action")
-                    Button { startRecording(into: action.id) } label: { Label("Record…", systemImage: "record.circle") }
-                        .disabled(recording.isRecording)
-                        .help("Record clicks and typing in other apps as steps of this action")
+                ActionStepRow(
+                    actionID: action.id, index: index, count: action.steps.count, step: step,
+                    isEditable: isEditable, canRun: !busy,
+                    report: report?.steps.first { $0.index == index },
+                    isExpanded: open.contains(index),
+                    toggle: {
+                        if open.contains(index) { expandedSteps[action.id]?.remove(index) }
+                        else { expandedSteps[action.id, default: []].insert(index) }
+                    },
+                    change: { new in update(action.id) { $0.steps[index] = new } },
+                    move: { delta in restructure(action.id) { a in
+                        let t = index + delta
+                        if a.steps.indices.contains(t) { a.steps.swapAt(index, t) }
+                    } },
+                    moveTo: { from, to in restructure(action.id) { a in
+                        guard a.steps.indices.contains(from), a.steps.indices.contains(to), from != to else { return }
+                        a.steps.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+                    } },
+                    remove: { restructure(action.id) { $0.steps.remove(at: index) } },
+                    duplicate: { restructure(action.id) { $0.steps.insert($0.steps[index], at: index + 1) } },
+                    addDelayAfter: { restructure(action.id) { $0.steps.insert(.delay(seconds: 1), at: index + 1) } },
+                    runOnly: { runSteps(action, indices: [index]) },
+                    runUpToHere: { runSteps(action, indices: Array(0...index)) })
+                if index < action.steps.count - 1, action.stepGap > 0 {
+                    StepGapRow(seconds: action.stepGap, isEditable: isEditable) { v in update(action.id) { $0.stepGap = v } }
                 }
-                Spacer(minLength: Spacing.xs)
-                Button { testRun(action) } label: {
-                    if running == action.id { ProgressView().controlSize(.small) } else { Label("Test Run", systemImage: "play") }
-                }
-                .disabled(running != nil || action.steps.isEmpty)
-                .help("Run this action now and show what each step did")
             }
-            if let report = reports[action.id] { reportView(report) }
+            footer(action)
+            if let report { reportSummary(report, total: action.steps.count) }
         }
+    }
+
+    private func footer(_ action: ProfileAction) -> some View {
+        HStack(spacing: Spacing.s) {
+            if isEditable {
+                Menu {
+                    ForEach(StepKind.allCases) { kind in
+                        Button(kind.title) {
+                            update(action.id) { $0.steps.append(kind.makeStep()) }
+                            if kind != .delay { expandedSteps[action.id, default: []].insert(action.steps.count) }
+                        }
+                    }
+                } label: { Label("Add Step", systemImage: "plus") }
+                    .fixedSize().help("Add a step to this action")
+                Button { startRecording(into: action.id) } label: { Label("Record…", systemImage: "record.circle") }
+                    .disabled(recording.isRecording)
+                    .help("Record clicks and typing in other apps as steps of this action")
+            }
+            Spacer(minLength: Spacing.xs)
+            Button { runSteps(action, indices: Array(action.steps.indices)) } label: {
+                if running == action.id { ProgressView().controlSize(.small) } else { Label("Test Run", systemImage: "play") }
+            }
+            .disabled(running != nil || action.steps.isEmpty)
+            .help("Run this action now and show what each step did")
+        }
+        .padding(.top, Spacing.xs)
     }
 
     /// Records into the selected action; `nil` records a new set: after Stop the recording is analyzed and reviewed.
@@ -270,31 +252,41 @@ struct ProfileActionsPanel: View {
         }
     }
 
-    private func testRun(_ action: ProfileAction) {
+
+    /// Runs the steps at `indices` as a temporary action through the normal runner; the report is mapped back to
+    /// the real step positions. A failed step opens so its error is visible.
+    private func runSteps(_ action: ProfileAction, indices: [Int]) {
+        guard running == nil, !indices.isEmpty, indices.allSatisfy({ action.steps.indices.contains($0) }) else { return }
         running = action.id
         reports[action.id] = nil
         var copy = action
         copy.enabled = true
+        copy.steps = indices.map { action.steps[$0] }
+        if indices.count != action.steps.count { copy.delayBefore = 0 }
         Task {
             let runner = ActionRunner(ax: SystemAXProvider(), process: SystemProcessRunner())
-            let report = await runner.run(copy)
+            var report = await runner.run(copy)
+            for i in report.steps.indices { report.steps[i].index = indices[report.steps[i].index] }
             reports[action.id] = report
+            let failed = report.steps.filter { $0.status == .failed }.map(\.index)
+            if !failed.isEmpty { expandedSteps[action.id, default: []].formUnion(failed) }
             running = nil
         }
     }
 
-    private func reportView(_ report: ActionRunReport) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            InspectorNote(text: report.succeeded ? "Test run finished in \(String(format: "%.1f", report.duration)) s."
-                          : (report.cancelled ? "Test run was cancelled." : "Test run failed."),
-                          tone: report.succeeded ? .info : .warning)
-            ForEach(report.steps, id: \.index) { step in
-                Text("\(step.index + 1). \(step.summary): \(step.status.rawValue)" + (step.error.map { " (\($0))" } ?? ""))
-                    .font(.wmCaption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
+    private func reportSummary(_ report: ActionRunReport, total: Int) -> some View {
+        let ran = report.steps.filter { $0.status == .succeeded || $0.status == .failed }.count
+        var text = "\(ran) of \(total) step\(total == 1 ? "" : "s") ran"
+        if let failed = report.steps.first(where: { $0.status == .failed }) {
+            text += " — failed at step \(failed.index + 1)"
+        } else if report.cancelled {
+            text += " — cancelled"
+        } else {
+            text += " in \(String(format: "%.1f", report.duration)) s"
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Test run report")
+        return InspectorNote(text: text, tone: report.succeeded ? .info : .warning)
+            .padding(.top, Spacing.xs)
+            .accessibilityLabel("Test run report: \(text)")
     }
 }
 
@@ -336,238 +328,5 @@ enum StepKind: String, CaseIterable, Identifiable {
         case .waitFor: return .waitFor(locator: locator)
         case .delay: return .delay(seconds: 1)
         }
-    }
-}
-
-/// One step: summary line with order buttons, and fields for its kind.
-private struct StepEditor: View {
-    let index: Int
-    let count: Int
-    let step: ActionStep
-    let isEditable: Bool
-    let report: StepReport?
-    let change: (ActionStep) -> Void
-    let move: (Int) -> Void
-    let remove: () -> Void
-    let addDelayAfter: () -> Void
-
-    private var inner: ActionStep { step.unwrapped }
-    private var isOptional: Bool { step.continueOnFailure }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack(spacing: Spacing.s) {
-                Text("\(index + 1)").font(.wmCaption.monospacedDigit()).foregroundStyle(.secondary)
-                Text(kindTitle).lineLimit(1)
-                if let report { Image(systemName: icon(report.status)).foregroundStyle(color(report.status)).help(report.error ?? report.status.rawValue) }
-                Spacer(minLength: Spacing.xs)
-                if isEditable {
-                    Button { move(-1) } label: { Label("Move Up", systemImage: "chevron.up").labelStyle(.iconOnly) }
-                        .disabled(index == 0).help("Move step \(index + 1) up")
-                    Button { move(1) } label: { Label("Move Down", systemImage: "chevron.down").labelStyle(.iconOnly) }
-                        .disabled(index == count - 1).help("Move step \(index + 1) down")
-                    Button(action: addDelayAfter) { Label("Add delay after", systemImage: "clock.badge.plus").labelStyle(.iconOnly) }
-                        .help("Insert a 1 second wait after step \(index + 1)")
-                    Button(role: .destructive, action: remove) { Label("Delete Step", systemImage: "trash").labelStyle(.iconOnly) }
-                        .help("Delete step \(index + 1)")
-                }
-            }
-            .buttonStyle(.borderless)
-            fields.disabled(!isEditable)
-            if isEditable, inner.supportsOptional {
-                Toggle("Continue if this step fails", isOn: Binding(
-                    get: { isOptional }, set: { on in change(on ? .optional(step: inner) : inner) }))
-                    .toggleStyle(.checkbox).font(.wmCaption)
-                    .help("Keep going with the next step when this one fails")
-            }
-        }
-        .padding(Spacing.s)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: Radius.small))
-        .accessibilityElement(children: .contain)
-    }
-
-    private func set(_ new: ActionStep) { change(isOptional ? .optional(step: new) : new) }
-
-    private var kindTitle: String {
-        switch inner {
-        case .launchApp: "Open App"
-        case .press: "Press Button"
-        case .menu: "Choose Menu Item"
-        case .typeText: "Type Text"
-        case .key: "Press Keys"
-        case .shell: "Run Terminal Command"
-        case .terminalCommand: "Run in Terminal"
-        case .openURL: "Open URL"
-        case .runShortcut: "Run Shortcut"
-        case .waitFor: "Wait for Element"
-        case .delay: "Wait"
-        case .optional: "Step"
-        }
-    }
-
-    @ViewBuilder private var fields: some View {
-        switch inner {
-        case .launchApp(let id):
-            text("Bundle ID", id) { set(.launchApp(bundleID: $0)) }
-        case .press(let locator, let timeout, let skip):
-            locatorFields(locator) { set(.press(locator: $0, timeout: timeout, skipIfShowing: skip)) }
-            matchPicker(locator) { set(.press(locator: $0, timeout: timeout, skipIfShowing: skip)) }
-            skipFields(skip) { set(.press(locator: locator, timeout: timeout, skipIfShowing: $0)) }
-            seconds("Give up after", timeout) { set(.press(locator: locator, timeout: $0, skipIfShowing: skip)) }
-        case .menu(let id, let path):
-            text("App bundle ID", id) { set(.menu(bundleID: $0, path: path)) }
-            text("Menu path", path.joined(separator: " > ")) { value in
-                set(.menu(bundleID: id, path: value.components(separatedBy: ">").map { $0.trimmingCharacters(in: .whitespaces) }))
-            }
-        case .typeText(let value, let into):
-            text("Text", value) { set(.typeText(text: $0, into: into)) }
-            if let into { locatorFields(into) { set(.typeText(text: value, into: $0)) } }
-        case .key(let combo):
-            text("Keys", combo) { set(.key(combo: $0)) }
-        case .shell(let command, let wait, let timeout):
-            text("Command", command) { set(.shell(command: $0, waitForExit: wait, timeout: timeout)) }
-            Toggle("Wait for it to finish", isOn: Binding(
-                get: { wait }, set: { set(.shell(command: command, waitForExit: $0, timeout: timeout)) }))
-                .toggleStyle(.checkbox).font(.wmCaption).help("Wait for the command to exit before the next step")
-            seconds("Give up after", timeout) { set(.shell(command: command, waitForExit: wait, timeout: $0)) }
-        case .terminalCommand(let command, let app, let newWindow):
-            text("Command", command) { set(.terminalCommand(command: $0, app: app, newWindow: newWindow)) }
-            LabeledContent("App") {
-                Picker("App", selection: Binding(
-                    get: { app }, set: { set(.terminalCommand(command: command, app: $0, newWindow: newWindow)) })) {
-                    Text("Terminal").tag(TerminalApp.terminal)
-                    Text("iTerm2").tag(TerminalApp.iTerm)
-                }
-                .labelsHidden().pickerStyle(.segmented)
-            }
-            Toggle("New window", isOn: Binding(
-                get: { newWindow }, set: { set(.terminalCommand(command: command, app: app, newWindow: $0)) }))
-                .toggleStyle(.checkbox).font(.wmCaption)
-                .help("Open a new window instead of using the front one")
-        case .openURL(let url):
-            text("URL", url) { set(.openURL(url: $0)) }
-        case .runShortcut(let name):
-            text("Shortcut name", name) { set(.runShortcut(name: $0)) }
-        case .waitFor(let locator, let containing, let timeout):
-            locatorFields(locator) { set(.waitFor(locator: $0, containing: containing, timeout: timeout)) }
-            matchPicker(locator) { set(.waitFor(locator: $0, containing: containing, timeout: timeout)) }
-            text("Containing", containing ?? "") { set(.waitFor(locator: locator, containing: $0.isEmpty ? nil : $0, timeout: timeout)) }
-            seconds("Give up after", timeout) { set(.waitFor(locator: locator, containing: containing, timeout: $0)) }
-        case .delay(let s):
-            seconds("Wait", s) { set(.delay(seconds: $0)) }
-        case .optional:
-            EmptyView()
-        }
-    }
-
-    // The recorder fills in full element paths; here the app and the last element's role, title, description
-    // and identifier can be fixed. Description and identifier show only when set or when there is no title.
-    @ViewBuilder private func locatorFields(_ locator: ElementLocator, _ commit: @escaping (ElementLocator) -> Void) -> some View {
-        text("App bundle ID", locator.bundleID) { var l = locator; l.bundleID = $0; commit(l) }
-        if let last = locator.path.last {
-            let noTitle = (last.title ?? "").isEmpty
-            text("Element title", last.title ?? "") { value in
-                var l = locator; l.path[l.path.count - 1].title = value.isEmpty ? nil : value; l.path[l.path.count - 1].volatile = nil; commit(l)
-            }
-            if noTitle || last.description != nil {
-                text("Element description", last.description ?? "") { value in
-                    var l = locator; l.path[l.path.count - 1].description = value.isEmpty ? nil : value; l.path[l.path.count - 1].volatile = nil; commit(l)
-                }
-            }
-            if noTitle || last.identifier != nil {
-                text("Element identifier", last.identifier ?? "") { value in
-                    var l = locator; l.path[l.path.count - 1].identifier = value.isEmpty ? nil : value; commit(l)
-                }
-            }
-            if locator.path.count > 1 { Text("Path: " + describe(locator)).font(.wmCaption).foregroundStyle(.secondary) }
-        }
-    }
-
-    /// Label first, or the recorded position first (for buttons whose label changes with the app's state).
-    @ViewBuilder private func matchPicker(_ locator: ElementLocator, _ commit: @escaping (ElementLocator) -> Void) -> some View {
-        LabeledContent("Match") {
-            Picker("Match", selection: Binding(
-                get: { locator.structuralFirst ? MatchPreference.position : .label },
-                set: { var l = locator; l.match = $0; commit(l) })) {
-                Text("By label").tag(MatchPreference.label)
-                Text("By position").tag(MatchPreference.position)
-            }
-            .labelsHidden().pickerStyle(.segmented)
-            .help("By position finds the element by where it sits in the window, for buttons whose label changes")
-        }
-    }
-
-    /// "Skip if showing": the press is skipped when this element is already on screen.
-    @ViewBuilder private func skipFields(_ skip: ElementLocator?, _ commit: @escaping (ElementLocator?) -> Void) -> some View {
-        let bundle = inner.locatorBundleID
-        LabeledContent("Skip if showing") {
-            Toggle("", isOn: Binding(
-                get: { skip != nil },
-                set: { commit($0 ? ElementLocator(bundleID: bundle, path: [ElementMatcher(role: "AXStaticText", title: "")]) : nil) }))
-                .labelsHidden().toggleStyle(.checkbox)
-                .help("Skip this press when the element below is already visible, for example Connected")
-        }
-        if let skip, let last = skip.path.last {
-            text("Showing role", last.role) { var l = skip; l.path[l.path.count - 1].role = $0; commit(l) }
-            text("Showing title", last.title ?? "") { var l = skip; l.path[l.path.count - 1].title = $0.isEmpty ? nil : $0; commit(l) }
-            text("Showing description", last.description ?? "") {
-                var l = skip; l.path[l.path.count - 1].description = $0.isEmpty ? nil : $0; commit(l)
-            }
-        }
-    }
-
-    private func describe(_ locator: ElementLocator) -> String {
-        locator.path.map { $0.title ?? $0.identifier ?? $0.description ?? $0.role }.joined(separator: " > ")
-    }
-
-    private func text(_ label: String, _ value: String, _ commit: @escaping (String) -> Void) -> some View {
-        LabeledContent(label) {
-            TextField(label, text: Binding(get: { value }, set: commit))
-                .labelsHidden().textFieldStyle(.roundedBorder).multilineTextAlignment(.leading)
-        }
-    }
-
-    private func seconds(_ label: String, _ value: TimeInterval, _ commit: @escaping (TimeInterval) -> Void) -> some View {
-        LabeledContent(label) {
-            HStack(spacing: Spacing.xs) {
-                TextField(label, value: Binding(get: { value }, set: { commit(max(0, $0)) }),
-                          format: .number.precision(.fractionLength(0...1)))
-                    .labelsHidden().multilineTextAlignment(.trailing).frame(width: 56).textFieldStyle(.roundedBorder)
-                Text("s").foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func icon(_ s: StepStatus) -> String {
-        switch s {
-        case .succeeded: "checkmark.circle.fill"
-        case .failed: "xmark.octagon.fill"
-        case .skipped, .cancelled: "minus.circle"
-        }
-    }
-
-    private func color(_ s: StepStatus) -> Color {
-        switch s {
-        case .succeeded: Tone.info.color
-        case .failed: Tone.warning.color
-        case .skipped, .cancelled: .secondary
-        }
-    }
-}
-
-private extension ActionStep {
-    /// Waiting for something or pausing has nothing to "fail past", the other kinds do.
-    var supportsOptional: Bool {
-        if case .delay = self { return false }
-        return true
-    }
-}
-
-private extension ActionStep {
-    /// The app of the step's own locator, used to seed a new "skip if showing" element.
-    var locatorBundleID: String {
-        if case .press(let l, _, _) = unwrapped { return l.bundleID }
-        return ""
     }
 }

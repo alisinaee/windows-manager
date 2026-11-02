@@ -30,7 +30,7 @@ enum ProfileBuilderPhase: Equatable {
 @MainActor
 final class ProfileBuilderModel: ObservableObject {
     @Published private(set) var phase: ProfileBuilderPhase = .idle
-    @Published private(set) var session: DraftSession?
+    @Published private(set) var session: DraftSession? { didSet { scheduleAutosave() } }
     /// Notes from the capture (missing titles, Stage Manager, ...).
     @Published private(set) var startNotes: [String] = []
 
@@ -65,6 +65,15 @@ final class ProfileBuilderModel: ObservableObject {
     @Published private(set) var isLive = false
 
     private let store: ProfileStore
+    private let drafts = DraftRecoveryStore()
+    /// All draft-file work runs here, in order, off the main thread.
+    private static let draftQueue = DispatchQueue(label: "wm.draft-recovery", qos: .utility)
+    private var autosaveTask: Task<Void, Never>?
+    /// `updatedAt` of the saved profile this draft started from (nil for a never-saved profile).
+    private var baseUpdatedAt: Date?
+    /// A draft left by an earlier session that differs from the saved profile; offered in the Studio (P9.14).
+    @Published private(set) var recoveredDraft: RecoveredDraft?
+    @Published private(set) var recoveredIsStale = false
     private var connectedDisplays: [DisplayIdentity] = []
     /// "Skipped Safari (full screen)" after the last recording was applied; nil when nothing was skipped.
     var recordingSkipNote: String?
@@ -136,7 +145,13 @@ final class ProfileBuilderModel: ObservableObject {
             }
         case .editExisting(let id):
             do {
-                let source = try await Task.detached { try store.load(id) }.value
+                let drafts = self.drafts
+                let (source, offer) = try await Task.detached { () -> (Profile, RecoveredDraft?) in
+                    let source = try store.load(id)
+                    return (source, drafts.recoverable(id, saved: source))
+                }.value
+                recoveredDraft = offer
+                recoveredIsStale = offer.map { DraftRecoveryStore.isStale($0, savedUpdatedAt: source.updatedAt) } ?? false
                 begin(source, isNew: false)
             } catch {
                 fail("That profile could not be opened: \(error.localizedDescription)")
@@ -182,7 +197,56 @@ final class ProfileBuilderModel: ObservableObject {
         phase = .failed(message)
     }
 
+    /// A new (never saved) profile recovered from a draft file: opens it as the draft right away.
+    func start(recoveredNew draft: RecoveredDraft) async {
+        phase = .starting
+        lastError = nil
+        startNotes = []
+        connectedDisplays = await Task.detached { DisplayMap.current() }.value
+        begin(draft.profile, isNew: true)
+        await loadLibrary()
+    }
+
+    /// "Restore": the recovered draft becomes the current draft (one Undo returns to the saved profile).
+    func restoreRecovered() {
+        guard let draft = recoveredDraft, var s = session else { return }
+        s.adopt(draft.profile)
+        recoveredDraft = nil
+        recoveredIsStale = false
+        session = s
+        refresh()
+    }
+
+    /// "Discard": deletes the draft file.
+    func discardRecovered() {
+        if let id = recoveredDraft?.profile.id { deleteDraftFile(id) }
+        recoveredDraft = nil
+        recoveredIsStale = false
+        scheduleAutosave()
+    }
+
+    private func deleteDraftFile(_ id: UUID) {
+        let drafts = self.drafts
+        Self.draftQueue.async { drafts.delete(id) }
+    }
+
+    /// Writes the draft ~1 s after the last change; a clean draft removes its file. Paused while a recovery offer is open.
+    private func scheduleAutosave() {
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        guard let s = session, recoveredDraft == nil else { return }
+        let id = s.profile.id
+        guard s.isDirty else { deleteDraftFile(id); return }
+        let draft = s.profile, base = baseUpdatedAt, drafts = self.drafts
+        autosaveTask = Task {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            Self.draftQueue.async { try? drafts.write(draft, baseUpdatedAt: base) }
+        }
+    }
+
     private func begin(_ initial: Profile, isNew: Bool, live: Bool = false) {
+        baseUpdatedAt = isNew ? nil : initial.updatedAt
         session = DraftSession(initial: initial, isNew: isNew)
         selectedDisplayUUID = initial.displays.first?.uuid
         selectedDesktop = initial.spaces.first { $0.displayUUID == selectedDisplayUUID && $0.kind == .desktop }?.desktopNumber
@@ -419,6 +483,8 @@ final class ProfileBuilderModel: ObservableObject {
             let ready = try s.prepareSave(otherNames: others, connectedDisplays: connectedDisplays)
             let saved = try store.save(ready)
             s.markSaved(saved)
+            baseUpdatedAt = saved.updatedAt
+            recoveredDraft = nil
             session = s
             lastError = nil
             refresh()
@@ -432,6 +498,8 @@ final class ProfileBuilderModel: ObservableObject {
 
     /// Throws the draft away (the caller asks first when `isDirty`).
     func discard() {
+        autosaveTask?.cancel()
+        if recoveredDraft == nil, let id = session?.profile.id { deleteDraftFile(id) }
         setLive(false)
         manuallyEdited = []
         dismissedWindows = []

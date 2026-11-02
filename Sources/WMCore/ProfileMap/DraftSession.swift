@@ -70,6 +70,12 @@ public struct DraftSession {
         if wasClean { baseline = profile }
     }
 
+    /// Recovery (P9.14): the draft takes `profile` as one undoable edit, so Undo returns to the state before.
+    public mutating func adopt(_ profile: Profile) {
+        guard profile != history.current else { return }
+        history.record(profile, kind: nil)
+    }
+
     @discardableResult public mutating func undo() -> Bool { history.undo() }
     @discardableResult public mutating func redo() -> Bool { history.redo() }
 

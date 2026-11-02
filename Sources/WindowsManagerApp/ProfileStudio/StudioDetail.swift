@@ -21,6 +21,15 @@ struct StudioDetail: View {
                        action: { model.undoDelete() }, onDismiss: { model.clearDeleted() })
                     .padding(Spacing.s)
             }
+            if model.mode == .edit, let builder = model.builder {
+                if let draft = builder.recoveredDraft {
+                    RecoveryBanner(draft: draft, isStale: builder.recoveredIsStale,
+                                   restore: { builder.restoreRecovered() }, discard: { builder.discardRecovered() })
+                }
+            } else if let draft = model.viewRecovery {
+                RecoveryBanner(draft: draft, isStale: model.viewRecoveryIsStale,
+                               restore: { model.restoreViewRecovery() }, discard: { model.discardViewRecovery() })
+            }
             content
         }
     }

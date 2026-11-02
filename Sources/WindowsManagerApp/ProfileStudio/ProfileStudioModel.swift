@@ -31,7 +31,7 @@ enum ProfileStudioLoadState: Equatable {
 final class ProfileStudioModel: ObservableObject {
     @Published private(set) var rows: [ProfileStudioRow] = []
     @Published private(set) var state: ProfileStudioLoadState = .loading
-    @Published var selectedID: UUID? { didSet { if oldValue != selectedID { DebugLog.log("studio", "profile selected: \(selectedRow?.name ?? "none")"); titleChanged(); selectionChangedForCompare() } } }
+    @Published var selectedID: UUID? { didSet { if oldValue != selectedID { DebugLog.log("studio", "profile selected: \(selectedRow?.name ?? "none")"); titleChanged(); selectionChangedForCompare(); refreshViewRecovery() } } }
     @Published var mode: ProfileStudioMode = .view { didSet { if oldValue != mode { DebugLog.log("studio", "mode: \(mode == .edit ? "Edit" : "View")"); titleChanged() } } }
     /// Names of profiles that could not be read (shown as a warning, the rest still load).
     @Published private(set) var skipped: [String] = []
@@ -243,6 +243,62 @@ final class ProfileStudioModel: ObservableObject {
         if let selectedID, !built.contains(where: { $0.id == selectedID }) { self.selectedID = nil }
         if selectedID == nil { selectedID = built.first?.id }
         titleChanged()
+        refreshViewRecovery()
+    }
+
+    // MARK: Draft recovery (P9.14)
+
+    /// A draft from an earlier session that View mode offers back: the selected profile's, else a never-saved one.
+    @Published private(set) var viewRecovery: RecoveredDraft?
+    @Published private(set) var viewRecoveryIsStale = false
+    private var recoveryTask: Task<Void, Never>?
+
+    func refreshViewRecovery() {
+        recoveryTask?.cancel()
+        guard mode == .view else { viewRecovery = nil; return }
+        let selected = selectedID
+        let savedIDs = Set(rows.map(\.id))
+        let store = AppState.current?.store ?? ProfileStore()
+        recoveryTask = Task { [weak self] in
+            let found = await Task.detached(priority: .utility) { () -> (RecoveredDraft, Bool)? in
+                let drafts = DraftRecoveryStore()
+                if let id = selected, let saved = try? store.load(id), let d = drafts.recoverable(id, saved: saved) {
+                    return (d, DraftRecoveryStore.isStale(d, savedUpdatedAt: saved.updatedAt))
+                }
+                for id in drafts.draftIDs() where !savedIDs.contains(id) {
+                    if let d = drafts.recoverable(id, saved: nil) { return (d, false) }
+                }
+                return nil
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            self.viewRecovery = found?.0
+            self.viewRecoveryIsStale = found?.1 ?? false
+        }
+    }
+
+    /// "Restore" in View mode: opens the draft in Edit mode.
+    func restoreViewRecovery() {
+        guard let draft = viewRecovery else { return }
+        viewRecovery = nil
+        if rows.contains(where: { $0.id == draft.profile.id }) {
+            onEnterEdit?()
+            let b = ProfileBuilderModel()
+            builder = b
+            mode = .edit
+            titleChanged()
+            setCompare(false)
+            Task { await b.start(from: .editExisting(draft.profile.id)); b.restoreRecovered() }
+        } else {
+            let b = enterNewDraft()
+            Task { await b.start(recoveredNew: draft) }
+        }
+    }
+
+    func discardViewRecovery() {
+        guard let draft = viewRecovery else { return }
+        viewRecovery = nil
+        let id = draft.profile.id
+        Task.detached(priority: .utility) { DraftRecoveryStore().delete(id) }
     }
 
     /// Selects a profile (reloading first so a just-captured profile is found).
@@ -434,6 +490,7 @@ final class ProfileStudioModel: ObservableObject {
         isLeaveConfirmPresented = false
         afterSave = nil
         mode = .view
+        refreshViewRecovery()
     }
 
     // MARK: Compare

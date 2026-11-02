@@ -65,6 +65,13 @@ public struct SystemRecorderInspector: RecorderInspector {
 public final class ActionRecorder: @unchecked Sendable {
     public static let duplicateWindow: TimeInterval = 0.3
 
+    /// macOS system UI (Stage Manager, Dock, menu extras, Spotlight, login window). Clicks and keys aimed
+    /// at these apps are not recorded: they are not app steps the user wants replayed.
+    public static let systemUIBundleIDs: Set<String> = [
+        "com.apple.WindowManager", "com.apple.dock", "com.apple.controlcenter", "com.apple.systemuiserver",
+        "com.apple.notificationcenterui", "com.apple.Spotlight", "com.apple.loginwindow",
+    ]
+
     private struct Entry {
         var step: ActionStep
         var time: TimeInterval
@@ -140,6 +147,7 @@ public final class ActionRecorder: @unchecked Sendable {
         if node.pid == selfPID { return }
         guard let bundle = inspector.bundleID(forPID: node.pid) else { return }
         flushText()
+        if Self.systemUIBundleIDs.contains(bundle) { return }
         noteApp(bundle, time: event.timestamp)
         var chain: [any RecorderNode] = [node]
         while let p = chain.last?.parent(), chain.count < 64 { chain.append(p) }
@@ -162,6 +170,9 @@ public final class ActionRecorder: @unchecked Sendable {
         if event.targetPID == selfPID { return }
         let focused = inspector.focusedElement()
         if let focused, focused.pid == selfPID { return }
+        let keyBundle = focused.flatMap { inspector.bundleID(forPID: $0.pid) }
+            ?? event.targetPID.flatMap { inspector.bundleID(forPID: $0) }
+        if let keyBundle, Self.systemUIBundleIDs.contains(keyBundle) { flushText(); return }
         let isSpecial = Self.specialKeys[event.keyCode] != nil
         if let focused, Self.isSecure(focused) {
             flushText()

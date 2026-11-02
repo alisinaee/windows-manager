@@ -26,7 +26,7 @@ struct StudioMapHost: View {
             .inspector(isPresented: $model.isInspectorShown) {
                 StudioInspectorHost(tab: $inspectorTab, map: map, builder: nil, plan: model.comparePlan,
                                     isCompareOn: model.isCompareOn)
-                    .inspectorColumnWidth(min: 280, ideal: 300, max: 360)
+                    .inspectorColumnWidth(min: 280, ideal: 340, max: 720)
             }
             .task(id: row) { map.load(try? AppState.current?.store.load(row.id)) }
             .onChange(of: model.liveStatus) { _, newValue in map.status = newValue }

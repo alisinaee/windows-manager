@@ -165,6 +165,17 @@ private func pressLocators(_ steps: [ActionStep]) -> [ElementLocator] {
         #expect(recorder.stop().isEmpty)
     }
 
+    @Test func systemUIClicksAndKeysNotRecorded() {
+        #expect(ActionRecorder.systemUIBundleIDs.contains("com.apple.WindowManager"))
+        #expect(ActionRecorder.systemUIBundleIDs.contains("com.apple.loginwindow"))
+        inspector.bundles[300] = "com.apple.WindowManager"
+        click(FakeNode("AXButton", title: "test", pid: 300))
+        inspector.focused = FakeNode("AXTextField", pid: 300)
+        type("a")
+        type("\r", code: 36)
+        #expect(recorder.stop().isEmpty)
+    }
+
     @Test func duplicatePressesWithin300msDropped() {
         let b = button("Go")
         click(b); click(b, after: 0.2); click(b, after: 0.5)

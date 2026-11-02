@@ -38,7 +38,7 @@ struct StudioEditDetail: View {
             }
             .inspector(isPresented: $model.isInspectorShown) {
                 StudioInspectorHost(tab: $inspectorTab, map: map, builder: builder, plan: nil, isCompareOn: false)
-                    .inspectorColumnWidth(min: 280, ideal: 300, max: 360)
+                    .inspectorColumnWidth(min: 280, ideal: 340, max: 720)
             }
             .onChange(of: builder.isDirty) { _, _ in model.titleChanged() }
             .onChange(of: builder.nameText) { _, _ in model.titleChanged() }

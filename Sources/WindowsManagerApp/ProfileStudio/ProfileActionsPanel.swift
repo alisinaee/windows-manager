@@ -358,7 +358,7 @@ private struct StepEditor: View {
             }
         case .typeText(let value, let into):
             text("Text", value) { set(.typeText(text: $0, into: into)) }
-            if let into { Text("Into: " + describe(into)).font(.wmCaption).foregroundStyle(.secondary) }
+            if let into { locatorFields(into) { set(.typeText(text: value, into: $0)) } }
         case .key(let combo):
             text("Keys", combo) { set(.key(combo: $0)) }
         case .shell(let command, let wait, let timeout):
@@ -382,12 +382,24 @@ private struct StepEditor: View {
         }
     }
 
-    // The recorder fills in full element paths; here the app and the last element's role and title can be fixed.
+    // The recorder fills in full element paths; here the app and the last element's role, title, description
+    // and identifier can be fixed. Description and identifier show only when set or when there is no title.
     @ViewBuilder private func locatorFields(_ locator: ElementLocator, _ commit: @escaping (ElementLocator) -> Void) -> some View {
         text("App bundle ID", locator.bundleID) { var l = locator; l.bundleID = $0; commit(l) }
         if let last = locator.path.last {
+            let noTitle = (last.title ?? "").isEmpty
             text("Element title", last.title ?? "") { value in
                 var l = locator; l.path[l.path.count - 1].title = value.isEmpty ? nil : value; commit(l)
+            }
+            if noTitle || last.description != nil {
+                text("Element description", last.description ?? "") { value in
+                    var l = locator; l.path[l.path.count - 1].description = value.isEmpty ? nil : value; commit(l)
+                }
+            }
+            if noTitle || last.identifier != nil {
+                text("Element identifier", last.identifier ?? "") { value in
+                    var l = locator; l.path[l.path.count - 1].identifier = value.isEmpty ? nil : value; commit(l)
+                }
             }
             if locator.path.count > 1 { Text("Path: " + describe(locator)).font(.wmCaption).foregroundStyle(.secondary) }
         }

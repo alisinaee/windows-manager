@@ -144,6 +144,18 @@ public enum CLIRunEvents {
             }
             return f
         case .settling: return ["stage": .string("settling")]
+        case .actionStarted(let name, let phase, let steps):
+            return ["stage": .string("action_started"), "name": .string(name),
+                    "phase": .string(phase.rawValue), "steps": .int(steps)]
+        case .actionFinished(let name, let phase, let report):
+            var f: [String: JSONValue] = ["stage": .string("action_finished"), "name": .string(name),
+                                          "phase": .string(phase.rawValue), "steps": .int(report.steps.count),
+                                          "succeeded": .bool(report.succeeded), "elapsed": .double(report.duration)]
+            if let step = report.steps.first(where: { $0.status == .failed }) {
+                f["failed_step"] = .int(step.index + 1)
+                if let error = step.error { f["error"] = .string(error) }
+            }
+            return f
         case .finished(let report):
             return ["stage": .string("finished"), "summary": .string(report.summary), "clean": .bool(report.isClean)]
         }

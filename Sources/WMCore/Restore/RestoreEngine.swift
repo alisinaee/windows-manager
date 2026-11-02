@@ -185,6 +185,9 @@ public enum RestoreProgress: Sendable {
     case stepStarted(index: Int, total: Int, description: String)
     case stepFinished(index: Int, total: Int, description: String, status: RestoreStepStatus, elapsed: TimeInterval)
     case settling
+    /// A profile action is about to run (`.actionFinished` follows).
+    case actionStarted(name: String, phase: ActionPhase, steps: Int)
+    case actionFinished(name: String, phase: ActionPhase, report: ActionRunReport)
     case finished(RestoreReport)
 
     /// A line for logs and the command line.
@@ -205,6 +208,11 @@ public enum RestoreProgress: Sendable {
             return "[\(index)/\(total)] \(description) -> \(status.text) (\(String(format: "%.2f", elapsed)) s)"
         case .settling:
             return "Waiting for windows to settle"
+        case .actionStarted(let name, let phase, let steps):
+            return "Action \"\(name)\" (\(phase == .beforeRestore ? "before" : "after") restore, \(steps) step\(steps == 1 ? "" : "s"))"
+        case .actionFinished(let name, _, let report):
+            let failed = report.steps.filter { $0.status == .failed }.count
+            return "Action \"\(name)\" " + (report.succeeded ? "done" : report.cancelled ? "cancelled" : "failed (\(failed) step\(failed == 1 ? "" : "s"))")
         case .finished(let report):
             return report.summary
         }
@@ -244,12 +252,16 @@ public final class RestoreEngine {
     /// App-level size limits the planner consults after the profile's own: (bundle id, window title) -> limits.
     /// Default: the `sizeLimitStore` (so none in tests unless injected).
     public var sizeLimitProvider: ((_ bundleID: String?, _ title: String?) -> WindowResizeLimits?)?
+    /// Runs the profile's actions. Tests inject one with fake providers; the default drives the real system.
+    public var actionRunner: ActionRunner
 
     /// `persistLearnedLimits` nil: kept only with the live environment.
     public init(environment: any RestoreEnvironment = .live, configuration: Configuration = Configuration(),
                 desktopAdder: (any DesktopAdding)? = nil, persistLearnedLimits: Bool? = nil,
                 sizeLimitStore: SizeLimitStore? = nil, profileStore: ProfileStore? = nil,
-                sizeLimitProvider: ((_ bundleID: String?, _ title: String?) -> WindowResizeLimits?)? = nil) {
+                sizeLimitProvider: ((_ bundleID: String?, _ title: String?) -> WindowResizeLimits?)? = nil,
+                actionRunner: ActionRunner? = nil) {
+        self.actionRunner = actionRunner ?? ActionRunner(ax: SystemAXProvider(), process: SystemProcessRunner())
         self.environment = environment
         self.configuration = configuration
         let persist = persistLearnedLimits ?? (environment is LiveRestoreEnvironment)
@@ -288,6 +300,10 @@ public final class RestoreEngine {
             return report
         }
 
+        // Actions belong to the whole profile: a partial scope (one Desktop, one monitor) never runs them.
+        let runsActions = scope.isWhole
+        if runsActions, !dryRun { await runActions(.beforeRestore, state: state) }
+
         emit(state, .scanning)
         var scan = await environment.scan()
         state.scanNotes = scan.notes
@@ -299,6 +315,7 @@ public final class RestoreEngine {
 
         if dryRun {
             for step in plan.steps { recordSkipped(step, reason: "dry run", state: state) }
+            if runsActions { listActions(profile.actions, note: "dry run", state: state) }
             return finish(state, plan: plan)
         }
 
@@ -366,7 +383,42 @@ public final class RestoreEngine {
         } else if !state.placed.isEmpty {
             await settle(state: state)
         }
+        if runsActions {
+            if state.cancelled {
+                listActions(profile.actions.filter { $0.phase == .afterRestore }, note: "cancelled", state: state)
+            } else {
+                await runActions(.afterRestore, state: state)
+            }
+        }
         return finish(state, plan: plan)
+    }
+
+    /// Runs the enabled actions of one phase in profile order. A failure is recorded (and becomes a warning in
+    /// `finish`), never thrown: the restore goes on.
+    private func runActions(_ phase: ActionPhase, state: RunState) async {
+        for action in state.profile.actions where action.phase == phase {
+            if !action.enabled {
+                state.report.actions = (state.report.actions ?? []) + [RestoreActionRecord(action: action, skipped: true, note: "disabled")]
+                continue
+            }
+            if Task.isCancelled {
+                state.cancelled = true
+                state.report.actions = (state.report.actions ?? []) + [RestoreActionRecord(action: action, skipped: true, note: "cancelled")]
+                continue
+            }
+            emit(state, .actionStarted(name: action.name, phase: phase, steps: action.steps.count))
+            let report = await actionRunner.run(action)
+            state.report.actions = (state.report.actions ?? []) + [RestoreActionRecord(action: action, report: report)]
+            emit(state, .actionFinished(name: action.name, phase: phase, report: report))
+        }
+    }
+
+    /// Records actions that were not run (dry run, cancelled restore).
+    private func listActions(_ actions: [ProfileAction], note: String, state: RunState) {
+        for action in actions {
+            let n = action.enabled ? note : "disabled"
+            state.report.actions = (state.report.actions ?? []) + [RestoreActionRecord(action: action, skipped: true, note: n)]
+        }
     }
 
     /// The engine-level flag or the profile's own option: either one enables adding Desktops.
@@ -427,6 +479,7 @@ public final class RestoreEngine {
                                        partial: partial, cachedLimits: cached)
         plan.warnings.append(contentsOf: scopeWarnings)
         plan.scopeSummary = state.scopeSummary
+        if state.scope.isWhole { plan.actions = state.profile.actions }
         return plan
     }
 
@@ -836,6 +889,9 @@ public final class RestoreEngine {
         report.scopeSummary = state.scopeSummary
         var warnings = plan.warnings
         for note in state.scanNotes where !warnings.contains(note) { warnings.append(note) }
+        for record in report.actions ?? [] {
+            if let problem = record.problem, !warnings.contains(problem) { warnings.append(problem) }
+        }
         report.warnings = warnings
         report.finish(profile: state.profile, elapsed: Self.uptime() - state.started)
         persistLearned(state)

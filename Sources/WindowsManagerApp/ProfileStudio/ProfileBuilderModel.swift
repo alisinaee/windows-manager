@@ -353,6 +353,10 @@ final class ProfileBuilderModel: ObservableObject {
         edit(kind: "options") { try $0.setOptions(change) }
     }
 
+    func setActions(_ actions: [ProfileAction]) {
+        edit(kind: "actions") { try $0.setActions(actions) }
+    }
+
     func setLaunchPlan(_ plan: LaunchPlan?) {
         edit { try $0.setLaunchPlan(plan) }
     }

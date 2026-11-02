@@ -119,6 +119,36 @@ public struct RestoreStepRecord: Codable, Equatable, Sendable {
     }
 }
 
+/// One profile action in a restore report.
+public struct RestoreActionRecord: Codable, Equatable, Sendable {
+    public var actionID: UUID
+    public var name: String
+    public var phase: ActionPhase
+    public var stepCount: Int
+    /// Not run: a dry run, a disabled action or a cancelled restore. `note` says which.
+    public var skipped: Bool
+    public var note: String?
+    /// The per-step report; nil when skipped.
+    public var report: ActionRunReport?
+
+    public init(action: ProfileAction, skipped: Bool = false, note: String? = nil, report: ActionRunReport? = nil) {
+        actionID = action.id; name = action.name; phase = action.phase; stepCount = action.steps.count
+        self.skipped = skipped; self.note = note; self.report = report
+    }
+
+    /// True when the action ran and a step failed or it was cancelled.
+    public var failed: Bool { report.map { !$0.succeeded } ?? false }
+
+    /// The first failing step as a sentence for warnings.
+    public var problem: String? {
+        guard let report, !report.succeeded else { return nil }
+        if let step = report.steps.first(where: { $0.status == .failed }) {
+            return "Action \"\(name)\" failed at step \(step.index + 1) (\(step.summary))" + (step.error.map { ": \($0)" } ?? "")
+        }
+        return "Action \"\(name)\" was cancelled"
+    }
+}
+
 /// How one saved window ended up.
 public enum RestoreWindowOutcomeKind: String, Codable, Sendable {
     /// Every step it needed is done (or it was in place already).
@@ -221,6 +251,8 @@ public struct RestoreReport: Codable, Equatable, Sendable {
     public var scopeSummary: String?
     /// Set when the run could not start at all (for example an empty scope); nothing was touched.
     public var failure: String?
+    /// Profile actions that ran (or, in a dry run, were only listed); nil in reports from before P9.3.
+    public var actions: [RestoreActionRecord]?
 
     public init(profileID: UUID, profileName: String, dryRun: Bool = false, startedAt: Date = Date()) {
         self.profileID = profileID
@@ -243,7 +275,7 @@ public struct RestoreReport: Codable, Equatable, Sendable {
 
     /// True when nothing failed, nothing was cancelled and every wanted window was found.
     public var isClean: Bool {
-        !cancelled && failure == nil && totals.failed == 0 && totals.windowsNotFound == 0 && totals.windowsFailed == 0
+        !cancelled && failure == nil && !(actions ?? []).contains(where: \.failed) && totals.failed == 0 && totals.windowsNotFound == 0 && totals.windowsFailed == 0
     }
 
     // MARK: Finishing

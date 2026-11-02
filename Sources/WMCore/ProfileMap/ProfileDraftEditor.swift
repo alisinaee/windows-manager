@@ -445,6 +445,10 @@ public struct ProfileDraftEditor {
         try edit { p in p.launchPlan = plan }
     }
 
+    public mutating func setActions(_ actions: [ProfileAction]) throws {
+        try edit { p in p.actions = actions }
+    }
+
     public mutating func setName(_ name: String) throws {
         try edit { p in p.name = name }
     }

@@ -320,13 +320,16 @@ public struct Profile: Codable, Hashable, Sendable, Identifiable {
     public var stageManagerOn: Bool?
     /// Launch order and timing; nil = launch every closed app in parallel, as before the launch order existed.
     public var launchPlan: LaunchPlan?
+    /// UI steps to run before and/or after the windows are restored (P9.3). Empty in older files.
+    public var actions: [ProfileAction]
 
     /// `updatedAt` defaults to `createdAt`.
     public init(schemaVersion: Int = Profile.currentSchemaVersion, id: UUID = UUID(), name: String,
                 icon: String = Profile.defaultIcon, createdAt: Date = Date(), updatedAt: Date? = nil,
                 monitorSetKey: String, displays: [DisplayIdentity] = [], spaces: [SpaceSnapshot] = [],
                 windows: [WindowSnapshot] = [], options: ProfileOptions = ProfileOptions(), notes: String? = nil,
-                stageManagerOn: Bool? = nil, launchPlan: LaunchPlan? = nil) {
+                stageManagerOn: Bool? = nil, launchPlan: LaunchPlan? = nil, actions: [ProfileAction] = []) {
+        self.actions = actions
         self.stageManagerOn = stageManagerOn
         self.launchPlan = launchPlan
         self.schemaVersion = schemaVersion
@@ -345,7 +348,7 @@ public struct Profile: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, id, name, icon, createdAt, updatedAt, monitorSetKey, displays, spaces, windows
-        case options, notes, stageManagerOn, launchPlan
+        case options, notes, stageManagerOn, launchPlan, actions
     }
 
     public init(from decoder: Decoder) throws {
@@ -364,6 +367,30 @@ public struct Profile: Codable, Hashable, Sendable, Identifiable {
         notes = try c.decodeIfPresent(String.self, forKey: .notes)
         stageManagerOn = try c.decodeIfPresent(Bool.self, forKey: .stageManagerOn)
         launchPlan = try c.decodeIfPresent(LaunchPlan.self, forKey: .launchPlan)
+        actions = try c.decodeIfPresent([ProfileAction].self, forKey: .actions) ?? []
+    }
+
+    // `ProfileAction` is Equatable but not Hashable, so the hash is by hand: the id is enough (equal profiles share it).
+    public func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    // Written by hand so an empty `actions` adds no key: profiles without actions re-encode byte-identical.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(schemaVersion, forKey: .schemaVersion)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(icon, forKey: .icon)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(updatedAt, forKey: .updatedAt)
+        try c.encode(monitorSetKey, forKey: .monitorSetKey)
+        try c.encode(displays, forKey: .displays)
+        try c.encode(spaces, forKey: .spaces)
+        try c.encode(windows, forKey: .windows)
+        try c.encode(options, forKey: .options)
+        try c.encodeIfPresent(notes, forKey: .notes)
+        try c.encodeIfPresent(stageManagerOn, forKey: .stageManagerOn)
+        try c.encodeIfPresent(launchPlan, forKey: .launchPlan)
+        if !actions.isEmpty { try c.encode(actions, forKey: .actions) }
     }
 
     // MARK: Helpers

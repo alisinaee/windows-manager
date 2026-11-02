@@ -5,6 +5,7 @@ enum StudioInspectorTab: String, CaseIterable, Identifiable {
     case inspector = "Selection"
     case options = "Options"
     case launchOrder = "Launch"
+    case actions = "Actions"
 
     var id: String { rawValue }
 }

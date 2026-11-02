@@ -18,6 +18,7 @@ struct StudioInspectorHost: View {
         case .inspector: MapInspectorView.title(for: map)
         case .options: "Profile options"
         case .launchOrder: "Launch order"
+        case .actions: "Profile actions"
         }
     }
 
@@ -35,6 +36,12 @@ struct StudioInspectorHost: View {
             case .launchOrder:
                 if let profile {
                     LaunchOrderEditor(profile: profile, builder: builder)
+                } else {
+                    noProfile
+                }
+            case .actions:
+                if let profile {
+                    ProfileActionsPanel(profile: profile, builder: builder)
                 } else {
                     noProfile
                 }

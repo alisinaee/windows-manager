@@ -249,10 +249,15 @@ public struct RestorePlan: Equatable, Sendable {
     public var sizeNotes: [UUID: String]
     /// What part of the profile this plan covers ("Desktop 2 on DELL only"); nil for the whole profile.
     public var scopeSummary: String?
+    /// The profile's actions (before and after the restore), listed by a dry run / plan and never run by it.
+    /// Empty for a partial scope.
+    public var actions: [ProfileAction]
 
     public init(profileName: String, steps: [RestoreStep] = [], warnings: [String] = [],
                 unmatched: [UnmatchedSnapshot] = [], ambiguous: [UUID] = [], missingDesktops: [MissingDesktop] = [],
-                possiblyParked: [UUID] = [], sizeNotes: [UUID: String] = [:], scopeSummary: String? = nil) {
+                possiblyParked: [UUID] = [], sizeNotes: [UUID: String] = [:], scopeSummary: String? = nil,
+                actions: [ProfileAction] = []) {
+        self.actions = actions
         self.profileName = profileName
         self.steps = steps
         self.warnings = warnings

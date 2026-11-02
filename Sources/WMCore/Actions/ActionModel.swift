@@ -79,17 +79,17 @@ public struct ElementExpectation: Codable, Equatable, Sendable {
 
 public enum ActionStep: Codable, Equatable, Sendable {
     case launchApp(bundleID: String)
-    case press(ElementLocator, timeout: TimeInterval = ActionDefaults.uiTimeout)
+    case press(locator: ElementLocator, timeout: TimeInterval = ActionDefaults.uiTimeout)
     case menu(bundleID: String, path: [String])
-    case typeText(String, into: ElementLocator? = nil)
-    case key(String)
+    case typeText(text: String, into: ElementLocator? = nil)
+    case key(combo: String)
     case shell(command: String, waitForExit: Bool = true, timeout: TimeInterval = ActionDefaults.shellTimeout)
-    case openURL(String)
+    case openURL(url: String)
     case runShortcut(name: String)
-    case waitFor(ElementLocator, containing: String? = nil, timeout: TimeInterval = ActionDefaults.uiTimeout)
+    case waitFor(locator: ElementLocator, containing: String? = nil, timeout: TimeInterval = ActionDefaults.uiTimeout)
     case delay(seconds: TimeInterval)
     /// Wraps a step so that its failure does not stop the action.
-    indirect case optional(ActionStep)
+    indirect case optional(step: ActionStep)
 
     /// How long the step may take before it fails.
     public var timeout: TimeInterval {
@@ -128,6 +128,69 @@ public enum ActionStep: Codable, Equatable, Sendable {
         case .waitFor(let l, _, _): return "wait for \(l.describe)"
         case .delay(let s): return "delay \(s)s"
         case .optional(let inner): return "optional " + inner.summary
+        }
+    }
+}
+
+/// Decoding for `ActionStep`. Encoding stays synthesized (`{"press":{"locator":...}}`). Steps saved before
+/// P9.6 put their unlabeled values under "_0", so each labeled value is read from its label first, then "_0".
+extension ActionStep {
+    private struct StepKey: CodingKey {
+        var stringValue: String
+        init(_ name: String) { stringValue = name }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        var intValue: Int? { nil }
+        init?(intValue: Int) { nil }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let outer = try decoder.container(keyedBy: StepKey.self)
+        guard outer.allKeys.count == 1, let kind = outer.allKeys.first else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                    debugDescription: "A step must have exactly one kind key"))
+        }
+        let p = try outer.nestedContainer(keyedBy: StepKey.self, forKey: kind)
+        func value<T: Decodable>(_ type: T.Type, _ label: String) throws -> T {
+            if let v = try p.decodeIfPresent(T.self, forKey: StepKey(label)) { return v }
+            return try p.decode(T.self, forKey: StepKey("_0"))
+        }
+        func optionalValue<T: Decodable>(_ type: T.Type, _ label: String) throws -> T? {
+            try p.decodeIfPresent(T.self, forKey: StepKey(label))
+        }
+        func timeout(_ fallback: TimeInterval) throws -> TimeInterval {
+            try p.decodeIfPresent(TimeInterval.self, forKey: StepKey("timeout")) ?? fallback
+        }
+        switch kind.stringValue {
+        case "launchApp":
+            self = .launchApp(bundleID: try p.decode(String.self, forKey: StepKey("bundleID")))
+        case "press":
+            self = .press(locator: try value(ElementLocator.self, "locator"), timeout: try timeout(ActionDefaults.uiTimeout))
+        case "menu":
+            self = .menu(bundleID: try p.decode(String.self, forKey: StepKey("bundleID")),
+                         path: try p.decode([String].self, forKey: StepKey("path")))
+        case "typeText":
+            self = .typeText(text: try value(String.self, "text"), into: try optionalValue(ElementLocator.self, "into"))
+        case "key":
+            self = .key(combo: try value(String.self, "combo"))
+        case "shell":
+            self = .shell(command: try p.decode(String.self, forKey: StepKey("command")),
+                          waitForExit: try optionalValue(Bool.self, "waitForExit") ?? true,
+                          timeout: try timeout(ActionDefaults.shellTimeout))
+        case "openURL":
+            self = .openURL(url: try value(String.self, "url"))
+        case "runShortcut":
+            self = .runShortcut(name: try p.decode(String.self, forKey: StepKey("name")))
+        case "waitFor":
+            self = .waitFor(locator: try value(ElementLocator.self, "locator"),
+                            containing: try optionalValue(String.self, "containing"),
+                            timeout: try timeout(ActionDefaults.uiTimeout))
+        case "delay":
+            self = .delay(seconds: try p.decode(TimeInterval.self, forKey: StepKey("seconds")))
+        case "optional":
+            self = .optional(step: try value(ActionStep.self, "step"))
+        default:
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                    debugDescription: "Unknown step kind \(kind.stringValue)"))
         }
     }
 }

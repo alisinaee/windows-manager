@@ -71,13 +71,13 @@ For AI agents operating the Windows Manager `wm` CLI on the user's Mac. Start he
 An action is a list of recorded UI steps. A profile runs its `before` actions before the restore and its `after` actions after it. Disabled actions are skipped at restore time. Element titles must match the app's accessibility tree, so ask the user for them.
 
 1. `wm profile action list Work --json` lists the actions in run order.
-2. Write the steps as a JSON array to a file, or pipe them with `--steps-json -`. This example opens Streisand, presses "Connect" and waits for "Connected":
+2. Write the steps as a JSON array to a file, or pipe them with `--steps-json -`. This example opens Streisand, chooses File > New Window, and waits up to 15 seconds for the VPN state to read "Connected". In Streisand the VPN state is an AXButton whose description is "Connected" when connected. The play/pause toggle has description "pause.circle.fill" when connected:
 
 ```json
 [
   {"launchApp": {"bundleID": "com.effect.streisand"}},
-  {"press": {"_0": {"bundleID": "com.effect.streisand", "path": [{"role": "AXButton", "title": "Connect"}]}, "timeout": 5}},
-  {"waitFor": {"_0": {"bundleID": "com.effect.streisand", "path": [{"role": "AXStaticText", "title": "Connected"}]}, "containing": "Connected", "timeout": 15}}
+  {"menu": {"bundleID": "com.effect.streisand", "path": ["File", "New Window"]}},
+  {"waitFor": {"locator": {"bundleID": "com.effect.streisand", "path": [{"role": "AXButton", "description": "Connected"}]}, "timeout": 15}}
 ]
 ```
 
@@ -85,7 +85,7 @@ An action is a list of recorded UI steps. A profile runs its `before` actions be
 4. Edit with `set-steps Work <action> --steps-json <file>`, `rename`, `enable` or `disable`, and `move Work <action> <position>` (1-based). `delete Work <action> --yes` needs the user's agreement first.
 5. `wm profile action test Work "Connect VPN" --yes` runs the action now and reports each step. It clicks, types and runs shell commands in real apps. Ask the user first, and never use it for a dry run.
 
-Other steps use the same Codable form, named after their kind: `menu`, `typeText`, `key`, `shell`, `openURL`, `runShortcut`, `waitFor`, `delay`. Unlabeled values sit under `"_0"`. A bad step makes `add` or `set-steps` fail with exit 2 and the step number, and the profile is left unchanged. Over MCP, pass a file path: `-` reads standard input, which MCP leaves empty.
+Other steps use the same Codable form, named after their kind: `menu`, `typeText`, `key`, `shell`, `openURL`, `runShortcut`, `waitFor`, `delay`. Element steps name their locator `"locator"`, and text, key combos, URLs and wrapped steps use `"text"`, `"combo"`, `"url"` and `"step"`. Files saved before these labels existed used `"_0"`, and they still load. A bad step makes `add` or `set-steps` fail with exit 2 and the step number, and the profile is left unchanged. Over MCP, pass a file path: `-` reads standard input, which MCP leaves empty.
 
 ## 5. Envelope and exit codes
 

@@ -268,14 +268,14 @@ enum StepKind: String, CaseIterable, Identifiable {
         let locator = ElementLocator(bundleID: "", path: [ElementMatcher(role: "AXButton", title: "")])
         switch self {
         case .launchApp: return .launchApp(bundleID: "")
-        case .press: return .press(locator)
+        case .press: return .press(locator: locator)
         case .menu: return .menu(bundleID: "", path: [""])
-        case .typeText: return .typeText("")
-        case .key: return .key("cmd+t")
+        case .typeText: return .typeText(text: "")
+        case .key: return .key(combo: "cmd+t")
         case .shell: return .shell(command: "")
-        case .openURL: return .openURL("https://")
+        case .openURL: return .openURL(url: "https://")
         case .runShortcut: return .runShortcut(name: "")
-        case .waitFor: return .waitFor(locator)
+        case .waitFor: return .waitFor(locator: locator)
         case .delay: return .delay(seconds: 1)
         }
     }
@@ -315,7 +315,7 @@ private struct StepEditor: View {
             fields.disabled(!isEditable)
             if isEditable, inner.supportsOptional {
                 Toggle("Continue if this step fails", isOn: Binding(
-                    get: { isOptional }, set: { on in change(on ? .optional(inner) : inner) }))
+                    get: { isOptional }, set: { on in change(on ? .optional(step: inner) : inner) }))
                     .toggleStyle(.checkbox).font(.wmCaption)
                     .help("Keep going with the next step when this one fails")
             }
@@ -326,7 +326,7 @@ private struct StepEditor: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func set(_ new: ActionStep) { change(isOptional ? .optional(new) : new) }
+    private func set(_ new: ActionStep) { change(isOptional ? .optional(step: new) : new) }
 
     private var kindTitle: String {
         switch inner {
@@ -349,18 +349,18 @@ private struct StepEditor: View {
         case .launchApp(let id):
             text("Bundle ID", id) { set(.launchApp(bundleID: $0)) }
         case .press(let locator, let timeout):
-            locatorFields(locator) { set(.press($0, timeout: timeout)) }
-            seconds("Give up after", timeout) { set(.press(locator, timeout: $0)) }
+            locatorFields(locator) { set(.press(locator: $0, timeout: timeout)) }
+            seconds("Give up after", timeout) { set(.press(locator: locator, timeout: $0)) }
         case .menu(let id, let path):
             text("App bundle ID", id) { set(.menu(bundleID: $0, path: path)) }
             text("Menu path", path.joined(separator: " > ")) { value in
                 set(.menu(bundleID: id, path: value.components(separatedBy: ">").map { $0.trimmingCharacters(in: .whitespaces) }))
             }
         case .typeText(let value, let into):
-            text("Text", value) { set(.typeText($0, into: into)) }
+            text("Text", value) { set(.typeText(text: $0, into: into)) }
             if let into { Text("Into: " + describe(into)).font(.wmCaption).foregroundStyle(.secondary) }
         case .key(let combo):
-            text("Keys", combo) { set(.key($0)) }
+            text("Keys", combo) { set(.key(combo: $0)) }
         case .shell(let command, let wait, let timeout):
             text("Command", command) { set(.shell(command: $0, waitForExit: wait, timeout: timeout)) }
             Toggle("Wait for it to finish", isOn: Binding(
@@ -368,13 +368,13 @@ private struct StepEditor: View {
                 .toggleStyle(.checkbox).font(.wmCaption).help("Wait for the command to exit before the next step")
             seconds("Give up after", timeout) { set(.shell(command: command, waitForExit: wait, timeout: $0)) }
         case .openURL(let url):
-            text("URL", url) { set(.openURL($0)) }
+            text("URL", url) { set(.openURL(url: $0)) }
         case .runShortcut(let name):
             text("Shortcut name", name) { set(.runShortcut(name: $0)) }
         case .waitFor(let locator, let containing, let timeout):
-            locatorFields(locator) { set(.waitFor($0, containing: containing, timeout: timeout)) }
-            text("Containing", containing ?? "") { set(.waitFor(locator, containing: $0.isEmpty ? nil : $0, timeout: timeout)) }
-            seconds("Give up after", timeout) { set(.waitFor(locator, containing: containing, timeout: $0)) }
+            locatorFields(locator) { set(.waitFor(locator: $0, containing: containing, timeout: timeout)) }
+            text("Containing", containing ?? "") { set(.waitFor(locator: locator, containing: $0.isEmpty ? nil : $0, timeout: timeout)) }
+            seconds("Give up after", timeout) { set(.waitFor(locator: locator, containing: containing, timeout: $0)) }
         case .delay(let s):
             seconds("Wait", s) { set(.delay(seconds: $0)) }
         case .optional:

@@ -15,8 +15,8 @@ import Testing
         let status = ElementLocator(bundleID: "com.effect.streisand", path: [ElementMatcher(role: "AXStaticText", title: "Connected")])
         return [
             .launchApp(bundleID: "com.effect.streisand"),
-            .press(connect),
-            .waitFor(status, containing: "Connected", timeout: 15),
+            .press(locator: connect),
+            .waitFor(locator: status, containing: "Connected", timeout: 15),
             .shell(command: "echo ok"),
         ]
     }
@@ -29,8 +29,8 @@ import Testing
     private let guideExample = """
     [
       {"launchApp": {"bundleID": "com.effect.streisand"}},
-      {"press": {"_0": {"bundleID": "com.effect.streisand", "path": [{"role": "AXButton", "title": "Connect"}]}, "timeout": 5}},
-      {"waitFor": {"_0": {"bundleID": "com.effect.streisand", "path": [{"role": "AXStaticText", "title": "Connected"}]}, "containing": "Connected", "timeout": 15}}
+      {"menu": {"bundleID": "com.effect.streisand", "path": ["File", "New Window"]}},
+      {"waitFor": {"locator": {"bundleID": "com.effect.streisand", "path": [{"role": "AXButton", "description": "Connected"}]}, "timeout": 15}}
     ]
     """
 
@@ -44,11 +44,12 @@ import Testing
         let steps = try ProfileService.decodeSteps(Data(guideExample.utf8))
         #expect(steps.count == 3)
         #expect(steps[0] == .launchApp(bundleID: "com.effect.streisand"))
-        if case .press(let locator, let timeout) = steps[1] {
-            #expect(locator.path.first?.title == "Connect")
-            #expect(timeout == 5)
+        #expect(steps[1] == .menu(bundleID: "com.effect.streisand", path: ["File", "New Window"]))
+        if case .waitFor(let locator, _, let timeout) = steps[2] {
+            #expect(locator.path.first?.description == "Connected")
+            #expect(timeout == 15)
         } else {
-            Issue.record("step 2 should be a press")
+            Issue.record("step 3 should be a waitFor")
         }
         #expect(steps[2].summary == "wait for com.effect.streisand / Connected")
     }
@@ -60,15 +61,15 @@ import Testing
     }
 
     @Test func rejectsStepsThatDecodeButMakeNoSense() throws {
-        let badKey = try encode([.key("cmd+zzz")])
+        let badKey = try encode([.key(combo: "cmd+zzz")])
         #expect(throws: ServiceError.self) { try ProfileService.decodeSteps(badKey) }
         let emptyCommand = try encode([.shell(command: "   ")])
         #expect(throws: ServiceError.self) { try ProfileService.decodeSteps(emptyCommand) }
         let negativeDelay = try encode([.delay(seconds: -1)])
         #expect(throws: ServiceError.self) { try ProfileService.decodeSteps(negativeDelay) }
-        let noPath = try encode([.press(ElementLocator(bundleID: "a.b", path: []))])
+        let noPath = try encode([.press(locator: ElementLocator(bundleID: "a.b", path: []))])
         #expect(throws: ServiceError.self) { try ProfileService.decodeSteps(noPath) }
-        #expect(try ProfileService.decodeSteps(try encode([.key("cmd+shift+t")])) == [.key("cmd+shift+t")])
+        #expect(try ProfileService.decodeSteps(try encode([.key(combo: "cmd+shift+t")])) == [.key(combo: "cmd+shift+t")])
     }
 
     @Test func parsesPhases() throws {
@@ -139,7 +140,7 @@ import Testing
         #expect(throws: ServiceError.self) { try service.addAction("Work", name: "   ", phase: .beforeRestore) }
         #expect(throws: ServiceError.self) { try service.action("Work", action: "Missing") }
         #expect(throws: ServiceError.self) { try service.deleteAction("Work", action: UUID().uuidString) }
-        #expect(throws: ServiceError.self) { try service.addAction("Work", name: "Bad", phase: .afterRestore, steps: [.key("nope+")]) }
+        #expect(throws: ServiceError.self) { try service.addAction("Work", name: "Bad", phase: .afterRestore, steps: [.key(combo: "nope+")]) }
         #expect(try service.actions("Work").map(\.name) == ["Dup"])
     }
 }

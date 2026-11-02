@@ -73,20 +73,20 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
         let l = loc(ElementMatcher(role: "AXWindow"), ElementMatcher(role: "AXButton", subrole: "s", title: "Connect",
                                                                      identifier: "id", description: "d", index: 2))
         let action = ProfileAction(name: "VPN", phase: .beforeRestore, steps: [
-            .launchApp(bundleID: "a.b"), .press(l, timeout: 3), .menu(bundleID: "a.b", path: ["File", "New Window"]),
-            .typeText("hi", into: l), .typeText("x"), .key("cmd+t"), .shell(command: "ls", waitForExit: false, timeout: 9),
-            .openURL("https://a.b"), .runShortcut(name: "S"), .waitFor(l, containing: "On", timeout: 4),
-            .delay(seconds: 1.5), .optional(.key("esc")),
+            .launchApp(bundleID: "a.b"), .press(locator: l, timeout: 3), .menu(bundleID: "a.b", path: ["File", "New Window"]),
+            .typeText(text: "hi", into: l), .typeText(text: "x"), .key(combo: "cmd+t"), .shell(command: "ls", waitForExit: false, timeout: 9),
+            .openURL(url: "https://a.b"), .runShortcut(name: "S"), .waitFor(locator: l, containing: "On", timeout: 4),
+            .delay(seconds: 1.5), .optional(step: .key(combo: "esc")),
         ], enabled: false)
         let data = try JSONEncoder().encode(action)
         #expect(try JSONDecoder().decode(ProfileAction.self, from: data) == action)
     }
 
     @Test func defaults() {
-        #expect(ActionStep.press(loc(button("a"))).timeout == ActionDefaults.uiTimeout)
+        #expect(ActionStep.press(locator: loc(button("a"))).timeout == ActionDefaults.uiTimeout)
         #expect(ActionStep.shell(command: "x").timeout == ActionDefaults.shellTimeout)
-        #expect(!ActionStep.key("a").continueOnFailure)
-        #expect(ActionStep.optional(.key("a")).continueOnFailure)
+        #expect(!ActionStep.key(combo: "a").continueOnFailure)
+        #expect(ActionStep.optional(step: .key(combo: "a")).continueOnFailure)
     }
 
     @Test func keyComboParsing() {
@@ -162,8 +162,8 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
         ax.roots = [FakeNode("AXWindow", [btn])]
         let p = FakeProcess()
         let action = ProfileAction(name: "a", steps: [
-            .launchApp(bundleID: "app.x"), .press(loc(button("Connect"))), .key("cmd+t"), .typeText("hello"),
-            .shell(command: "echo hi"), .openURL("https://x.y"), .runShortcut(name: "S"), .delay(seconds: 2),
+            .launchApp(bundleID: "app.x"), .press(locator: loc(button("Connect"))), .key(combo: "cmd+t"), .typeText(text: "hello"),
+            .shell(command: "echo hi"), .openURL(url: "https://x.y"), .runShortcut(name: "S"), .delay(seconds: 2),
         ])
         let r = await runner(ax, p).run(action)
         #expect(r.succeeded && r.completed)
@@ -177,7 +177,7 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
     @Test func failureStopsAndSkipsRest() async {
         let ax = FakeAX()
         let action = ProfileAction(name: "a", steps: [
-            .delay(seconds: 0), .press(loc(button("Missing")), timeout: 1), .key("cmd+t"),
+            .delay(seconds: 0), .press(locator: loc(button("Missing")), timeout: 1), .key(combo: "cmd+t"),
         ])
         let r = await runner(ax).run(action)
         #expect(r.steps.map(\.status) == [.succeeded, .failed, .skipped])
@@ -190,7 +190,7 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
         let ax = FakeAX()
         let p = FakeProcess(); p.shellExit = 3
         let action = ProfileAction(name: "a", steps: [
-            .optional(.shell(command: "false")), .key("cmd+t"), .key("nonsense+"),
+            .optional(step: .shell(command: "false")), .key(combo: "cmd+t"), .key(combo: "nonsense+"),
         ])
         let r = await runner(ax, p).run(action)
         #expect(r.steps.map(\.status) == [.failed, .succeeded, .failed])
@@ -205,7 +205,7 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
         nonisolated(unsafe) var queries = 0
         ax.onQuery = { queries += 1 }
         let r = await runner(ax, FakeProcess(), c).run(ProfileAction(name: "a", steps: [
-            .waitFor(loc(button("Never")), timeout: 1),
+            .waitFor(locator: loc(button("Never")), timeout: 1),
         ]))
         #expect(r.steps[0].status == .failed)
         #expect(c.t >= 1 && c.t < 1.3)
@@ -220,14 +220,14 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
         c.onSleep = { if c.t > 0.5 { status.value = "Connected" } }
         let l = loc(ElementMatcher(role: "AXStaticText", identifier: "state"))
         let r = await runner(ax, FakeProcess(), c).run(ProfileAction(name: "a", steps: [
-            .waitFor(l, containing: "connected", timeout: 5),
+            .waitFor(locator: l, containing: "connected", timeout: 5),
         ]))
         #expect(r.succeeded)
         #expect(c.t < 1.5)
 
         status.value = "Off"
         let r2 = await runner(ax, FakeProcess(), FakeClock()).run(ProfileAction(name: "a", steps: [
-            .waitFor(l, containing: "on!", timeout: 1),
+            .waitFor(locator: l, containing: "on!", timeout: 1),
         ]))
         #expect(r2.steps[0].error?.contains("does not match") == true)
     }
@@ -240,7 +240,7 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
         ax.roots = [FakeNode("AXWindow", [field])]
         let r = await runner(ax).run(ProfileAction(name: "a", steps: [
             .menu(bundleID: "app.x", path: ["File", "New Window"]),
-            .typeText("abc", into: loc(ElementMatcher(role: "AXTextField", identifier: "f"))),
+            .typeText(text: "abc", into: loc(ElementMatcher(role: "AXTextField", identifier: "f"))),
         ]))
         #expect(r.succeeded)
         #expect(item.pressCount == 1 && field.focusCount == 1 && ax.typed == ["abc"])
@@ -248,14 +248,14 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
 
     @Test func disabledActionSkipsEverything() async {
         let ax = FakeAX()
-        let r = await runner(ax).run(ProfileAction(name: "a", steps: [.key("cmd+t")], enabled: false))
+        let r = await runner(ax).run(ProfileAction(name: "a", steps: [.key(combo: "cmd+t")], enabled: false))
         #expect(r.steps.map(\.status) == [.skipped])
         #expect(ax.keys.isEmpty)
     }
 
     @Test func cancelledBeforeStart() async {
         let ax = FakeAX()
-        let action = ProfileAction(name: "a", steps: [.delay(seconds: 1), .key("cmd+t"), .key("cmd+w")])
+        let action = ProfileAction(name: "a", steps: [.delay(seconds: 1), .key(combo: "cmd+t"), .key(combo: "cmd+w")])
         let t = Task { () -> ActionRunReport in
             while !Task.isCancelled { await Task.yield() }
             return await runner(ax).run(action)
@@ -270,7 +270,7 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
     @Test func cancellationMidStep() async {
         let ax = FakeAX()
         let c = FakeClock()
-        let action = ProfileAction(name: "a", steps: [.key("cmd+t"), .delay(seconds: 1), .key("cmd+w")])
+        let action = ProfileAction(name: "a", steps: [.key(combo: "cmd+t"), .delay(seconds: 1), .key(combo: "cmd+w")])
         let box = ActionTaskBox()
         c.onSleep = { box.task?.cancel() }
         let task = Task { await runner(ax, FakeProcess(), c).run(action) }
@@ -279,5 +279,26 @@ private func button(_ title: String) -> ElementMatcher { ElementMatcher(role: "A
         #expect(ax.keys.count == 1)
         #expect(r.steps[2].status == .cancelled)
         #expect(r.cancelled)
+    }
+
+    @Test func legacyUnderscoreKeysStillDecode() throws {
+        let element = #""bundleID":"com.effect.streisand","path":[{"role":"AXButton","description":"Connected"}]"#
+        let legacy = Data(#"{"press":{"_0":{\#(element)},"timeout":5}}"#.utf8)
+        let labeled = Data(#"{"press":{"locator":{\#(element)},"timeout":5}}"#.utf8)
+        let expected = ActionStep.press(locator: ElementLocator(bundleID: "com.effect.streisand",
+                                                                path: [ElementMatcher(role: "AXButton", description: "Connected")]),
+                                        timeout: 5)
+        #expect(try JSONDecoder().decode(ActionStep.self, from: legacy) == expected)
+        #expect(try JSONDecoder().decode(ActionStep.self, from: labeled) == expected)
+
+        let json = String(decoding: try JSONEncoder().encode(expected), as: UTF8.self)
+        #expect(json.contains(#""locator""#))
+        #expect(!json.contains("_0"))
+
+        // The other unlabeled values from before P9.6 decode too.
+        let text = try JSONDecoder().decode(ActionStep.self, from: Data(#"{"typeText":{"_0":"hi"}}"#.utf8))
+        #expect(text == .typeText(text: "hi"))
+        let wrapped = try JSONDecoder().decode(ActionStep.self, from: Data(#"{"optional":{"_0":{"key":{"_0":"esc"}}}}"#.utf8))
+        #expect(wrapped == .optional(step: .key(combo: "esc")))
     }
 }

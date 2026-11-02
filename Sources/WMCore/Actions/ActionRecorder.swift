@@ -95,7 +95,7 @@ public final class ActionRecorder: @unchecked Sendable {
     public var steps: [ActionStep] {
         lock.lock(); defer { lock.unlock() }
         var all = entries
-        if !pendingText.isEmpty { all.append(Entry(step: .typeText(pendingText, into: pendingLocator), time: pendingTime)) }
+        if !pendingText.isEmpty { all.append(Entry(step: .typeText(text: pendingText, into: pendingLocator), time: pendingTime)) }
         return Self.cleanup(all)
     }
 
@@ -155,7 +155,7 @@ public final class ActionRecorder: @unchecked Sendable {
             return
         }
         guard let locator = Self.locator(bundleID: bundle, chain: chain) else { return }
-        entries.append(Entry(step: .press(locator), time: event.timestamp))
+        entries.append(Entry(step: .press(locator: locator), time: event.timestamp))
     }
 
     private func handleKey(_ event: RecorderEvent) {
@@ -197,12 +197,12 @@ public final class ActionRecorder: @unchecked Sendable {
     private func appendKey(_ event: RecorderEvent) {
         guard let combo = Self.comboString(keyCode: event.keyCode, modifiers: event.modifiers) else { return }
         flushText()
-        entries.append(Entry(step: .key(combo), time: event.timestamp))
+        entries.append(Entry(step: .key(combo: combo), time: event.timestamp))
     }
 
     private func flushText() {
         guard !pendingText.isEmpty else { return }
-        entries.append(Entry(step: .typeText(pendingText, into: pendingLocator), time: pendingTime))
+        entries.append(Entry(step: .typeText(text: pendingText, into: pendingLocator), time: pendingTime))
         pendingText = ""; pendingLocator = nil
     }
 

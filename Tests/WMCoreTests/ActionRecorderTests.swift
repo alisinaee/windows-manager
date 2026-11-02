@@ -123,14 +123,14 @@ private func pressLocators(_ steps: [ActionStep]) -> [ElementLocator] {
         let steps = recorder.stop()
         #expect(steps.count == 4)
         #expect(steps[0] == .launchApp(bundleID: "com.example.app"))
-        #expect(steps[1] == .typeText("hi !", into: nil))
+        #expect(steps[1] == .typeText(text: "hi !", into: nil))
         #expect(pressLocators([steps[2]]).count == 1)
-        #expect(steps[3] == .typeText("x", into: nil))
+        #expect(steps[3] == .typeText(text: "x", into: nil))
     }
 
     @Test func backspaceEditsPendingText() {
         type("a"); type("b"); type("", code: 51)
-        #expect(recorder.stop().last == .typeText("a", into: nil))
+        #expect(recorder.stop().last == .typeText(text: "a", into: nil))
     }
 
     @Test func comboAndSpecialKeys() {
@@ -155,7 +155,7 @@ private func pressLocators(_ steps: [ActionStep]) -> [ElementLocator] {
         #expect(r2.start())
         type("p"); type("\r", code: 36)
         #expect(r2.skippedSecureInput)
-        #expect(r2.stop() == [.key("return")])
+        #expect(r2.stop() == [.key(combo: "return")])
     }
 
     @Test func selfPidIgnored() {

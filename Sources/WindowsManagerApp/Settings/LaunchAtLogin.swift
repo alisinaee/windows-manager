@@ -17,6 +17,18 @@ final class LaunchAtLogin: ObservableObject {
         SMAppService.mainApp.status == .requiresApproval
     }
 
+    /// Short status for a badge: "On", "Needs approval" or "Off".
+    var statusText: String {
+        if needsApproval { return "Needs approval" }
+        return isEnabled ? "On" : "Off"
+    }
+
+    /// Opens System Settings > General > Login Items & Extensions, where macOS lists the app under
+    /// "Allow in the Background".
+    static func openLoginItems() {
+        SMAppService.openSystemSettingsLoginItems()
+    }
+
     func refresh() {
         isEnabled = Self.currentStatusIsEnabled()
     }

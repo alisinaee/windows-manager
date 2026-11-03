@@ -19,8 +19,8 @@ enum OnboardingStep: Int, CaseIterable {
     var contentHeight: CGFloat {
         switch self {
         case .accessibility: return 270
-        case .spaces: return 330
-        case .done: return 380
+        case .spaces: return 470
+        case .done: return 420
         }
     }
 
@@ -82,6 +82,7 @@ struct OnboardingView: View {
     let onFinish: () -> Void
 
     @StateObject private var model = OnboardingModel()
+    @StateObject private var launchAtLogin = LaunchAtLogin()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -120,6 +121,7 @@ struct OnboardingView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refresh()
+            launchAtLogin.refresh()
         }
     }
 
@@ -255,6 +257,25 @@ struct OnboardingView: View {
                     .font(.wmFootnote)
                     .foregroundStyle(.secondary)
             }
+            Section("Start at login (optional)") {
+                Toggle("Start Windows Manager at login", isOn: Binding(
+                    get: { launchAtLogin.isEnabled },
+                    set: { launchAtLogin.set($0) }
+                ))
+                Text("macOS will show \"Background Items Added\" and list Windows Manager under Allow in the Background. That is this setting. It only starts the app when you log in; you can turn it off later in Settings.")
+                    .font(.wmFootnote)
+                    .foregroundStyle(.secondary)
+                if launchAtLogin.needsApproval {
+                    HStack {
+                        StatusLabel("Needs approval", kind: .warning)
+                        Spacer()
+                        Button("Open Login Items") { LaunchAtLogin.openLoginItems() }
+                    }
+                }
+                if let error = launchAtLogin.errorText {
+                    Text(error).font(.wmFootnote).foregroundStyle(Tone.danger.color)
+                }
+            }
         }
     }
 
@@ -286,6 +307,11 @@ struct OnboardingView: View {
                         "Stage Manager",
                         model.report.stageManagerOn ? "On" : "Off",
                         .good)
+                    Divider().padding(.vertical, 6)
+                    summaryRow(
+                        "Start at login",
+                        launchAtLogin.statusText,
+                        launchAtLogin.needsApproval ? .warning : .good)
                 }
                 .padding(Spacing.m)
                 .wmGlass(.strong)

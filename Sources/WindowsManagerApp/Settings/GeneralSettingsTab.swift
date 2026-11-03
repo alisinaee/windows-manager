@@ -83,18 +83,21 @@ struct GeneralSettingsTab: View {
                     get: { launchAtLogin.isEnabled },
                     set: { launchAtLogin.set($0) }
                 ))
-                if launchAtLogin.needsApproval {
-                    Text("Approve Windows Manager in System Settings > General > Login Items.")
-                        .font(.wmFootnote)
-                        .foregroundStyle(.secondary)
+                LabeledContent("Status") {
+                    HStack(spacing: Spacing.s) {
+                        Text(launchAtLogin.statusText)
+                            .foregroundStyle(launchAtLogin.needsApproval ? Tone.warning.color : .secondary)
+                        Button("Open Login Items") { LaunchAtLogin.openLoginItems() }
+                    }
                 }
+                Text(launchAtLogin.needsApproval
+                    ? "macOS is waiting for you: switch Windows Manager on under \"Allow in the Background\" in Login Items & Extensions."
+                    : "Optional. When on, macOS lists Windows Manager as a background item and starts it when you log in, so auto profiles run without opening the app. Everything else works without it.")
+                    .font(.wmFootnote)
+                    .foregroundStyle(.secondary)
                 if let error = launchAtLogin.errorText {
                     Banner(tone: .danger, title: "Launch at login failed", message: error,
-                           actionLabel: "Open Login Items", action: {
-                               if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
-                                   NSWorkspace.shared.open(url)
-                               }
-                           })
+                           actionLabel: "Open Login Items", action: { LaunchAtLogin.openLoginItems() })
                 }
                 Text("Windows Manager lives in the menu bar and has no Dock icon.")
                     .font(.wmFootnote)
@@ -106,6 +109,10 @@ struct GeneralSettingsTab: View {
         .contentMargins(.top, 8, for: .scrollContent)
         .onAppear {
             appState.refreshPermissions()
+            launchAtLogin.refresh()
+        }
+        // Approval happens in System Settings; re-read the status when the user comes back.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             launchAtLogin.refresh()
         }
     }
